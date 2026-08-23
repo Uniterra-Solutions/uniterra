@@ -35,19 +35,33 @@ tests that encode the business logic as invariants — never write implementatio
 
 1. Write ALL failing property-based tests first in the main session — the red suite
    encoding every invariant from the requirements list. Every test traces to at least
-   one requirement.
+   one requirement. These tests are the single acceptance target for the whole
+   implementation: subagents strengthen and complete them (never rewrite them from
+   scratch) and turn them green.
 2. Decompose requirements + design into a **task list** (`assets/task-list-example.md`):
-   one entry per task, carrying its requirements (with the test that covers each),
-   context files, conventions, and constraints (owned / forbidden files).
-3. Choose the workflow shape by task overlap and write the script
-   (`assets/workflow-script-example.md` for the shared render function + return contract):
-   - Independent tasks → **full parallel** (`references/parallel-workflow.md`).
-   - Overlapping tasks → **batched** (`references/batched-workflow.md`).
+   one entry per task, with its `prompt` already rendered to markdown (goal, context
+   files, requirements with their test, conventions, constraints). Keeping `args` flat
+   (a markdown string per task) avoids the deep-nested-JSON tool-call corruption.
+3. Choose the workflow shape by task overlap (the script is fixed — you do NOT write it):
+   - Independent tasks → set `args.tasks` (flat array) — `references/parallel-workflow.md`.
+   - Overlapping tasks → set `args.batches` (array of task arrays) — `references/batched-workflow.md`.
+     The script to copy verbatim is in `assets/workflow-template.md`; it handles both shapes.
 
 ### 3. Run the workflow script
 
-- Run it with the `workflow` tool; each subagent makes its requirements' failing tests
-  green and returns a structured report (changed files, satisfied requirements, deviations).
+- Run it with the `workflow` tool as **ONE call**: copy the fixed script in
+  `assets/workflow-template.md` verbatim as `script`, and fill only `meta` + `args` — never
+  split `meta`/`script`/`args` across parallel calls, never wrap them in an `arguments`
+  field. Each subagent reads its `task.prompt` and makes its requirements' failing tests
+  green, returning a JSON report (changed files, satisfied requirements, deviations) via
+  `schema`.
+- **Strengthen, don't rewrite.** Each subagent works against the failing tests written in
+  step 2 (its requirement's allocated test). It FIRST prioritizes strengthening / completing
+  those failing test cases — extend the property, add the missing edge cases and invariant
+  asserts, so the failing PBT genuinely covers the requirement — THEN makes them green.
+  Never start by writing a brand-new property test from scratch for the same requirement:
+  the allocated test is the acceptance target, not a starting point (see the shared
+  fixed rules in `assets/workflow-template.md`).
 - Afterwards run the FULL test suite in the main session: every failing PBT must be green
   before handoff. Red tests are the ONLY acceptable signal that work remains — fix inline
   or dispatch a follow-up agent, never declare done with red tests.
@@ -59,7 +73,8 @@ tests that encode the business logic as invariants — never write implementatio
 
 ## Files
 
-- `assets/task-list-example.md` — the per-task JSON contract + example.
-- `assets/workflow-script-example.md` — shared render function, fixed rules, return schema.
-- `references/parallel-workflow.md` — scenario: independent tasks → full parallel.
-- `references/batched-workflow.md` — scenario: overlapping tasks → batched.
+- `assets/workflow-template.md` — THE fixed workflow script (copy verbatim; one script, both
+  parallel and batched shapes) + the ONE-call submission format, fixed rules, return schema.
+- `assets/task-list-example.md` — the per-task contract (pre-rendered markdown `prompt`) + example.
+- `references/parallel-workflow.md` — scenario guide: independent tasks → `args.tasks` (full parallel).
+- `references/batched-workflow.md` — scenario guide: overlapping tasks → `args.batches`.

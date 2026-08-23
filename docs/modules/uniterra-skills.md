@@ -1,6 +1,6 @@
 # Module: uniterra-skills
 
-**Purpose:** Built-in skill registry — bundles the 10 company-standard skills and provisions them into the agent's skills directory at startup (idempotent, never clobbers user edits; retired skills are removed). In the dsh runtime the same skill tree ships via the rank-600 bundled provider (`DSH_BUNDLED_SKILL_DIR`).
+**Purpose:** Built-in skill registry — bundles the 9 company-standard skills and provisions them into the agent's skills directory at startup (idempotent, never clobbers user edits; retired skills are removed). In the dsh runtime the same skill tree ships via the rank-600 bundled provider (`DSH_BUNDLED_SKILL_DIR`).
 
 Source: `packages/uniterra-skills/src/index.ts`, `src/skills/*/SKILL.md`; build `scripts/copy-skills.mjs`; tests `test/provision.test.mts`, `test/workflow-templates.test.mts`.
 
@@ -8,13 +8,13 @@ Source: `packages/uniterra-skills/src/index.ts`, `src/skills/*/SKILL.md`; build 
 
 | Export                   | Signature                                                      | Description                                                                                                       |
 | ------------------------ | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `builtinSkillNames`      | `readonly BuiltinSkillName[]`                                  | The 10 skill names in provision order                                                                             |
+| `builtinSkillNames`      | `readonly BuiltinSkillName[]`                                  | The 9 skill names in provision order                                                                              |
 | `listBuiltinSkills`      | `() => BuiltinSkillInfo[]`                                     | Names + frontmatter description + `dist/skills` dir per skill                                                     |
 | `provisionBuiltinSkills` | `(agentDir, options?: { force?: boolean }) => ProvisionResult` | Idempotent copy into `<agentDir>/skills/`; retired skills removed; `{ installed, skipped, failed }`; never throws |
 | `builtinSkillsDir`       | `() => string`                                                 | `dist/skills` relative to the compiled module                                                                     |
 | `resolveAgentDir`        | `() => string`                                                 | `PI_CODING_AGENT_DIR` (tilde-expanded) else `~/.pi/agent`                                                         |
 
-Provision order (`SKILL_NAMES`): `uniterra-pbt-debugging`, `uniterra-plan`, `uniterra-implement`, `uniterra-simplify`, `uniterra-review`, `manage-agents-md`, `manage-git-repo`, `project-documentation`, `uniterra-qa`, `create-skill`.
+Provision order (`SKILL_NAMES`): `uniterra-pbt-debugging`, `uniterra-plan`, `uniterra-implement`, `uniterra-simplify`, `uniterra-review`, `manage-agents-md`, `manage-git-repo`, `project-documentation`, `uniterra-qa`.
 
 ## Provisioning Mechanics
 
@@ -42,6 +42,10 @@ script runs:
   `export const meta` (`SCRIPT_PARSE`). Only `name` / `description` / optional
   `whenToUse` / `phases` (with only `title` / `detail` / `provider` / `model`) are
   recognized; any other meta field fails the run with `META_INVALID`.
+- **Make ONE `workflow` call** — `meta`, `script`, and `args` are three properties of ONE
+  `arguments` object. Never split them across parallel `workflow` calls (each partial call
+  fails `missing required property "meta"` / `"script"`) and never wrap them under a field
+  named `arguments` (fails `"arguments" must be an object`).
 - **`script`** is the plain-JS body only (no TypeScript), compiled as
   `(async () => { <body> })()`, ending with `return <json-value>`.
 - **`args`** is free-form JSON exposed as the `args` global.
@@ -51,6 +55,15 @@ script runs:
   rejected loudly); `schema` must be object-rooted and use only
   `type` / `properties` / `required` / `additionalProperties` / `items` / `enum` /
   `const` / `oneOf`.
+- **Subagent reports to the workflow are JSON** — every `agent(...)` call passes a
+  `schema`, and its return is the validated JSON object. Only the subagent **input
+  prompt** is text/markdown; never convert the schema-validated return to markdown.
+
+Fixed templates (plan / review / simplify / implement) embed the script as a ` ```js `
+fence that the agent copies verbatim, filling only `meta` + `args`; `uniterra-implement`
+consolidates both orchestration shapes (parallel and batched) into a single fixed script
+that branches on `args.tasks` (flat, full parallel) vs `args.batches` (array of task
+arrays, serial across batches).
 
 `test/workflow-templates.test.mts` locks this: every embedded ` ```js ` fence parses
 under dsh's wrapper, no body opens with `export const meta`, every template instructs
@@ -68,7 +81,6 @@ result under stubbed hooks. Keep templates inside this contract when editing the
 | [uniterra-pbt-debugging](#uniterra-pbt-debugging) | Bug report / test failure / wrong behavior in business-logic code                   | Read logic → define invariants → failing PBT reproduction → fix → regression tests                                                                                                                                                       |
 | uniterra-qa                                       | Verify an app against its PRD (qa/test/驗收/試用)                                   | UI: playwright DOM geometry → screenshot pixel analysis → external-tool UI operation (or playwright E2E); backend: clean-container install + smoke boot → API journeys → fix loop → qa-report.md                                         |
 | project-documentation                             | Generate/update/rebuild project docs (寫文檔/更新文檔/重建文檔/項目文檔)            | SCAN → ANALYZE → GENERATE (12 files in dependency order) → VERIFY audit; existing docs → incremental git-diff update                                                                                                                     |
-| create-skill                                      | Build a new agent skill from scratch                                                | DISCOVER → DESIGN → PLAN → BUILD → VALIDATE → DELIVER                                                                                                                                                                                    |
 | manage-agents-md                                  | Create/audit agent spec files (AGENTS.md etc.)                                      | Scan 6 core areas → write → audit → drift check                                                                                                                                                                                          |
 | manage-git-repo                                   | Commit/version/release/PR workflows                                                 | Commit (dependency order) / Version Release (semver + changelog + `v` tag) / Branch + Batch Commit + PR / Stacked PR                                                                                                                     |
 
@@ -87,7 +99,7 @@ PBT-first implementation against an explicit requirements list. The failing prop
 
 1. **Requirements + design** — read the plan's `prd.md` + `design.md`, or build them interactively (`ask_user_question`) when no design exists; clarify any ambiguous requirement.
 2. **Write ALL failing property tests** in the main session (the red suite), then decompose requirements + design into a **task list** (`assets/task-list-example.md`): one entry per task with its requirements (each pointing at the covering test), context files, conventions, and owned / forbidden file sets.
-3. **Workflow** (`assets/workflow-script-example.md`) — full parallel when tasks are independent, batched (parallel within a batch, serial across batches) when they overlap; each subagent gets a self-contained JSON (goal + context + task + constraints) and returns `{changed_files, satisfied_requirements, deviations}` via schema. After the workflow the full suite must be green before review.
+3. **Workflow** (`assets/workflow-template.md`) — one fixed script (copy verbatim) handles both shapes: set `args.tasks` (flat) for full parallel when tasks are independent, or `args.batches` (array of task arrays, serial across batches) when they overlap. Each task carries a pre-rendered markdown `prompt` (goal + context + requirements + conventions + constraints) and returns `{changed_files, satisfied_requirements, deviations}` via schema. Each subagent works against the failing tests written in step 2 and **prioritizes STRENGTHENING / completing those test cases** (extend the property, add the missing edge cases and invariant asserts) rather than writing a fresh property test from scratch each time. After the workflow the full suite must be green before review.
 
 ### uniterra-simplify
 

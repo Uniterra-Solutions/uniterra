@@ -3,31 +3,30 @@
 Use when some tasks overlap: their file/module sets intersect, or one depends on another's
 output. Batches run serially; agents WITHIN a batch run in parallel.
 
+The script is fixed — see `assets/workflow-template.md`. You do NOT write a script here; you
+only choose the orchestration shape by setting `args.batches` (array of task arrays) instead
+of `args.tasks`, and copy the template's script verbatim.
+
 ## Overlap → partition
 
 1. Build the overlap relation from `owned_files` intersections.
 2. Partition tasks into the smallest number of batches such that overlapping tasks land in
    DIFFERENT batches; tasks that only depend on earlier batches sit in later batches.
 3. `args.batches` is an array of task arrays (not the flat task list) — partition before
-   writing the script.
+   dispatching. Render each task into a markdown `prompt`
+   (see `assets/task-list-example.md`), so `args` stays flat.
 
-## Script
+## `args` shape
 
-Submit with the `workflow` tool as `meta: { name: 'implement', description: 'Implement overlapping tasks in serial batches' }`, `script: <the JS below>`, and `args = { goal, batches }`. The meta shape above is a separate tool parameter — do not put it in the script.
-
-```js
-const { goal, batches } = args;
-const results = [];
-for (let b = 0; b < batches.length; b++) {
-  phase('batch-' + (b + 1));
-  const done = await parallel(
-    batches[b].map((t) => () => agent(renderTask(goal, t), { label: t.id, schema: RETURN_SCHEMA })),
-  );
-  if (done.some((r) => r === null)) return { status: 'failed', batch: b + 1 };
-  results.push(...done);
+```json
+{
+  "goal": "...",
+  "batches": [[{ "id": "T1", "name": "...", "prompt": "...markdown..." }]]
 }
-return { status: 'done', agents: results.length };
 ```
+
+Use exactly one of `tasks` or `batches` — never both. Set `batches` (array of task arrays)
+for the batched shape.
 
 ## Watch for
 
@@ -35,3 +34,4 @@ return { status: 'done', agents: results.length };
   hints may be stale — prefer symbol / heading references over line numbers for exactly this
   reason.
 - A `null` in any batch fails the whole run (later batches likely depend on it).
+- The subagent **returns JSON** (via `schema`); only its **input prompt** is markdown.

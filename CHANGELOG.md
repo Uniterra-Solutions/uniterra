@@ -13,6 +13,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `uniterra-desktop` (issue #5): `@meomeo-dev/dsh-memory@0.5.6` — the agent-loop working-memory plugin — ships as the 10th built-in npm plugin; its provider is configured via `/lmemory config set provider uniterra`.
 - `uniterra-desktop` (issue #15): the update flow now runs behind an in-app progress overlay (check → download → rebuild → relaunch); window close/quit is blocked while an update is in flight, and the success state reports the installed version and restarts the app.
 
+## [0.11.12] — 2026-08-22
+
+### Changed
+
+- `uniterra-implement`: consolidated the orchestration into a **single fixed workflow script** (`assets/workflow-template.md`, copied verbatim), matching the structure that already makes `uniterra-plan` / `uniterra-review` / `uniterra-simplify` reliable. The script branches on `args.tasks` (flat, full parallel) vs `args.batches` (array of task arrays, serial batches) — both shapes, one script; the agent only fills `meta` + `args`. `references/parallel-workflow.md` and `references/batched-workflow.md` are now decision guides only; `assets/workflow-script-example.md` is removed (its shared blocks are inlined).
+- The four pipeline workflow skills now instruct the dsh `workflow` tool as **ONE call** — `meta` + `script` + `args` as three properties of one `arguments` object, never split across parallel calls (each partial call fails `missing required property "meta"/"script"`) and never wrapped under an `arguments` field (fails `"arguments" must be an object`). Subagent reports to the workflow are JSON via the `schema` option on each `agent()` call; only the subagent input prompt is text. Docs (`docs/modules/uniterra-skills.md`, `docs/conventions.md`, `docs/workflows.md`) synced.
+
+## [0.11.11] — 2026-08-22
+
+### Changed
+
+- The four pipeline workflow skills (`uniterra-plan` / `uniterra-implement` / `uniterra-review` / `uniterra-simplify`) instructed the `workflow` tool with `meta`, `script`, and `args` as three comma-separated sibling items. The agent model read that as three separate tool calls and split them into parallel invokes, each of which failed with `missing required property "meta"/"script"` or `"arguments" must be an object`. The templates now present a single-call `arguments` object and explicitly forbid splitting across parallel calls or wrapping the three in an `arguments` field.
+- `uniterra-implement`: the task list is flattened — each task now carries a pre-rendered markdown `prompt` (goal/context/requirements/conventions/constraints) instead of a deeply nested JSON object, since the deep nesting is what corrupted the tool-call arguments. Subagent reports to the workflow remain JSON via the `schema` option on each `agent()` call.
+
+## [0.11.10] — 2026-08-22
+
+### Changed
+
+- `uniterra-skills`: `create-skill` is no longer a bundled skill — removed from the bundled skill registry (the bundled count drops from 10 to 9) and its source is deleted, so fresh installs no longer provision it. Docs and spec (`AGENTS.md`) synced.
+- `uniterra-implement`: each dispatched subagent is now instructed to prioritize STRENGTHENING / completing the failing property tests written in the first step — extend the property, add the missing edge cases and invariant asserts — before making them green, rather than writing a brand-new property test from scratch for a requirement that already has an allocated failing test. Aligns SKILL.md and the shared fixed rules in `assets/workflow-script-example.md`.
+
 ## [0.11.9] — 2026-08-21
 
 ### Added
