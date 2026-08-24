@@ -13,11 +13,11 @@ allowBuilds:
   fsevents: true
   tesseract.js: true
 minimumReleaseAgeExclude:
-  - dsh-better-sidebar@0.12.2
-  - dsh-file-upload@0.4.2
-  - dsh-notifier@0.6.2
-  - dshmarket@1.9.0
-  - dsh-find-plugin@0.3.6
+  - dsh-better-sidebar@0.15.2
+  - dsh-file-upload@0.4.3
+  - dsh-notifier@0.8.6
+  - dshmarket@1.21.2
+  - dsh-find-plugin@0.3.7
   - dsh-subagent-model-picker@0.1.1
   - dsh-tool-git@0.1.3
   - dsh-browser-playwright@0.1.1

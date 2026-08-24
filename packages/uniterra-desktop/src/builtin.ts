@@ -73,11 +73,11 @@ function isRetired(entry: BuiltinPlugin): entry is RetiredBuiltin {
 // Registry declarations — the full built-in set, one entry per plugin.
 // ---------------------------------------------------------------------------
 
-registerBuiltinPlugin({ kind: 'npm', spec: 'dshmarket@1.9.0' });
-registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-notifier@0.6.2' });
-registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-better-sidebar@0.12.2' });
-registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-file-upload@0.4.2' });
-registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-find-plugin@0.3.6' });
+registerBuiltinPlugin({ kind: 'npm', spec: 'dshmarket@1.21.2' });
+registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-notifier@0.8.6' });
+registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-better-sidebar@0.15.2' });
+registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-file-upload@0.4.3' });
+registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-find-plugin@0.3.7' });
 registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-subagent-model-picker@0.1.1' });
 registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-tool-git@0.1.3' });
 registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-browser-playwright@0.1.1' });
