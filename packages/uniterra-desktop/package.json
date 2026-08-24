@@ -19,7 +19,7 @@
     "@uniterra-solutions/uniterra-updater": "workspace:*"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh": "0.1.0-rc.6",
+    "@deepseek-ai/dsh": "0.1.1-rc.2",
     "@types/node": "^22.0.0",
     "electron": "^37.10.3",
     "electron-builder": "^25.1.8",
