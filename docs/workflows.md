@@ -28,7 +28,7 @@ Task recipes. Each links to the module/skill that owns the details.
 ## Bump a Vendored Plugin
 
 1. `git -C vendor/dsh-plugins/<name> fetch --depth 1 origin`; checkout the new commit.
-2. Verify dsh-family compatibility (0.1.0-rc.6 / cordis 4.0.1); re-run the smoke test.
+2. Verify dsh-family compatibility (0.1.1-rc.2 / cordis 4.0.1); re-run the smoke test.
 3. Update the pin-ledger row in `vendor/dsh-plugins/VENDOR.md`.
    Details: [modules/vendor-plugins.md](modules/vendor-plugins.md).
 

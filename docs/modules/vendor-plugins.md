@@ -10,11 +10,11 @@ Pinned exact, installed via `dsh plugin add` — declared with `registerBuiltinP
 
 | Spec                            | Purpose                      |
 | ------------------------------- | ---------------------------- |
-| dshmarket@1.9.0                 | Plugin marketplace           |
-| dsh-notifier@0.6.2              | Push notifications           |
-| dsh-better-sidebar@0.12.2       | Sidebar enhancement          |
-| dsh-file-upload@0.4.2           | File upload                  |
-| dsh-find-plugin@0.3.6           | Plugin discovery             |
+| dshmarket@1.21.2                | Plugin marketplace           |
+| dsh-notifier@0.8.6              | Push notifications           |
+| dsh-better-sidebar@0.15.2       | Sidebar enhancement          |
+| dsh-file-upload@0.4.3           | File upload                  |
+| dsh-find-plugin@0.3.7           | Plugin discovery             |
 | dsh-subagent-model-picker@0.1.1 | Per-subagent model selection |
 | dsh-tool-git@0.1.3              | Git tools for agents         |
 | dsh-browser-playwright@0.1.1    | Browser automation           |
@@ -26,7 +26,7 @@ Pinned at a fixed commit because it is not published to npm — `dsh plugin add 
 
 | Dir             | Package name  | Pinned commit | Purpose                                                 |
 | --------------- | ------------- | ------------- | ------------------------------------------------------- |
-| `dsh-shortcuts` | dsh-shortcuts | `0d12280…`    | 34 keyboard shortcuts, one-click recording, macOS-first |
+| `dsh-shortcuts` | dsh-shortcuts | `bf392410…`   | 34 keyboard shortcuts, one-click recording, macOS-first |
 
 ### Optional built-in (`kind: 'optional'`)
 
@@ -34,7 +34,7 @@ Shipped but NOT forced (the Deep Whale skin — a cosmetic theme, CC BY-NC-SA 4.
 
 | Dir              | Package name                                  | Pinned commit | Purpose                                                                                                                    |
 | ---------------- | --------------------------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `dsh-deep-whale` | @dsh-external/dsh-client-ui-skin-maid-atelier | `873f5c6…`    | Whale-maid UI skin (standalone distribution; self-inserting patch, no-op host, art embedded as data URIs). CC BY-NC-SA 4.0 |
+| `dsh-deep-whale` | @dsh-external/dsh-client-ui-skin-maid-atelier | `d3d7ff2b…`   | Whale-maid UI skin (standalone distribution; self-inserting patch, no-op host, art embedded as data URIs). CC BY-NC-SA 4.0 |
 
 Reconcile semantics (`reconcileOptionalPlugins` runs BEFORE the provisioning gate, so an already-full profile still gets its optional state applied):
 
@@ -73,7 +73,7 @@ Staleness (re-provision trigger): installed copy's `package.json` `version` ≠ 
 Per `vendor/dsh-plugins/VENDOR.md`:
 
 1. `git -C vendor/dsh-plugins/<name> fetch --depth 1 origin`; checkout the new commit.
-2. Verify it still targets the uniterra-pinned dsh family (0.1.0-rc.6 / cordis 4.0.1); re-run the smoke test.
+2. Verify it still targets the uniterra-pinned dsh family (0.1.1-rc.2 / cordis 4.0.1); re-run the smoke test.
 3. Update the pin-ledger row in `VENDOR.md`.
 
 Smoke test: sandbox `DSH_HOME`, boot the profile, expect HTTP 200 on the web port with no load error mentioning the plugins.

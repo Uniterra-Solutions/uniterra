@@ -9,7 +9,7 @@ All versions are the spec ranges from `package.json` / `pnpm-workspace.yaml`; th
 | Node.js             | ≥ 22 (`.nvmrc`: 22)          | All packages; electron-builder packaging                                        |
 | pnpm                | 11.17.0 (`packageManager`)   | Workspace + profile plugin installs (`allowBuilds` / `minimumReleaseAge` gates) |
 | Electron            | ^37.10.3                     | Desktop shell (main process) hosting the dsh Web UI                             |
-| @deepseek-ai/dsh    | 0.1.0-rc.6 (exact, no caret) | DeepSeek Harness agent runtime — bundled CLI + web app                          |
+| @deepseek-ai/dsh    | 0.1.1-rc.2 (exact, no caret) | DeepSeek Harness agent runtime — bundled CLI + web app                          |
 | @deepseek-ai/cordis | 4.0.1 (exact)                | dsh plugin/service container                                                    |
 | React               | ^18.2.0                      | Client-side settings UI of `@uniterra-solutions/uniterra-provider`              |
 
@@ -33,7 +33,7 @@ All versions are the spec ranges from `package.json` / `pnpm-workspace.yaml`; th
 
 ## dsh Client Peer Packages (uniterra-provider)
 
-All pinned exact at 0.1.0-rc.6 — see `packages/uniterra-provider/package.json` `peerDependencies`:
+All pinned exact at 0.1.1-rc.2 — see `packages/uniterra-provider/package.json` `peerDependencies`:
 
 `@deepseek-ai/dsh-client-connection`, `@deepseek-ai/dsh-client-locale`, `@deepseek-ai/dsh-client-runtime`, `@deepseek-ai/dsh-client-ui-settings`, `@deepseek-ai/dsh-client-ui-slots` (dev), `@deepseek-ai/dsh-credentials`, `@deepseek-ai/dsh-launch-environment`, `@deepseek-ai/dsh-llm`, `@deepseek-ai/dsh-settings`, `@deepseek-ai/dsh-timeout`, plus `@deepseek-ai/schemastery` ^3.18.1.
 

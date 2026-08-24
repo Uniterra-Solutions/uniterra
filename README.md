@@ -63,7 +63,7 @@ Test commands and the verification matrix: [docs/testing.md](docs/testing.md) ·
 
 ## Tech Stack
 
-Node ≥ 22 · Electron 37 · @deepseek-ai/dsh 0.1.0-rc.6 (pinned exact) · TypeScript ~5.9 (NodeNext ESM) · pnpm 11 · fast-check (PBT) · esbuild / electron-builder. Full list: [docs/tech-stack.md](docs/tech-stack.md)
+Node ≥ 22 · Electron 37 · @deepseek-ai/dsh 0.1.1-rc.2 (pinned exact) · TypeScript ~5.9 (NodeNext ESM) · pnpm 11 · fast-check (PBT) · esbuild / electron-builder. Full list: [docs/tech-stack.md](docs/tech-stack.md)
 
 ## Conventions
 
