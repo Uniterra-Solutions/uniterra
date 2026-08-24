@@ -5,6 +5,14 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] — 2026-08-24
+
+### Changed
+
+- Upgraded the bundled DeepSeek Harness (dsh) runtime and every `@deepseek-ai/dsh-*` client/SDK package from the `0.1.0-rc.6` family to `0.1.1-rc.2` across the desktop shell and `uniterra-provider` — all still pinned exact (no caret) — and refreshed the workspace lockfile.
+- Raised the pinned dsh plugin-add builtins to their current published versions (`dshmarket` 1.9.0 → 1.21.2, `dsh-notifier` 0.6.2 → 0.8.6, `dsh-better-sidebar` 0.12.2 → 0.15.2, `dsh-file-upload` 0.4.2 → 0.4.3, `dsh-find-plugin` 0.3.6 → 0.3.7) and widened the `minimumReleaseAgeExclude` set to match.
+- Re-pinned the vendored plugins to commits targeting the `0.1.1-rc.2` family per the `VENDOR.md` bump policy: `dsh-deep-whale` → `d3d7ff2b…` (`skin.json` now declares `dshCompatibility: 0.1.1rc2`) and `dsh-shortcuts` → `bf392410…` (v1.1.4); the pin ledger and docs rows updated.
+
 ## [0.11.12] — 2026-08-22
 
 ### Changed
