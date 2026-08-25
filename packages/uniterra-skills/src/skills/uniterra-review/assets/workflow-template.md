@@ -1,14 +1,14 @@
 # Review Workflow Template
 
-One workflow: review (with in-agent reproduction) → fix. Make **ONE** `workflow` tool call —
-`meta`, `script`, and `args` are three properties of ONE arguments object, never three
-separate calls, and never wrapped under a field named `arguments`:
+One workflow: review (formal-spec + property-based proof) → fix → aggregate. Make **ONE**
+`workflow` tool call — `meta`, `script`, and `args` are three properties of ONE arguments
+object, never three separate calls, and never wrapped under a field named `arguments`:
 
 ```json
 {
   "meta": {
     "name": "review",
-    "description": "Adversarial review: confirm findings, then fix until clean"
+    "description": "Property-based review: extract invariants, prove with PBT, fix, aggregate"
   },
   "script": "<the JS below>",
   "args": {
@@ -22,154 +22,258 @@ separate calls, and never wrapped under a field named `arguments`:
 `meta` + `script` are required; `args` is optional. Splitting `meta`/`script`/`args` across
 parallel calls fails with `missing required property "meta"` / `"script"`; wrapping them in
 `arguments` fails with `"arguments" must be an object`. `meta` must contain only `name`,
-`description` (plus optional `whenToUse`/`phases`). `args` may carry an optional `maxRounds`.
+`description` (plus optional `whenToUse`/`phases`).
 
-The two embedded prompts mirror `references/review-agent.md` and `references/fix-agent.md`.
+The three embedded prompts mirror `references/review-agent.md`, `references/fix-agent.md`,
+and `references/main-agent.md`.
 
-The review agent and the old repro agent are merged into one: the review agent
-verifies every finding itself — it writes a failing test that reproduces each finding
-and reports ONLY the findings it confirmed. Unconfirmed findings are dropped, never
-reported. This is what "repro" used to do; it is now part of the review step.
+The workflow is **property-based** and runs in a single pass — no re-review loop. The review
+agent reads the business modules in scope, extracts the pre/post-conditions and invariants of
+every conditional branch into a formal specification table, writes a property test per
+invariant, and executes them with an iteration budget **> 10,000 runs**. Running PBT that many
+times over every invariant is a statistically strong (near-formal) proof, so the outcome is
+trusted without re-reviewing the fixed code: once a counterexample is found it is shrunk to its
+minimal failing input and wrapped as a structured error report (file, line, input,
+expected/actual), the fixer repairs each report and re-runs its counterexample green, and the
+main agent aggregates every counterexample + fix into a final severity report.
 
 ```js
 const { goal, context, task } = args;
 
-const REVIEW_PROMPT = `You are an isolated adversarial code reviewer who CONFIRMS every finding before
-reporting it. You have no prior conversation context — everything you need is in
-this prompt. Your job is to try to BREAK the changes, not approve them. The goal,
-task, and context blocks are injected below.
+const REVIEW_PROMPT = `You are the isolated REVIEW AGENT of a property-based adversarial review. You have no prior
+conversation context — everything you need is in this prompt. Your job is to BREAK the
+business logic by proving (or disproving) its invariants, not to approve it. The goal, task,
+and context blocks are injected below.
 
-Review focus — check for ALL of these:
-1. Unmet requirements — does the code fail to satisfy any requirement?
-2. Harmful design deviation — does the code deviate from the design in a harmful
-   way? A deviation that is BETTER than the design is NOT a finding.
-3. Acceptance violations — does the code violate any acceptance criterion?
-4. Incorrect verification — is anything not correctly verified (missing tests,
-   tests that don't actually assert the behaviour, unverified external-API claims)?
-5. Security — check every change against the security checklist below.
+## 1. Read every business module in scope
+Read the business modules named by the task (the changed files, or the change's surface). Read
+the repo conventions first (AGENTS.md / CLAUDE.md) so your tests match them. Inspect ONLY the
+review scope.
 
-Security checklist:
-1. Injection — SQL/command/code/path built by string interpolation from untrusted input.
-2. Prompt injection — untrusted text (tool output, email, web) treated as instructions.
-3. Missing/insecure authorization (IDOR) — object fetched by id with no ownership check.
-4. SSRF — a "fetch this URL" helper with no scheme/host allow-list.
-5. Insecure deserialization — pickle.loads / yaml.load / eval / JSON.parse on untrusted data.
-6. Broken auth / session / JWT — alg=none, no signature verify, no exp check, weak tokens.
-7. Hardcoded secrets — API keys / passwords / tokens in source or client bundles.
-8. Weak crypto / randomness — MD5/SHA1 for secrets, ECB, Math.random() for tokens.
-9. Path traversal / unsafe file ops — paths from user input; zip-slip on extraction.
-10. Information disclosure — stack traces, internal paths, secrets in logs/errors.
-11. Race conditions (TOCTOU) — check-then-act on shared state without atomicity.
-12. Insecure dependencies — known-vulnerable library versions.
+## 2. Extract a formal specification table
+For each business module, traverse EVERY conditional branch and extract a formal spec row:
+- module — the file/path of the module.
+- branch — the specific conditional branch (the condition expression, or a named path).
+- precondition — what must hold before the branch runs.
+- postcondition — what must hold after it runs.
+- invariant — the property that must hold for ANY input (the claim a property test can pin).
 
-Read the repo first (AGENTS.md / CLAUDE.md + the source in scope) so findings
-reference real code. Inspect ONLY the review scope named in the task.
+Build a machine-readable specification table (an array of these rows). Each row's invariant is
+what you will prove.
 
-Confirm EVERY finding before reporting it — only confirmed findings are reported:
-A finding is only worth reporting if you can PROVE it. For each candidate finding:
-1. Define the business logic under investigation as an invariant.
-2. Write a FAILING test (a fast-check property test, or a deterministic regression)
-   that captures the finding. The test is FORMAL source code that stays in the repo
-   as permanent regression coverage — follow the repo's test conventions exactly:
-   - Write it to the repo's conventional test location for the module under test
-     (the package's test/ directory, in the format the package's test script picks
-     up), using the repo's test framework (node:test + fast-check where AGENTS.md
-     prescribes it).
-   - Name it DESCRIPTIVELY after the invariant it pins (e.g.
-     <module>-<behaviour>.test.mjs), never after a finding id.
-   - Match the repo's existing conventions (imports, formatting, assertion style) so
-     the test passes lint/format like any other source.
-   - If a regression test for an invariant already exists (e.g. from an earlier
-     round), do not duplicate it — re-run it and confirm it still fails for the
-     finding's reason.
-3. Run the test and confirm it FAILS for the reason the finding describes (red).
+## 3. Discover the repo's test + property-testing stack
+Do NOT assume a testing framework. Discover what the repo already uses and follow it exactly:
+- Read the repo's test conventions (AGENTS.md / CLAUDE.md), the package manifest (package.json
+  devDependencies + the 'test' script), and a few existing test files.
+- Identify the property-based testing library the repo uses (fast-check, Vitest/Jest property
+  forms, hypothesis, proptest, quickcheck, etc.) AND the convention for where tests live (test/,
+  tests/, __tests__/, a colocated *.test.ts beside the source) and how they are named/run.
+If the repo has NO property-based testing library, do NOT introduce one: pin the invariant with a
+deterministic regression test (a concrete input and its expected/actual) in the repo's framework,
+and drive many generated inputs with a small explicit loop over that same framework instead
 
-Report ONLY findings you confirmed with a failing test. DROP any finding you cannot
-confirm — an unconfirmed finding is NOT reported, and you must NOT write a test that
-fails for an unrelated reason just to "confirm" it.
+## 4. Write a property-based test for every invariant
+For each spec row, write a property test that pins the invariant against the REAL code, using the
+repo's discovered stack and conventions:
+- Put it in the repo's conventional test location (the directory + format the package's 'test'
+  script actually picks up), using the repo's test framework and its property-testing library if
+  present.
+- Name it DESCRIPTIVELY after the invariant it pins (e.g. <module>-<behaviour>.<ext>), never
+  after a finding id.
+- Match the repo's conventions (imports, formatting, assertion style, module type) so it passes
+  the repo's lint/format.
+- If a property test for an invariant already exists (e.g. from an earlier round), do not
+  duplicate it — re-run it.
 
-Do not report non-logic issues — focus on the code logic itself:
-- Do NOT report stale / outdated documentation or comments.
-- Do NOT report formatting, style, or naming nits.
-- Do NOT report cosmetic suggestions with no correctness impact.
-If the only issues you can find are this kind, return verdict "pass".
+## 5. Execute the tests > 10,000 runs
+Run each property test with a high iteration budget (>= 10000 runs). Configure the run count with
+the repo's library (e.g. fast-check numRuns, a random-seeded loop over the repo's test runner) —
+if the library caps or defaults low, run several batches totalling > 10000. A genuinely correct
+branch passes all runs; a violation surfaces as a counterexample.
 
-Severity levels:
-- critical — wrong results, data loss/corruption, a security hole, or a core
-  requirement entirely unmet. Blocks delivery.
-- high — fails on a common path, violates a stated requirement or acceptance
-  criterion, or deviates from the design in a harmful way. Likely user-visible.
-- medium — fails on an edge/error path, missing or weak test coverage, or a clear
-  maintainability debt. Concrete risk, no immediate breakage.
-- low — a confirmed but non-blocking finding with no correctness impact. Rare, since
-  style/naming/readability nits are not reported.
+## 6. Shrink and wrap every counterexample
+On any counterexample, shrink it to its MINIMAL failing case (prefer the library's built-in
+shrinker; otherwise reduce the input by hand to the smallest value that still fails). Wrap each
+counterexample as a STRUCTURED ERROR REPORT:
+- id — a stable id for the report.
+- level — critical | medium | low (severity below).
+- file — the source file with the defect.
+- line — the exact line of the faulty branch.
+- invariant — the property that was violated (from the spec table).
+- input — the minimal counterexample input(s) that triggered it.
+- expected — what the invariant / postcondition requires.
+- actual — what the code produced.
+- test — the path of the test that exposed it.
 
-Verdict — decide pass vs fail:
-- pass — the code is ready: no confirmed findings, or only confirmed low-severity
-  non-blocking ones. Passing is a deliberate judgment call: do NOT fail a review
-  over nitpicks — low findings alone never block.
-- fail — any confirmed finding at medium or above, or any confirmed finding (even
-  low) that must be addressed before the change is accepted.
+## Rules
+- Confirm EVERY counterexample by running its test and seeing the violation (red). Never
+  report a counterexample you did not reproduce; never write a test that fails for an unrelated
+  reason just to have a report.
+- Report ONLY counterexamples you confirmed. If the code holds for every invariant, return an
+  empty reports list.
+- You write ONLY the tests that expose/pin the counterexamples (formal regression coverage); you
+  NEVER change source.
+- If you touch security-sensitive logic (auth, injection, secrets, file/path handling), pin those
+  invariants too — see references/security-checklist.md.
 
-Return a verdict ("pass" | "fail") and a structured findings list. Every finding
-must reference a concrete location (inside the scope) and a concrete failure mode,
-and carry the id, level, description, and verification_test (the path of the
-failing test that confirms it). If the code is sound, return verdict "pass" with an
-empty findings list.`;
+## Severity
+- critical — wrong results / data loss / a security hole / a core invariant that never holds.
+  Blocks delivery.
+- medium — fails on an edge/error path or a non-core invariant. Concrete risk, no immediate breakage.
+- low — a confirmed but non-blocking counterexample with no correctness impact (rare, since
+  style/naming nit rows are not reported).
 
-const FIX_PROMPT = `You are an isolated subagent. You repair ONLY the confirmed findings, each already
-pinned by a failing test written by the review agent. You have no prior conversation
-context — everything you need is in this prompt. The goal and confirmed findings are
-injected below.
+## Output
+Return a JSON object { spec_table, reports }:
+- spec_table — the array of formal-spec rows (module, branch, precondition, postcondition, invariant).
+- reports — the array of structured error reports (id, level, file, line, invariant, input,
+  expected, actual, test). Empty if the business logic holds.`;
 
-Method:
-1. Make the MINIMAL source change so each confirmed finding's failing test passes
-   (green).
-2. Run the test suite and lint; confirm the pinned tests pass and nothing else broke.
+const FIXER_PROMPT = `You are the isolated FIXER AGENT. You repair the confirmed counterexamples reported by the
+review agent. You have no prior conversation context — everything you need is in this prompt.
+The goal and the structured error reports are injected below.
 
-Constraints:
-- Do NOT delete or weaken the failing regression tests.
-- Do NOT break already-implemented business logic — all other tests must stay green.
-- Do NOT refactor unrelated code or add abstractions / dependency injection unless
-  a finding specifically demands it.
+## Method
+For each error report:
+1. Read the report (file, line, invariant, input, expected, actual) and the source at that location.
+2. Diagnose the faulty conditional branch and make the MINIMAL source change so the reported
+   invariant holds — the test the review agent wrote (report.test) must now PASS.
+3. Re-run the exact counterexample / test and confirm it PASSES (green). Then re-run the
+   relevant test suite + lint to confirm nothing else broke.
+
+## Constraints
+- Do NOT delete or rename the review agent's tests.
+- Do NOT break already-implemented business logic — all other tests stay green.
+- Do NOT refactor unrelated code or add abstractions / dependency injection unless a report
+  specifically demands it.
 - Leave changes UNCOMMITTED.
 
-Return: status ("fixed" | "failed"), fixed_findings (the ids you fixed), and a
-short summary.`;
+## Output
+Return { status: "fixed" | "failed", fixes: [ { id, diff, result, explanation } ] }. For each
+report id include: diff (the corrected code / unified diff), result (the re-run outcome of the
+counterexample test), and a short explanation. status is "fixed" only if EVERY report's
+counterexample now passes; otherwise "failed".`;
+
+const MAIN_PROMPT = `You are the isolated MAIN AGENT. You aggregate every counterexample from the review phase and its
+fix outcome, and produce the final report. You have no prior conversation context — everything
+you need is in this prompt. The goal and the collected error reports + fixes are injected below.
+
+## Aggregate
+1. Collect all counterexample error reports and their fix outcomes
+   (diff + result + explanation).
+2. For each, state its severity (critical | medium | low — inherit the report's level; adjust only
+   if warranted).
+3. Explicitly list, per issue:
+   - logic — WHICH business logic is wrong (file / branch / invariant).
+   - why — the root cause: how the conditional branch violates the invariant, or which edge it
+     mishandles.
+   - impact — the ACTUAL user-visible impact.
+   - fixed — whether the fixer resolved it (yes/no; reference the diff/result).
+4. Verdict: "pass" if no critical/medium counterexample remains open (unfixed); "fail" if any
+   critical/medium counterexample is still open.
+
+## Output
+Return { verdict: "pass" | "fail", summary, issues: [ { id, level, logic, why, impact, fixed, report } ] }.
+If there are no counterexamples, return verdict "pass", a short summary, and an empty issues list.
+If a counterexample is unfixed, carry its report and mark fixed: false.`;
 
 const REVIEW_SCHEMA = {
   type: 'object',
-  required: ['verdict', 'findings'],
+  required: ['spec_table', 'reports'],
   properties: {
-    verdict: { type: 'string', enum: ['pass', 'fail'] },
-    findings: {
+    spec_table: {
       type: 'array',
       items: {
         type: 'object',
-        required: ['id', 'level', 'description', 'verification_test'],
+        required: ['module', 'branch', 'precondition', 'postcondition', 'invariant'],
+        properties: {
+          module: { type: 'string' },
+          branch: { type: 'string' },
+          precondition: { type: 'string' },
+          postcondition: { type: 'string' },
+          invariant: { type: 'string' },
+        },
+      },
+    },
+    reports: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: [
+          'id',
+          'level',
+          'file',
+          'line',
+          'invariant',
+          'input',
+          'expected',
+          'actual',
+          'test',
+        ],
         properties: {
           id: { type: 'string' },
-          level: { type: 'string', enum: ['critical', 'high', 'medium', 'low'] },
-          description: { type: 'string' },
-          verification_test: { type: 'string' },
+          level: { type: 'string', enum: ['critical', 'medium', 'low'] },
+          file: { type: 'string' },
+          line: { type: 'number' },
+          invariant: { type: 'string' },
+          input: { type: 'string' },
+          expected: { type: 'string' },
+          actual: { type: 'string' },
+          test: { type: 'string' },
         },
       },
     },
   },
 };
 
-const FIX_SCHEMA = {
+const FIXER_SCHEMA = {
   type: 'object',
-  required: ['status'],
+  required: ['status', 'fixes'],
   properties: {
     status: { type: 'string', enum: ['fixed', 'failed'] },
-    fixed_findings: { type: 'array', items: { type: 'string' } },
-    summary: { type: 'string' },
+    fixes: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['id', 'diff', 'result', 'explanation'],
+        properties: {
+          id: { type: 'string' },
+          diff: { type: 'string' },
+          result: { type: 'string' },
+          explanation: { type: 'string' },
+        },
+      },
+    },
   },
 };
 
-// The subagent reports to the workflow as JSON: each agent() call passes a schema and
-// returns the validated JSON object. Only the subagent's input prompt is text.
+const MAIN_SCHEMA = {
+  type: 'object',
+  required: ['verdict', 'summary', 'issues'],
+  properties: {
+    verdict: { type: 'string', enum: ['pass', 'fail'] },
+    summary: { type: 'string' },
+    issues: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['id', 'level', 'logic', 'why', 'impact', 'fixed', 'report'],
+        properties: {
+          id: { type: 'string' },
+          level: { type: 'string', enum: ['critical', 'medium', 'low'] },
+          logic: { type: 'string' },
+          why: { type: 'string' },
+          impact: { type: 'string' },
+          fixed: { type: 'boolean' },
+          report: { type: 'object' },
+        },
+      },
+    },
+  },
+};
+
+// The subagent reports to the workflow as JSON: each agent() call passes a schema and returns
+// the validated JSON object. Only the subagent's input prompt is text.
 
 function contextBlock() {
   return [
@@ -183,47 +287,68 @@ function contextBlock() {
   ].join('\n');
 }
 
-const maxRounds = args.maxRounds ?? 8;
+// Single pass: the PBT runs > 10,000 iterations per invariant, so the review outcome is a
+// statistically strong proof — there is no re-review loop and no round cap. Review → fix →
+// aggregate run in order; the fixer is skipped when the review found no counterexample.
+phase('review');
+const review = await agent(
+  REVIEW_PROMPT + '\n\n## Goal\n' + goal + '\n\n## Task\n' + task + '\n\n' + contextBlock(),
+  { label: 'review', schema: REVIEW_SCHEMA },
+);
+if (review === null) return { status: 'blocked', reason: 'review agent failed', reports: [] };
 
-for (let round = 1; round <= maxRounds; round++) {
-  phase('round-' + round);
+const reports = review.reports;
+const clean = reports.length === 0;
 
-  // Stage 1 — review + in-agent reproduction (the review agent confirms each finding)
-  const review = await agent(
-    REVIEW_PROMPT + '\n\n## Goal\n' + goal + '\n\n## Task\n' + task + '\n\n' + contextBlock(),
-    { label: 'review-' + round, schema: REVIEW_SCHEMA },
-  );
-  if (review === null) return { status: 'blocked', reason: 'review agent failed', round };
-  const findings = review.findings;
-  if (review.verdict === 'pass' || findings.length === 0)
-    return { status: 'done', rounds: round, verdict: review.verdict, findings };
-
-  // Stage 2 — fix the confirmed findings
+// Stage 2 — fixer: repair each counterexample and re-run it green (only if any were found)
+let fixes = [];
+if (!clean) {
+  phase('fix');
   const fix = await agent(
-    FIX_PROMPT +
+    FIXER_PROMPT +
       '\n\n## Goal\n' +
       goal +
-      '\n\n## Confirmed findings\n' +
-      JSON.stringify(findings, null, 2),
-    { label: 'fix-' + round, schema: FIX_SCHEMA },
+      '\n\n## Error reports\n' +
+      JSON.stringify(reports, null, 2),
+    { label: 'fix', schema: FIXER_SCHEMA },
   );
-  if (fix === null) return { status: 'blocked', reason: 'fix agent failed', round, findings };
-  if (fix.status === 'failed') return { status: 'failed', round, findings };
+  if (fix === null) return { status: 'blocked', reason: 'fix agent failed', reports };
+  fixes = fix.fixes;
 }
 
-return { status: 'blocked', reason: 'max rounds reached', rounds: maxRounds };
+// Stage 3 — main: aggregate every counterexample + fix into the final severity report
+phase('aggregate');
+const main = await agent(
+  MAIN_PROMPT +
+    '\n\n## Goal\n' +
+    goal +
+    '\n\n## Error reports\n' +
+    JSON.stringify(reports, null, 2) +
+    '\n\n## Fixes\n' +
+    JSON.stringify(fixes, null, 2),
+  { label: 'main-report', schema: MAIN_SCHEMA },
+);
+if (main === null) return { status: 'blocked', reason: 'main agent failed', reports };
+
+return {
+  status: 'done',
+  clean,
+  verdict: main.verdict,
+  report: main,
+  reports,
+  fixes,
+};
 ```
 
 ## Reading the result
 
-- `rounds` — number of rounds run.
-- `verdict` — the last review round's verdict ("pass" | "fail").
-- `findings` — the last review round's findings. When `verdict` is "pass", these are
-  confirmed but non-blocking (low-severity) items the reviewer chose not to fix; when
-  "fail", the confirmed findings that went to fix.
-- `status: 'done'` — a review round returned `verdict: 'pass'` (no confirmed findings,
-  or only confirmed low-severity non-blocking ones — those findings are returned but
-  not fixed), so nothing is left to fix.
-- `status: 'blocked'` — the round cap was hit with findings still open; inspect the last
-  round's work.
-- `status: 'failed'` — the fix agent could not repair a confirmed finding.
+- `clean` — true when the review found no counterexample (the business logic held for every
+  invariant); false when at least one counterexample was found.
+- `verdict` — the main agent's verdict ("pass" | "fail"). `pass` means no critical/medium
+  counterexample remains open; `fail` means at least one remains.
+- `report` — the main agent's aggregate report: `{ verdict, summary, issues }`, where each issue
+  lists the business logic that is wrong, why it is wrong, the user impact, and whether it was fixed.
+- `reports` — every structured error report found (file, line, invariant, input, expected, actual, test).
+- `fixes` — the fixer's per-report outcome (id, diff, result, explanation).
+- `status: 'done'` — the single pass ran to completion (proof clean, or fixed to green).
+- `status: 'blocked'` — a subagent failed.

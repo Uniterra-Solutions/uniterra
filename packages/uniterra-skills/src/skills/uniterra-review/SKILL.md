@@ -1,27 +1,29 @@
 ---
 name: uniterra-review
 description: >
-  Company-standard adversarial review on DeepSeek Harness. Usable whenever
-  there is a review scope — no plan required. Assemble the goal + context
+  Company-standard property-based adversarial review on DeepSeek Harness. Usable
+  whenever there is a review scope — no plan required. Assemble the goal + context
   (requirements, design, acceptance — from docs or your own input for simple
-  tasks), then run a review workflow: a single review agent grades findings by
-  severity (critical / high / medium / low) and CONFIRMS each one by writing a
-  failing test before reporting it — only confirmed findings are reported
-  (unconfirmed findings are dropped), and it never reports low-value issues like
-  stale docs or comments (it focuses on the code logic itself). A fix agent then
-  repairs only the confirmed findings. LOAD when:
+  tasks), then run a review workflow: a review agent reads the business modules,
+  extracts the pre/post-conditions and invariants of every conditional branch into
+  a formal specification table, writes a property test per invariant and executes
+  them with an iteration budget > 10,000 runs, then shrinks every counterexample to
+  a structured error report (file, line, input, expected/actual). A fixer agent
+  repairs each reported branch and re-runs the counterexample green. A main agent
+  aggregates every counterexample + fix by severity (critical / medium / low) and
+  states which business logic is wrong, why, and the user impact. LOAD when:
   - User asks to review changes, hunt for bugs, or run the review phase
     (review / 審查 / code review)
-  - User asks to verify uncommitted work against its requirements
+  - User asks to verify business logic is invariant-correct
   Do NOT use for simplification review (uniterra-simplify), planning
   (uniterra-plan), or implementing (uniterra-implement).
 ---
 
-# Uniterra Review — requirements/design/acceptance-driven adversarial review
+# Uniterra Review — property-based adversarial review
 
 Pipeline position: after `uniterra-implement`, or standalone. The review is
-driven by a goal + three context blocks (requirements, design, acceptance) —
-NOT by `execution-plan.json`.
+driven by a goal + three context blocks (requirements, design, acceptance) and a
+task that names the review scope — NOT by `execution-plan.json`.
 
 ## 1. Assemble goal and context
 
@@ -34,62 +36,63 @@ NOT by `execution-plan.json`.
 The three context blocks may come from the plan docs (`prd.md`, `design.md`,
 `acceptance.md`) OR be written by you directly when no plan exists (simple
 tasks). Any block may be empty — the review agent treats an empty block as "no
-contract on that axis".
+contract on that axis"; the property-based invariants carry the review.
 
 ## 2. Run the review workflow
 
 Use `assets/workflow-template.md` with the `workflow` tool as **ONE call** whose `arguments`
 is a single object with `meta` + `script` + `args` together (never split across parallel
 calls, never wrapped in a field named `arguments`). `args = { goal, context, task }`. One
-workflow, two stages:
+workflow, three roles:
 
-1. **review agent** (`references/review-agent.md`) — comprehensive adversarial
-   review covering correctness AND security (`references/security-checklist.md`).
-   The review and repro agents are merged into one: the review agent CONFIRMS every
-   finding before reporting it by writing a failing regression test in the repo's
-   conventional test location (descriptive, invariant-based name — never a finding
-   id), so only confirmed findings are reported and unconfirmed findings are
-   dropped. It does NOT report low-value non-logic issues (stale docs/comments,
-   formatting/style nits) — it focuses on the code logic itself. Returns a verdict
-   (`pass` | `fail`) plus findings graded critical / high / medium / low, each
-   carrying the path of its confirming test.
-2. **fix agent** (`references/fix-agent.md`) — repairs only the confirmed findings
-   under constraints (no weakened tests, no broken business logic).
+1. **review agent** (`references/review-agent.md`) — reads every business module in scope,
+   discovers the repo's test + property-testing conventions (never assumes a framework), then
+   extracts the pre/post-conditions and invariants of each conditional branch into a formal
+   specification table, writes a property test per invariant in the repo's conventional test
+   location (following its property-testing library, file layout, and naming), and executes them
+   with an iteration budget **> 10,000 runs**. Each counterexample is shrunk to its minimal
+   failing input and wrapped as a structured error report (id, severity, file, line, invariant,
+   input, expected/actual, test). Only confirmed counterexamples are reported. Returns
+   `{ spec_table, reports }`.
+2. **fixer agent** (`references/fix-agent.md`) — repairs each reported conditional branch so
+   its property test passes, re-runs the counterexample to confirm green, and returns a diff +
+   execution result + explanation per fix. It never deletes or weakens the property tests and
+   leaves changes UNCOMMITTED.
+3. **main agent** (`references/main-agent.md`) — aggregates every counterexample + fix by
+   severity (**critical / medium / low**) and explicitly lists which business logic is wrong,
+   why it is wrong, and the actual user-visible impact, plus whether each was fixed. Returns
+   `{ verdict, summary, issues }`.
 
-The workflow loops **review → fix → re-review** until a review round returns
-`verdict: 'pass'` (no confirmed findings, or only confirmed low-severity
-non-blocking ones), or the round cap (`maxRounds`, default 8) is hit.
+The workflow runs a **single pass** (no re-review loop) because the PBT executes **> 10,000
+runs per invariant**, which is a statistically strong (near-formal) proof of the branch's
+invariant — so the outcome is trusted after one review, and the fixer only re-runs each
+counterexample to confirm it is green (it does not re-review the whole change). A `pass` verdict
+means no critical/medium counterexample remains open.
 
-A `pass` verdict means the change is ready — the reviewer judged every confirmed
-finding non-blocking, so they are returned with the result but NOT fixed. `fail`
-means at least one confirmed finding must be addressed: it goes to fix, and the
-loop re-reviews until it passes.
-
-The subagent **reports to the workflow as JSON** (validated by the `schema` each
-`agent(...)` call passes); only the subagent **input prompts** are text.
+The subagent **reports to the workflow as JSON** (validated by the `schema` each `agent(...)`
+call passes); only the subagent **input prompts** are text.
 
 ## Severity levels
 
-- **critical** — wrong results, data loss/corruption, a security hole, or a core
-  requirement entirely unmet. Blocks delivery.
-- **high** — fails on a common path, violates a stated requirement or acceptance
-  criterion, or deviates from the design in a harmful way. Likely user-visible.
-- **medium** — fails on an edge/error path, missing or weak test coverage, or a
-  clear maintainability debt. Concrete risk, no immediate breakage.
-- **low** — a confirmed but non-blocking finding with no correctness impact. Rare,
-  since style/naming/readability nits are not reported.
+- **critical** — wrong results / data loss / a security hole / a core invariant that never
+  holds. Blocks delivery.
+- **medium** — fails on an edge/error path or a non-core invariant. Concrete risk, no immediate
+  breakage.
+- **low** — a confirmed but non-blocking counterexample with no correctness impact. Rare, since
+  style/naming nit rows are not reported.
 
 ## Rules
 
-- The review agent never modifies source (it only adds the failing regression
-  tests that confirm its findings).
-- The fix agent leaves changes UNCOMMITTED and never weakens the regression tests.
-- Findings must reference a concrete location + failure mode.
+- The review agent never modifies source (it only writes the property tests that expose and pin
+  the counterexamples).
+- The fixer agent leaves changes UNCOMMITTED and never deletes or weakens the property tests.
+- Counterexample reports must reference a concrete file + line + failure mode (the property the
+  branch violated).
 
 ## Files
 
-- `assets/workflow-template.md` — the review → fix workflow script (review +
-  in-agent reproduction merged into one agent).
-- `references/review-agent.md`, `references/fix-agent.md` — the two agent prompts.
-- `references/security-checklist.md` — the focus checklist of common AI-agent
-  code-security mistakes.
+- `assets/workflow-template.md` — the review → fix → aggregate workflow script (three roles).
+- `references/review-agent.md` — formal-spec extraction + property-based proof + shrink.
+- `references/fix-agent.md`, `references/main-agent.md` — the fixer and aggregator prompts.
+- `references/security-checklist.md` — optional focus checklist of common AI-agent
+  code-security mistakes (pinned as security invariants when relevant).
