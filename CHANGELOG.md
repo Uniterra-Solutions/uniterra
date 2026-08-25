@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] — 2026-08-25
+
+### Added
+
+- `uniterra-review`: new `references/main-agent.md` aggregator prompt.
+
+### Changed
+
+- `uniterra-review`: reworked into a **property-based 3-agent workflow** (review → fix → aggregate) running in a single pass (the re-review loop is removed — a >10,000-run PBT per invariant is a statistically strong proof). The review agent reads the business modules in scope, extracts each conditional branch's pre/post-conditions and invariants into a formal specification table, writes a property test per invariant in the repo's existing test + property-testing stack and conventional test location (never assumes fast-check or a test dir), executes >10,000 runs, and shrinks every counterexample into a structured error report (file, line, input, expected/actual). The fixer repairs each reported branch and re-runs its counterexample green, returning a diff + result + explanation; the main agent aggregates every counterexample + fix by severity (critical / medium / low), stating which logic is wrong, why, and the user impact. References/security-checklist.md is now an optional invariant focus list.
+
 ## [0.12.0] — 2026-08-24
 
 ### Changed
