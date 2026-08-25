@@ -237,18 +237,13 @@ test('review and simplify templates end on a pass verdict without fix rounds', a
     {
       file: 'uniterra-review/assets/workflow-template.md',
       args: { goal: 'g', context: { requirements: '', design: '', acceptance: '' }, task: 't' },
-      reviewResponse: {
-        verdict: 'pass',
-        findings: [
-          {
-            id: 'f1',
-            level: 'low',
-            description: 'confirmed non-blocking finding',
-            verification_test: 'test/example.test.mjs',
-          },
-        ],
-      },
-      downstreamLabels: ['fix-'],
+      // A clean review finds no counterexample, so the single-pass workflow is proven sound:
+      // the fixer is skipped and the main agent aggregates an empty issues list.
+      reviewResponse: { spec_table: [], reports: [] },
+      mainResponse: { verdict: 'pass', summary: 'no counterexamples', issues: [] },
+      carriedField: 'report.issues',
+      carriedLength: 0,
+      downstreamLabels: ['fix'],
     },
     {
       file: 'uniterra-simplify/assets/workflow-template.md',
@@ -257,6 +252,8 @@ test('review and simplify templates end on a pass verdict without fix rounds', a
         verdict: 'pass',
         recommendations: [{ id: 'r1', safetiness: 'safe', description: 'cosmetic nit' }],
       },
+      carriedField: 'recommendations',
+      carriedLength: 1,
       downstreamLabels: ['fix-'],
     },
   ];
@@ -270,8 +267,10 @@ test('review and simplify templates end on a pass verdict without fix rounds', a
       ): Promise<unknown> => {
         assert.equal(typeof prompt, 'string');
         assert.ok(prompt.length > 0, 'agent() requires a non-empty prompt');
-        called.push(opts?.label ?? '');
-        if ((opts?.label ?? '').startsWith('review-')) return c.reviewResponse;
+        const label = opts?.label ?? '';
+        called.push(label);
+        if (label === 'review' || label.startsWith('review-')) return c.reviewResponse;
+        if (label === 'main-report') return c.mainResponse ?? fillSchema(opts?.schema);
         return opts?.schema === undefined ? '' : fillSchema(opts.schema);
       },
       parallel: async (
@@ -310,18 +309,19 @@ test('review and simplify templates end on a pass verdict without fix rounds', a
     const script = new vm.Script(DSH_WRAPPER_PREFIX + body + DSH_WRAPPER_SUFFIX, {
       filename: c.file,
     });
-    const result = (await script.runInContext(context)) as {
-      status?: string;
-      verdict?: string;
-      findings?: Array<{ id: string }>;
-      recommendations?: Array<{ id: string }>;
-    };
+    const result = (await script.runInContext(context)) as Record<string, unknown>;
     assert.equal(result.status, 'done', `${c.file}: a pass verdict must end the workflow as done`);
     assert.equal(result.verdict, 'pass', `${c.file}: the result must carry the pass verdict`);
-    const carried = result.findings ?? result.recommendations;
+    const carried: unknown = c.carriedField
+      .split('.')
+      .reduce<unknown>(
+        (acc, key) =>
+          acc && typeof acc === 'object' ? (acc as Record<string, unknown>)[key] : undefined,
+        result,
+      );
     assert.equal(
-      carried?.length,
-      1,
+      (carried as unknown[] | undefined)?.length,
+      c.carriedLength,
       `${c.file}: non-blocking items must be returned with the result, not dropped`,
     );
     for (const label of c.downstreamLabels) {
