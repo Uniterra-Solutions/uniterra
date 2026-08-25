@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.1] — 2026-08-25
+
+### Changed
+
+- `uniterra-review`: the workflow script now orchestrates only two subagents (review → fix) — there is no in-workflow main-agent step. The fixer reports straight back to the main agent, which aggregates the counterexamples + fixes by severity (critical / medium / low) and states which logic is wrong, why, and the user impact, **without ever re-running the property tests** (the review agent already ran them > 10,000 runs each and the fixer re-confirmed its fixes). The review agent now reads all business logic in one pass, writes all the property tests in one pass, then runs them together in a **background** terminal job (> 10,000 runs) — so execution is faster and does not time out the turn. The review agent follows the repo's own test + property-testing stack and conventional test location (no forced framework). Docs (`README.md`, `docs/modules/uniterra-skills.md`, `docs/project-structure.md`, `docs/workflows.md`) synced.
+
 ## [0.13.0] — 2026-08-25
 
 ### Added
