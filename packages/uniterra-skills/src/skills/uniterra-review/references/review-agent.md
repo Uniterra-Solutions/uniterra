@@ -8,8 +8,9 @@ blocks are injected below.
 ## 1. Read every business module in scope
 
 Read the business modules named by the task (the changed files, or the change's surface). Read
-the repo conventions first (AGENTS.md / CLAUDE.md) so your tests match them. Inspect ONLY the
-review scope.
+the repo conventions first (AGENTS.md / CLAUDE.md) so your tests match them. Read ALL the business
+logic in ONE pass before writing any test — do not read one module, write its test, and run it
+before moving on. Inspect ONLY the review scope.
 
 ## 2. Extract a formal specification table
 
@@ -38,12 +39,13 @@ If the repo has NO property-based testing library, do NOT introduce one: pin the
 deterministic regression test (a concrete input and its expected/actual) in the repo's framework,
 and drive many generated inputs with a small explicit loop over that same framework instead.
 
-## 4. Write a property-based test for every invariant
+## 4. Write ALL the tests in one pass
 
-For each spec row, write a property test that pins the invariant against the REAL code, using the
-repo's discovered stack and conventions:
+For EVERY spec row, write the property test that pins the invariant against the REAL code, using
+the repo's discovered stack and conventions. Write ALL of them first, in a single pass, before you
+run any of them:
 
-- Put it in the repo's conventional test location (the directory + format the package's `test`
+- Put each in the repo's conventional test location (the directory + format the package's `test`
   script actually picks up), using the repo's test framework and its property-testing library if
   present.
 - Name it DESCRIPTIVELY after the invariant it pins (e.g. `<module>-<behaviour>.<ext>`), never
@@ -51,14 +53,17 @@ repo's discovered stack and conventions:
 - Match the repo's conventions (imports, formatting, assertion style, module type) so it passes
   the repo's lint/format.
 - If a property test for an invariant already exists (e.g. from an earlier run), do not duplicate
-  it — re-run it.
+  it — re-run it instead.
 
-## 5. Execute the tests > 10,000 runs
+## 5. Run all the tests together, in the background
 
-Run each property test with a high iteration budget (>= 10000 runs). Configure the run count with
-the repo's library (e.g. fast-check `numRuns`, a random-seeded loop over the repo's test runner) —
-if the library caps or defaults low, run several batches totalling > 10000. A genuinely correct
-branch passes all runs; a violation surfaces as a counterexample.
+After EVERY test is written, run them ALL in ONE command so the batch executes once. Launch the
+run as a BACKGROUND terminal job (a background shell / `run_in_background`) — a > 10,000-run PBT
+takes a while, and holding the foreground until it finishes times out the turn. Configure the run
+count with the repo's library (e.g. fast-check `numRuns`, a random-seeded loop over the repo's
+test runner) — if the library caps or defaults low, run several batches totalling > 10000. A
+genuinely correct branch passes all runs; a violation surfaces as a counterexample. Read the full
+output once the background job settles, then act on the counterexamples.
 
 ## 6. Shrink and wrap every counterexample
 
@@ -78,6 +83,10 @@ counterexample as a STRUCTURED ERROR REPORT:
 
 ## Rules
 
+- Read ALL the business logic first, write ALL the tests, then run them ALL at once — never write
+  one test and run it before writing the next (that is far slower).
+- Run the PBT in the background terminal; never block the foreground waiting for them to finish
+  (that times out the turn). Collect the batch output once it settles.
 - Confirm EVERY counterexample by running its test and seeing the violation (red). Never report a
   counterexample you did not reproduce; never write a test that fails for an unrelated reason just
   to have a report.
