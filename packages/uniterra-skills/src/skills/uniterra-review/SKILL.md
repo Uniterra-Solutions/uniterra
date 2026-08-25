@@ -2,18 +2,19 @@
 name: uniterra-review
 description: >
   Company-standard property-based adversarial review on DeepSeek Harness. Usable
-  whenever there is a review scope — no plan required. Assemble the goal + context
-  (requirements, design, acceptance — from docs or your own input for simple
-  tasks), then run a review workflow: a review agent reads the business modules,
-  extracts the pre/post-conditions and invariants of every conditional branch into
-  a formal specification table, writes all the property tests in one pass and
-  executes them in the background with an iteration budget > 10,000 runs, then
-  shrinks every counterexample to a structured error report (file, line, input,
-  expected/actual). A fixer agent repairs each reported branch and re-runs the
-  counterexample green, reporting straight back. You (the main agent) then
-  aggregate every counterexample + fix by severity (critical / medium / low) and
-  state which business logic is wrong, why, and the user impact — never re-running
-  the tests yourself. LOAD when:
+  whenever there is a review scope — no plan required. Assemble the review scope
+  (what to review), then run a review workflow: a review agent is given ONLY that
+  scope — no main-agent goal/requirements/design/acceptance framing, to avoid
+  bias — reads the business modules and traverses every business path, extracts
+  the pre/post-conditions and invariants of every conditional branch (plus
+  security invariants) into a formal specification table, writes all the property
+  tests in one pass and executes them in the background with an iteration budget
+  > 10,000 runs, then shrinks every counterexample to a structured error report
+  (file, line, input, expected/actual). A fixer agent repairs each reported branch
+  and re-runs the counterexample green, reporting straight back. You (the main
+  agent) then aggregate every counterexample + fix by severity (critical / medium
+  / low) and state which business logic is wrong, why, and the user impact — never
+  re-running the tests yourself. LOAD when:
   - User asks to review changes, hunt for bugs, or run the review phase
     (review / 審查 / code review)
   - User asks to verify business logic is invariant-correct
@@ -24,35 +25,44 @@ description: >
 # Uniterra Review — property-based adversarial review
 
 Pipeline position: after `uniterra-implement`, or standalone. The review is
-driven by a goal + three context blocks (requirements, design, acceptance) and a
-task that names the review scope — NOT by `execution-plan.json`.
+driven by the **review scope** (what changed / what to review) — NOT by
+`execution-plan.json` and NOT by the main agent's requirements/design/acceptance
+interpretation.
 
-## 1. Assemble goal and context
+## 1. Assemble the review scope
 
-- **goal** — one line: what the change should achieve.
-- **context.requirements** — the requirements list.
-- **context.design** — the architecture/design.
-- **context.acceptance** — the acceptance criteria list.
-- **task** — what to review: the scope (default: uncommitted changes) + focus.
+Give the review agent ONLY the scope — deliberately, to avoid bias and to avoid duplicate reading:
 
-The three context blocks may come from the plan docs (`prd.md`, `design.md`,
-`acceptance.md`) OR be written by you directly when no plan exists (simple
-tasks). Any block may be empty — the review agent treats an empty block as "no
-contract on that axis"; the property-based invariants carry the review.
+- **Do NOT feed it your own understanding of the code.** Never write a summary, a "what this does",
+  a believed bug, an expected contract, or your interpretation of the intent into the scope. That
+  pollutes the review agent with YOUR reading and biases it before it looks at the code.
+- **Do NOT read the code yourself to re-describe it.** The review agent reads the code itself;
+  your pre-reading only duplicates that work and injects your conclusions. Let the review agent do
+  the reading.
+- Just name the scope: the changed business modules / the diff (+ any focus).
+
+- **task** — what to review: the scope (default: the uncommitted changes / the diff), e.g.
+  "review the changed modules in packages/uniterra-provider (the diff)".
+
+The review agent reads those business modules itself, traverses every business path, and derives
+the invariants from the code — so it is not pre-biased by your framing.
 
 ## 2. Run the review workflow
 
 Use `assets/workflow-template.md` with the `workflow` tool as **ONE call** whose `arguments`
 is a single object with `meta` + `script` + `args` together (never split across parallel
-calls, never wrapped in a field named `arguments`). `args = { goal, context, task }`. The
+calls, never wrapped in a field named `arguments`). `args = { task }` (the scope). The
 workflow orchestrates **two subagents** — there is no main-agent step inside it:
 
-1. **review agent** (`references/review-agent.md`) — reads every business module in scope in ONE
-   pass, discovers the repo's test + property-testing conventions (never assumes a framework),
-   extracts the pre/post-conditions and invariants of each conditional branch into a formal
-   specification table, writes ALL the property tests in one pass, then runs them together in a
-   **background** terminal job with an iteration budget **> 10,000 runs**. Each counterexample is
-   shrunk to its minimal failing input and wrapped as a structured error report (id, severity,
+1. **review agent** (`references/review-agent.md`) — given ONLY the scope (not the orchestrator's
+   goal/requirements/design/acceptance, to avoid bias), it reads every business module and
+   traverses every business path in ONE pass, discovers the repo's test + property-testing
+   conventions (never assumes a framework), extracts the pre/post-conditions and invariants of
+   each conditional branch into a formal specification table, AND derives security invariants from
+   the security checklist (`references/security-checklist.md`) — security is verified via PBT too,
+   not just correctness. It writes ALL the property tests in one pass, then runs them together in
+   a **background** terminal job with an iteration budget **> 10,000 runs**. Each counterexample
+   is shrunk to its minimal failing input and wrapped as a structured error report (id, severity,
    file, line, invariant, input, expected/actual, test). Only confirmed counterexamples are
    reported. Returns `{ spec_table, reports }`.
 2. **fixer agent** (`references/fix-agent.md`) — repairs each reported conditional branch so its

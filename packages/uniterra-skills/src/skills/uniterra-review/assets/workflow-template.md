@@ -12,8 +12,6 @@ calls, and never wrapped under a field named `arguments`:
   },
   "script": "<the JS below>",
   "args": {
-    "goal": "...",
-    "context": { "requirements": "...", "design": "...", "acceptance": "..." },
     "task": "..."
   }
 }
@@ -24,6 +22,12 @@ parallel calls fails with `missing required property "meta"` / `"script"`; wrapp
 `arguments` fails with `"arguments" must be an object`. `meta` must contain only `name`,
 `description` (plus optional `whenToUse`/`phases`).
 
+`args.task` is the **review scope** — what to review (the changed business modules / the diff, plus
+any focus). That is ALL the review agent receives. The main agent's own framing (a goal line,
+requirements / design / acceptance interpretation) is deliberately NOT injected, because passing the
+orchestrator's interpretation biases the review before it starts. The review agent reads the code
+and traverses the business paths itself.
+
 There is **no main agent inside the workflow** — the workflow orchestrates only two subagents:
 the review agent and the fixer agent. The fixer reports directly back to the **main agent** (the
 orchestrator that ran the `workflow` call), which then aggregates the results itself. The two
@@ -31,29 +35,37 @@ embedded prompts mirror `references/review-agent.md` and `references/fix-agent.m
 agent's aggregation contract lives in `references/main-agent.md`.
 
 The workflow is **property-based** and runs in a **single pass** — no re-review loop and no round
-cap. The review agent reads the business modules in scope, extracts the pre/post-conditions and
-invariants of every conditional branch into a formal specification table, writes a property test
-per invariant, and executes them with an iteration budget **> 10,000 runs** (run in the
-background, and written all-then-run-all). Running PBT that many times over every invariant is a
-statistically strong (near-formal) proof, so the outcome is trusted without re-reviewing the
-fixed code: once a counterexample is found it is shrunk to its minimal failing input and wrapped
-as a structured error report (file, line, input, expected/actual), the fixer repairs each report
-and re-runs its counterexample green, and the main agent aggregates the reports + fixes into a
-final severity report — **without ever re-running the property tests itself**.
+cap. The review agent is given the scope and reads the business modules, extracts the
+pre/post-conditions and invariants of every conditional branch into a formal specification table,
+writes a property test per invariant, and executes them with an iteration budget **> 10,000 runs**
+(run in the background, and written all-then-run-all). Running PBT that many times over every
+invariant is a statistically strong (near-formal) proof, so the outcome is trusted without
+re-reviewing the fixed code: once a counterexample is found it is shrunk to its minimal failing
+input and wrapped as a structured error report (file, line, input, expected/actual), the fixer
+repairs each report and re-runs its counterexample green, and the main agent aggregates the reports
+
+- fixes into a final severity report — **without ever re-running the property tests itself**.
 
 ```js
-const { goal, context, task } = args;
+const { task } = args;
 
 const REVIEW_PROMPT = `You are the isolated REVIEW AGENT of a property-based adversarial review. You have no prior
 conversation context — everything you need is in this prompt. Your job is to BREAK the
-business logic by proving (or disproving) its invariants, not to approve it. The goal, task,
-and context blocks are injected below.
+business logic by proving (or disproving) its invariants, not to approve it. You are given ONLY
+the review scope below.
+
+Anti-bias rule — you are deliberately NOT given the orchestrator's goal, requirements, design, or
+acceptance interpretation. Those are the MAIN AGENT's assumptions; trusting them biases your review
+before it starts. Read the ACTUAL code and derive the invariants from it yourself. Never assume a
+module is correct, intended, or safe because of any framing you were (not) handed — you judge the
+code as it is.
 
 ## 1. Read every business module in scope
-Read the business modules named by the task (the changed files, or the change's surface). Read
-the repo conventions first (AGENTS.md / CLAUDE.md) so your tests match them. Read ALL the
-business logic in ONE pass before writing any test — do not read one module, write its test, and
-run it before moving on. Inspect ONLY the review scope.
+Read every business module named by the review scope (the changed files, or the change's surface).
+Read the repo conventions first (AGENTS.md / CLAUDE.md) so your tests match them. Traverse EVERY
+business path the change touches — entry points, each conditional branch, each edge/error path —
+in ONE pass before writing any test; do not read one module, write its test, and run it before
+moving on. Inspect ONLY the review scope.
 
 ## 2. Extract a formal specification table
 For each business module, traverse EVERY conditional branch and extract a formal spec row:
@@ -65,6 +77,15 @@ For each business module, traverse EVERY conditional branch and extract a formal
 
 Build a machine-readable specification table (an array of these rows). Each row's invariant is
 what you will prove.
+
+Derive **security invariants** too — this is a first-class axis, not an afterthought. Run through
+references/security-checklist.md and, for EVERY item that applies to the code in scope, add a spec
+row whose invariant is the security property (e.g. 'the resolved path always stays under the base
+directory for any user-supplied input', 'get(id) denies resources the caller does not own', 'no
+untrusted input reaches a query/command/path sink without escaping'). Each security invariant is
+proven with its own PBT test, exactly like a business-logic invariant. For checklist items that are
+not property-based (a hardcoded secret, a known-vulnerable dependency), check them deterministically
+and report them as findings if present.
 
 ## 3. Discover the repo's test + property-testing stack
 Do NOT assume a testing framework. Discover what the repo already uses and follow it exactly:
@@ -126,8 +147,10 @@ counterexample as a STRUCTURED ERROR REPORT:
   empty reports list.
 - You write ONLY the tests that expose/pin the counterexamples (formal regression coverage); you
   NEVER change source.
-- If you touch security-sensitive logic (auth, injection, secrets, file/path handling), pin those
-  invariants too — see references/security-checklist.md.
+- Security is a mandatory axis, not optional: run every item of references/security-checklist.md
+  against the code and prove each applicable security property with a PBT test (or a deterministic
+  check for non-property items). A security hole is a critical counterexample — report it, don't
+  wave it through.
 
 ## Severity
 - critical — wrong results / data loss / a security hole / a core invariant that never holds.
@@ -147,7 +170,7 @@ Return a JSON object { spec_table, reports }:
 const FIXER_PROMPT = `You are the isolated FIXER AGENT. You repair the confirmed counterexamples reported by the
 review agent, then report the results directly back to the MAIN AGENT (the orchestrator that
 dispatched you). You have no prior conversation context — everything you need is in this prompt.
-The goal and the structured error reports are injected below.
+The structured error reports are injected below.
 
 ## Method
 For each error report:
@@ -245,26 +268,15 @@ const FIXER_SCHEMA = {
 // The subagent reports to the workflow as JSON: each agent() call passes a schema and returns
 // the validated JSON object. Only the subagent's input prompt is text.
 
-function contextBlock() {
-  return [
-    '## Context',
-    '### Requirements',
-    context.requirements || '(none)',
-    '### Design',
-    context.design || '(none)',
-    '### Acceptance',
-    context.acceptance || '(none)',
-  ].join('\n');
-}
-
 // Single pass, no main-agent step inside the workflow: the PBT runs > 10,000 iterations per
 // invariant, so the review outcome is a statistically strong proof. The fixer reports straight to
-// the main agent, which aggregates the returned reports + fixes itself.
+// the main agent, which aggregates the returned reports + fixes itself. The review agent is given
+// ONLY the scope — the orchestrator's goal/context framing is deliberately not passed (anti-bias).
 phase('review');
-const review = await agent(
-  REVIEW_PROMPT + '\n\n## Goal\n' + goal + '\n\n## Task\n' + task + '\n\n' + contextBlock(),
-  { label: 'review', schema: REVIEW_SCHEMA },
-);
+const review = await agent(REVIEW_PROMPT + '\n\n## Review scope\n' + task, {
+  label: 'review',
+  schema: REVIEW_SCHEMA,
+});
 if (review === null) return { status: 'blocked', reason: 'review agent failed' };
 
 const reports = review.reports;
@@ -275,11 +287,7 @@ let fixes = [];
 if (!clean) {
   phase('fix');
   const fix = await agent(
-    FIXER_PROMPT +
-      '\n\n## Goal\n' +
-      goal +
-      '\n\n## Error reports\n' +
-      JSON.stringify(reports, null, 2),
+    FIXER_PROMPT + '\n\n## Error reports\n' + JSON.stringify(reports, null, 2),
     { label: 'fix', schema: FIXER_SCHEMA },
   );
   if (fix === null) return { status: 'blocked', reason: 'fix agent failed', reports };

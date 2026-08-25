@@ -1,8 +1,13 @@
 # Security Checklist
 
 A focus checklist for the review agent: the security mistakes AI coding agents
-most often introduce. Review every change against these alongside business-logic
-correctness. Sources: [OWASP Top 10 for LLM Applications](https://safeguard.sh/resources/blog/owasp-top-10-llm-applications-explained),
+most often introduce. It is a **first-class, mandatory axis** of the review — the
+review agent runs every item against the code, converts each applicable property
+into a security invariant, and proves it with the same property-based tests it
+uses for business-logic correctness, so the review verifies logic is both correct
+AND free of security holes. Property-based items are PBT-tested; non-property
+items (a hardcoded secret, a known-vulnerable dependency) are checked
+deterministically. Sources: [OWASP Top 10 for LLM Applications](https://safeguard.sh/resources/blog/owasp-top-10-llm-applications-explained),
 the [AI Code Security Field Guide](https://www.novakit.ai/blog/ai-code-security-vulnerabilities),
 and the [CWE Top 25 mapping for AI-generated code](https://safeguard.sh/resources/blog/mapping-ai-generated-code-risks-to-the-cwe-top-25).
 
