@@ -238,12 +238,18 @@ test('review and simplify templates end on a pass verdict without fix rounds', a
       file: 'uniterra-review/assets/workflow-template.md',
       args: { goal: 'g', context: { requirements: '', design: '', acceptance: '' }, task: 't' },
       // A clean review finds no counterexample, so the single-pass workflow is proven sound:
-      // the fixer is skipped and the main agent aggregates an empty issues list.
+      // the fixer is skipped and no main-agent step runs (the main agent aggregates itself).
       reviewResponse: { spec_table: [], reports: [] },
-      mainResponse: { verdict: 'pass', summary: 'no counterexamples', issues: [] },
-      carriedField: 'report.issues',
-      carriedLength: 0,
-      downstreamLabels: ['fix'],
+      assert: (result: Record<string, unknown>, called: string[]) => {
+        assert.equal(result.status, 'done');
+        assert.equal(result.clean, true);
+        assert.equal((result.reports as unknown[]).length, 0);
+        assert.equal((result.fixes as unknown[]).length, 0);
+        assert.ok(
+          !called.some((call) => call === 'fix'),
+          `no fix round (agent calls: ${called.join(', ')})`,
+        );
+      },
     },
     {
       file: 'uniterra-simplify/assets/workflow-template.md',
@@ -252,9 +258,15 @@ test('review and simplify templates end on a pass verdict without fix rounds', a
         verdict: 'pass',
         recommendations: [{ id: 'r1', safetiness: 'safe', description: 'cosmetic nit' }],
       },
-      carriedField: 'recommendations',
-      carriedLength: 1,
-      downstreamLabels: ['fix-'],
+      assert: (result: Record<string, unknown>, called: string[]) => {
+        assert.equal(result.status, 'done');
+        assert.equal(result.verdict, 'pass');
+        assert.equal((result.recommendations as unknown[]).length, 1);
+        assert.ok(
+          !called.some((call) => call.startsWith('fix')),
+          `no fix round (agent calls: ${called.join(', ')})`,
+        );
+      },
     },
   ];
 
@@ -270,7 +282,6 @@ test('review and simplify templates end on a pass verdict without fix rounds', a
         const label = opts?.label ?? '';
         called.push(label);
         if (label === 'review' || label.startsWith('review-')) return c.reviewResponse;
-        if (label === 'main-report') return c.mainResponse ?? fillSchema(opts?.schema);
         return opts?.schema === undefined ? '' : fillSchema(opts.schema);
       },
       parallel: async (
@@ -310,25 +321,6 @@ test('review and simplify templates end on a pass verdict without fix rounds', a
       filename: c.file,
     });
     const result = (await script.runInContext(context)) as Record<string, unknown>;
-    assert.equal(result.status, 'done', `${c.file}: a pass verdict must end the workflow as done`);
-    assert.equal(result.verdict, 'pass', `${c.file}: the result must carry the pass verdict`);
-    const carried: unknown = c.carriedField
-      .split('.')
-      .reduce<unknown>(
-        (acc, key) =>
-          acc && typeof acc === 'object' ? (acc as Record<string, unknown>)[key] : undefined,
-        result,
-      );
-    assert.equal(
-      (carried as unknown[] | undefined)?.length,
-      c.carriedLength,
-      `${c.file}: non-blocking items must be returned with the result, not dropped`,
-    );
-    for (const label of c.downstreamLabels) {
-      assert.ok(
-        !called.some((call) => call.startsWith(label)),
-        `${c.file}: no ${label} round may run after a pass verdict (agent calls: ${called.join(', ')})`,
-      );
-    }
+    c.assert(result, called);
   }
 });
