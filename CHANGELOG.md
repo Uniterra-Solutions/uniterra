@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.2] — 2026-08-25
+
+### Changed
+
+- `uniterra-review`: the review agent is now injected ONLY the review scope (`args.task`) — the orchestrator's goal / requirements / design / acceptance framing is removed from its prompt, and the main agent no longer pre-reads or re-summarizes the code (it only names the scope), so the review is not polluted by the main agent's reading before it starts. Security is a mandatory axis: the review agent runs the security checklist (`references/security-checklist.md`) and proves each applicable security property with a property-based test (non-property items checked deterministically), so logic security is verified via PBT, not just correctness — a security hole is critical. Read all business logic in one pass, write all tests in one pass, run them together in a background job (> 10,000 runs). Docs (`README.md`, `docs/modules/uniterra-skills.md`, `docs/project-structure.md`, `docs/workflows.md`) synced.
+
 ## [0.13.1] — 2026-08-25
 
 ### Changed
