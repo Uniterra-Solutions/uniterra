@@ -23,6 +23,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { format } from 'prettier';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const srcSkills = path.join(here, '..', 'src', 'skills');
@@ -35,6 +36,10 @@ const target = explicitTarget === undefined ? srcSkills : explicitTarget;
 
 const DSH_VERSION = '0.1.1-rc.2'; // the uniterra-pinned dsh family (see VENDOR.md)
 const PLUGIN_VERSION = '0.1.3'; // the pinned dsh_workflow tag (v0.1.3)
+// Deterministic provenance timestamp so re-running the builder is byte-idempotent
+// (a `new Date()` here would make `pnpm run build` dirty the committed capsules
+// every run — the provenance is informational, not a real clock).
+const CAPSULE_CREATED_AT = '2026-08-27T00:00:00.000Z';
 
 /** Render a raw prompt string as a JS template-literal body, escaping the
  * characters that would otherwise be interpreted by the QuickJS sandbox
@@ -498,7 +503,7 @@ for (const c of capsules) {
       modelTiers: ['deep', 'balanced'],
     },
     provenance: {
-      createdAt: new Date().toISOString(),
+      createdAt: CAPSULE_CREATED_AT,
       dshVersion: DSH_VERSION,
       pluginVersion: PLUGIN_VERSION,
     },
@@ -506,6 +511,10 @@ for (const c of capsules) {
   const outDir = explicitTarget === undefined ? path.join(target, c.skillDir, 'workflows') : target;
   mkdirSync(outDir, { recursive: true });
   const out = path.join(outDir, `${c.file}.workflow.json`);
-  writeFileSync(out, `${JSON.stringify(capsule, null, 2)}\n`, 'utf8');
+  // Format with prettier so the emitted byte content matches what lint-staged
+  // writes on commit — a plain JSON.stringify would churn against prettier on
+  // every `pnpm run build`.
+  const content = await format(`${JSON.stringify(capsule, null, 2)}\n`, { parser: 'json' });
+  writeFileSync(out, content, 'utf8');
   console.log(`build-workflow-capsules: wrote ${path.relative(process.cwd(), out)}`);
 }

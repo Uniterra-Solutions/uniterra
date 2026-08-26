@@ -27,7 +27,7 @@
     "modelTiers": ["deep", "balanced"]
   },
   "provenance": {
-    "createdAt": "2026-08-26T20:03:45.465Z",
+    "createdAt": "2026-08-27T00:00:00.000Z",
     "dshVersion": "0.1.1-rc.2",
     "pluginVersion": "0.1.3"
   }
