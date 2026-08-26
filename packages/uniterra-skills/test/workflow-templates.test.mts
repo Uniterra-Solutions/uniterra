@@ -1,326 +1,377 @@
 /**
- * Workflow-template contract tests for the bundled pipeline skills
+ * Workflow-capsule contract tests for the bundled pipeline skills
  * (uniterra-plan / uniterra-implement / uniterra-review / uniterra-simplify).
  *
- * These lock the embedded workflow templates to the format the dsh `workflow`
- * tool actually accepts, so a template drift fails CI before it fails a run:
+ * After the workflow-builtin-rebuild milestone the four pipeline workflows are
+ * no longer JS blocks the model copies into the dsh `workflow` tool. They are
+ * persisted `dsh.workflow` capsules the skill invokes by NAME via
+ * `run_workflow(name, args)`. These tests lock that contract:
  *
- *  1. Every embedded ```js fence parses under dsh's exact compile wrapper
- *     `(async () => { <body> })()` — the same check the engine's
- *     `assertBodyParses` performs; a body that stops parsing fails every run
- *     with `SCRIPT_PARSE`.
- *  2. No fence body opens with `export const meta` — dsh rejects that with a
- *     pointed `SCRIPT_PARSE` error (meta is a separate tool parameter, never
- *     script text).
- *  3. Every file that embeds a workflow script instructs the REQUIRED `meta`
- *     tool parameter (`meta: { name, description }`) — omitting it fails the
- *     tool call before the script ever runs, and dsh rejects any meta field
- *     beyond name/description/whenToUse/phases with `META_INVALID`.
- *  4. The self-contained single-script templates (review / simplify / plan)
- *     execute to a terminal JSON result under stubbed hooks, proving the hook
- *     names, the `agent()` options (label/schema), the schema shapes, and the
- *     terminal `return` all match the engine contract.
- *  5. A review agent's `verdict: "pass"` ends the review / simplify workflow
- *     immediately as `done`: non-blocking findings / recommendations are
- *     returned with the result, and no fix round runs.
+ *  1. Every pipeline skill ships exactly one `workflows/<name>.workflow.json`
+ *     capsule with `format: dsh.workflow`, `version: 1`, `workflowApiVersion: 1`,
+ *     a valid manifest (name / phases / readOnly / maxAgents / maxConcurrency /
+ *     patterns), and a `source` that defines `async function run(wf, args)` and
+ *     compiles under Node's `vm.Script`.
+ *  2. Each capsule's `source` executes to a terminal JSON result under stubbed
+ *     `wf` hooks, proving the `wf.phase` / `wf.runAgent` / `wf.parallel` calls,
+ *     the `outputSchema` structured results, and the terminal `return` all match
+ *     the dsh_workflow engine contract (mirrors the old templates' behaviour:
+ *     plan-review axis-shrinking, implement parallel + batched shapes, review
+ *     single pass with a skipped fixer on a clean run, simplify pass-verdict
+ *     early exit + cross-round skip accumulation).
+ *  3. The SKILL.md call layer already invokes `run_workflow('<name>', args)` and
+ *     no longer instructs copying a script into the `workflow` tool (no
+ *     "meta + script + args single call", no "copy verbatim").
+ *  4. The legacy template/script files that used to embed the JS are flagged
+ *     MIGRATED so a model never copies them back into a `workflow` tool call.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
 import * as vm from 'node:vm';
 import { builtinSkillsDir } from '../dist/index.js';
 
-const WORKFLOW_SKILLS = [
-  'uniterra-plan',
-  'uniterra-implement',
-  'uniterra-review',
-  'uniterra-simplify',
+/** skill dir → its persisted capsule (from the C3–C6 build). */
+const CAPSULES: ReadonlyArray<{ skill: string; capsule: string; file: string }> = [
+  { skill: 'uniterra-plan', capsule: 'plan-review', file: 'plan-review.workflow.json' },
+  { skill: 'uniterra-implement', capsule: 'implement', file: 'implement.workflow.json' },
+  { skill: 'uniterra-review', capsule: 'review', file: 'review.workflow.json' },
+  { skill: 'uniterra-simplify', capsule: 'simplify', file: 'simplify.workflow.json' },
 ];
 
-const DSH_WRAPPER_PREFIX = '(async () => {\n';
-const DSH_WRAPPER_SUFFIX = '\n})()';
+/** The legacy script/template files that used to embed the runnable JS. */
+const LEGACY_SCRIPTS: ReadonlyArray<string> = [
+  'uniterra-plan/scripts/review-workflow.md',
+  'uniterra-implement/assets/workflow-template.md',
+  'uniterra-review/assets/workflow-template.md',
+  'uniterra-simplify/assets/workflow-template.md',
+];
 
-/** dsh's pointed rejection: a body opening with `export const meta`. */
-const META_STATEMENT = /^\s*export\s+const\s+meta\b/;
+interface Capsule {
+  readonly source: string;
+  readonly format?: unknown;
+  readonly version?: unknown;
+  readonly workflowApiVersion?: unknown;
+  readonly manifest?: unknown;
+  [key: string]: unknown;
+}
 
-/** Files whose whole ```js fence is the runnable workflow script (with its args fixture). */
-const RUNNABLE_TEMPLATES: ReadonlyArray<{ file: string; args: unknown }> = [
-  {
-    file: 'uniterra-review/assets/workflow-template.md',
-    args: {
-      goal: 'test goal',
-      context: { requirements: '', design: '', acceptance: '' },
-      task: 'test task',
+function loadCapsule(
+  root: string,
+  { skill, file }: { skill: string; file: string },
+): Capsule {
+  const p = path.join(root, skill, 'workflows', file);
+  const raw = readFileSync(p, 'utf8');
+  const capsule = JSON.parse(raw) as Capsule;
+  assert.equal(typeof capsule.source, 'string', `${p}: capsule.source must be a string`);
+  return capsule;
+}
+
+/** A stub `wf` object driving the capsules the way the dsh_workflow engine does. */
+function stubWf(
+  agentMap: Record<string, (input: Record<string, unknown>) => unknown>,
+): { wf: Record<string, unknown>; calls: string[] } {
+  const calls: string[] = [];
+  const wf = {
+    runId: 'test',
+    args: null,
+    budget: { total: null, spent: () => 0, remaining: () => 0 },
+    phase: async (name: string, fn: () => Promise<unknown>): Promise<unknown> => {
+      calls.push('phase:' + name);
+      return fn();
     },
-  },
-  {
-    file: 'uniterra-simplify/assets/workflow-template.md',
-    args: { goal: 'test goal', context: { requirements: '', design: '', acceptance: '' } },
-  },
-  {
-    file: 'uniterra-plan/scripts/review-workflow.md',
-    args: { prd_dir: '/tmp/prd', design_dir: '/tmp/design', acceptance_dir: '/tmp/acceptance' },
-  },
-];
-
-function collectMarkdownFiles(dir: string): string[] {
-  const out: string[] = [];
-  for (const entry of readdirSync(dir)) {
-    const full = path.join(dir, entry);
-    if (statSync(full).isDirectory()) {
-      out.push(...collectMarkdownFiles(full));
-    } else if (entry.endsWith('.md')) {
-      out.push(full);
-    }
-  }
-  return out;
-}
-
-/** Extract every ```js fence body (the templates embed their scripts as ```js blocks). */
-function jsFences(content: string): string[] {
-  const fences: string[] = [];
-  const re = /```js\n([\s\S]*?)```/g;
-  for (let m = re.exec(content); m !== null; m = re.exec(content)) {
-    fences.push(m[1]!);
-  }
-  return fences;
-}
-
-/** Build a minimal value satisfying a template schema (for stubbed agent results). */
-function fillSchema(schema: unknown): unknown {
-  const node = schema as {
-    type?: string;
-    required?: string[];
-    properties?: Record<string, unknown>;
-    items?: unknown;
-  };
-  switch (node.type) {
-    case 'object': {
-      const out: Record<string, unknown> = {};
-      for (const key of node.required ?? []) {
-        out[key] = fillSchema(node.properties?.[key]);
-      }
-      return out;
-    }
-    case 'array':
-      return [];
-    case 'string':
-      return '';
-    case 'number':
-    case 'integer':
-      return 0;
-    case 'boolean':
-      return false;
-    case 'null':
-      return null;
-    default:
-      return {};
-  }
-}
-
-test("every workflow template script parses under dsh's wrapper and instructs the meta parameter", () => {
-  const root = builtinSkillsDir();
-  const files = WORKFLOW_SKILLS.flatMap((skill) => collectMarkdownFiles(path.join(root, skill)));
-  const embedding = files.filter((file) => jsFences(readFileSync(file, 'utf8')).length > 0);
-  // The four pipeline skills each ship exactly one file whose full ```js fence comes
-  // from the fixed template (implement consolidates its parallel + batched shapes into a
-  // single script). Assert all four are present.
-  const expected = [
-    'uniterra-plan/scripts/review-workflow.md',
-    'uniterra-implement/assets/workflow-template.md',
-    'uniterra-review/assets/workflow-template.md',
-    'uniterra-simplify/assets/workflow-template.md',
-  ];
-  const relativePaths = embedding.map((f) => path.relative(root, f));
-  for (const e of expected) {
-    assert.ok(
-      relativePaths.includes(e),
-      `expected workflow template file missing: ${e} (found: ${relativePaths.sort().join(', ')})`,
-    );
-  }
-
-  for (const file of embedding) {
-    const content = readFileSync(file, 'utf8');
-    const relative = path.relative(root, file);
-    const fences = jsFences(content);
-
-    // Invariant 3: the required `meta` tool parameter is instructed (either the
-    // backtick form `meta: { name, description }` or the JSON-object form `"meta":`).
-    assert.match(
-      content,
-      /`meta:`|"meta":/,
-      `${relative}: must instruct the required \`meta\` tool parameter (name + description)`,
-    );
-
-    for (let i = 0; i < fences.length; i++) {
-      const body = fences[i]!;
-      // Invariant 2: no `export const meta` inside the script body.
-      assert.ok(
-        !META_STATEMENT.test(body),
-        `${relative} fence ${i}: body must not open with \`export const meta\``,
-      );
-      // Invariant 1: the body compiles under dsh's wrapper.
-      assert.doesNotThrow(
-        () =>
-          new vm.Script(DSH_WRAPPER_PREFIX + body + DSH_WRAPPER_SUFFIX, {
-            filename: `${relative}#fence${i}`,
-          }),
-        `${relative} fence ${i}: must parse under dsh's (async () => { body })() wrapper`,
-      );
-    }
-  }
-});
-
-test('single-script templates execute to a terminal JSON result with stubbed hooks', async () => {
-  const root = builtinSkillsDir();
-  const hooks: Record<string, unknown> = {
-    agent: async (prompt: string, opts?: { schema?: unknown }): Promise<unknown> => {
-      assert.equal(typeof prompt, 'string');
-      assert.ok(prompt.length > 0, 'agent() requires a non-empty prompt');
-      return opts?.schema === undefined ? '' : fillSchema(opts.schema);
+    runAgent: async (
+      input: Record<string, unknown>,
+    ): Promise<{ structured: unknown } | null> => {
+      calls.push('agent:' + String(input.name));
+      const fixture = agentMap[String(input.name)];
+      return fixture === undefined ? null : { structured: fixture(input) };
     },
     parallel: async (
       thunks: ReadonlyArray<() => Promise<unknown>>,
-    ): Promise<Array<unknown | null>> =>
-      Promise.all(
-        thunks.map((thunk) =>
-          Promise.resolve()
-            .then(thunk)
-            .catch(() => null),
-        ),
-      ),
+      opts?: { concurrency?: number },
+    ): Promise<Array<unknown | null>> => {
+      const concurrency = opts?.concurrency ?? thunks.length;
+      let cursor = 0;
+      const out = Array<unknown | null>(thunks.length).fill(null);
+      const lane = async (): Promise<void> => {
+        for (;;) {
+          const index = cursor++;
+          if (index >= thunks.length) return;
+          out[index] = await thunks[index]!();
+        }
+      };
+      await Promise.all(
+        Array.from({ length: Math.min(concurrency, thunks.length) }, () => lane()),
+      );
+      return out;
+    },
     pipeline: async (
-      items: unknown[],
+      items: ReadonlyArray<unknown>,
       ...stages: Array<(value: unknown, item: unknown, index: number) => unknown>
     ): Promise<Array<unknown | null>> =>
       Promise.all(
         items.map(async (item, index) => {
           let value: unknown = item;
-          try {
-            for (const stage of stages) {
-              value = await stage(value, item, index);
-            }
-            return value;
-          } catch {
-            return null;
-          }
+          for (const stage of stages) value = await stage(value, item, index);
+          return value;
         }),
       ),
-    phase: (_title: string): void => undefined,
-    log: (_message: string): void => undefined,
+    synthesize: async (): Promise<{ text: string }> => ({ text: '' }),
+    workflow: async (): Promise<null> => null,
+    artifact: async (): Promise<{ name: string; path: string }> => ({ name: '', path: '' }),
+    log: (): void => undefined,
   };
+  return { wf, calls };
+}
 
-  for (const { file, args } of RUNNABLE_TEMPLATES) {
-    const absolute = path.join(root, file);
-    const body = jsFences(readFileSync(absolute, 'utf8'))[0]!;
-    const context: Record<string, unknown> = { ...hooks, args };
-    vm.createContext(context);
-    const script = new vm.Script(DSH_WRAPPER_PREFIX + body + DSH_WRAPPER_SUFFIX, {
-      filename: file,
-    });
-    const result: unknown = await script.runInContext(context);
+async function runCapsule(
+  capsule: { source: string },
+  args: unknown,
+  agentMap: Record<string, (input: Record<string, unknown>) => unknown>,
+): Promise<{ result: unknown; calls: string[] }> {
+  const context: Record<string, unknown> = { __run: undefined };
+  vm.createContext(context);
+  const script = new vm.Script(
+    `"use strict";\n${capsule.source}\n;globalThis.__run = run;`,
+    { filename: 'capsule.js' },
+  );
+  script.runInContext(context);
+  const run = context.__run as (wf: unknown, args: unknown) => Promise<unknown>;
+  const { wf, calls } = stubWf(agentMap);
+  const result = await run(wf, args);
+  return { result, calls };
+}
+
+test('every pipeline skill ships a valid dsh.workflow capsule', () => {
+  const root = builtinSkillsDir();
+  for (const c of CAPSULES) {
+    const capsule = loadCapsule(root, c);
+    assert.equal(capsule.format, 'dsh.workflow', `${c.capsule}: format must be dsh.workflow`);
+    assert.equal(capsule.version, 1, `${c.capsule}: version must be 1`);
+    assert.equal(capsule.workflowApiVersion, 1, `${c.capsule}: workflowApiVersion must be 1`);
+    const manifest = capsule.manifest as Record<string, unknown>;
+    assert.equal(typeof manifest.name, 'string', `${c.capsule}: manifest.name`);
+    assert.equal(manifest.name, c.capsule, `${c.capsule}: manifest.name matches the capsule name`);
     assert.ok(
-      result !== null && typeof result === 'object',
-      `${file}: script must return a JSON object`,
+      Array.isArray(manifest.phases) && manifest.phases.length > 0,
+      `${c.capsule}: manifest.phases must be a non-empty array`,
+    );
+    assert.equal(typeof manifest.readOnly, 'boolean', `${c.capsule}: manifest.readOnly`);
+    assert.ok(
+      typeof manifest.maxAgents === 'number' && manifest.maxAgents > 0,
+      `${c.capsule}: manifest.maxAgents`,
+    );
+    assert.ok(
+      typeof manifest.maxConcurrency === 'number' && manifest.maxConcurrency > 0,
+      `${c.capsule}: manifest.maxConcurrency`,
+    );
+    assert.ok(
+      Array.isArray(manifest.patterns) && manifest.patterns.length > 0,
+      `${c.capsule}: manifest.patterns`,
+    );
+    const source = capsule.source as string;
+    assert.match(
+      source,
+      /\basync\s+function\s+run\s*\(\s*wf\s*,\s*args\s*\)/u,
+      `${c.capsule}: defines run(wf, args)`,
     );
     assert.doesNotThrow(
-      () => JSON.stringify(result),
-      `${file}: script result must be JSON-serializable`,
+      () => new vm.Script(`"use strict";\n${source}`, { filename: `${c.capsule}#source` }),
+      `${c.capsule}: source must compile`,
     );
   }
 });
 
-test('review and simplify templates end on a pass verdict without fix rounds', async () => {
+test('plan-review capsule shrinks to only the failing axes and locks the result shape', async () => {
   const root = builtinSkillsDir();
-  const cases = [
-    {
-      file: 'uniterra-review/assets/workflow-template.md',
-      args: { goal: 'g', context: { requirements: '', design: '', acceptance: '' }, task: 't' },
-      // A clean review finds no counterexample, so the single-pass workflow is proven sound:
-      // the fixer is skipped and no main-agent step runs (the main agent aggregates itself).
-      reviewResponse: { spec_table: [], reports: [] },
-      assert: (result: Record<string, unknown>, called: string[]) => {
-        assert.equal(result.status, 'done');
-        assert.equal(result.clean, true);
-        assert.equal((result.reports as unknown[]).length, 0);
-        assert.equal((result.fixes as unknown[]).length, 0);
-        assert.ok(
-          !called.some((call) => call === 'fix'),
-          `no fix round (agent calls: ${called.join(', ')})`,
-        );
-      },
-    },
-    {
-      file: 'uniterra-simplify/assets/workflow-template.md',
-      args: { goal: 'g', context: { requirements: '', design: '', acceptance: '' } },
-      reviewResponse: {
-        verdict: 'pass',
-        recommendations: [{ id: 'r1', safetiness: 'safe', description: 'cosmetic nit' }],
-      },
-      assert: (result: Record<string, unknown>, called: string[]) => {
-        assert.equal(result.status, 'done');
-        assert.equal(result.verdict, 'pass');
-        assert.equal((result.recommendations as unknown[]).length, 1);
-        assert.ok(
-          !called.some((call) => call.startsWith('fix')),
-          `no fix round (agent calls: ${called.join(', ')})`,
-        );
-      },
-    },
-  ];
+  const capsule = loadCapsule(root, CAPSULES[0]!);
+  const args = { prd_dir: '/p', design_dir: '/d', acceptance_dir: '/a' };
 
-  for (const c of cases) {
-    const called: string[] = [];
-    const hooks: Record<string, unknown> = {
-      agent: async (
-        prompt: string,
-        opts?: { label?: string; schema?: unknown },
-      ): Promise<unknown> => {
-        assert.equal(typeof prompt, 'string');
-        assert.ok(prompt.length > 0, 'agent() requires a non-empty prompt');
-        const label = opts?.label ?? '';
-        called.push(label);
-        if (label === 'review' || label.startsWith('review-')) return c.reviewResponse;
-        return opts?.schema === undefined ? '' : fillSchema(opts.schema);
-      },
-      parallel: async (
-        thunks: ReadonlyArray<() => Promise<unknown>>,
-      ): Promise<Array<unknown | null>> =>
-        Promise.all(
-          thunks.map((thunk) =>
-            Promise.resolve()
-              .then(thunk)
-              .catch(() => null),
-          ),
-        ),
-      pipeline: async (
-        items: unknown[],
-        ...stages: Array<(value: unknown, item: unknown, index: number) => unknown>
-      ): Promise<Array<unknown | null>> =>
-        Promise.all(
-          items.map(async (item, index) => {
-            let value: unknown = item;
-            try {
-              for (const stage of stages) value = await stage(value, item, index);
-              return value;
-            } catch {
-              return null;
-            }
-          }),
-        ),
-      phase: (_title: string): void => undefined,
-      log: (_message: string): void => undefined,
-    };
-
-    const absolute = path.join(root, c.file);
-    const body = jsFences(readFileSync(absolute, 'utf8'))[0]!;
-    const context: Record<string, unknown> = { ...hooks, args: c.args };
-    vm.createContext(context);
-    const script = new vm.Script(DSH_WRAPPER_PREFIX + body + DSH_WRAPPER_SUFFIX, {
-      filename: c.file,
+  // All three axes pass → done immediately, no re-review, no repair.
+  {
+    const { result, calls } = await runCapsule(capsule, args, {
+      'requirement-list-review': () => ({ verdict: 'pass', issues: [] }),
+      'design-review': () => ({ verdict: 'pass', issues: [] }),
+      'acceptance-review': () => ({ verdict: 'pass', issues: [] }),
     });
-    const result = (await script.runInContext(context)) as Record<string, unknown>;
-    c.assert(result, called);
+    const r = result as Record<string, unknown>;
+    assert.equal(r.status, 'done');
+    assert.equal(r.pass, true);
+    assert.equal(r.roundsUsed, 1);
+    assert.ok(
+      !calls.some((c) => c.startsWith('agent:repair-')),
+      `no repair on a clean pass (${calls.join(', ')})`,
+    );
+  }
+
+  // A single failing axis is repaired then re-reviewed; only the failed axis is re-dispatched.
+  {
+    let designRuns = 0;
+    const { result, calls } = await runCapsule(capsule, args, {
+      'requirement-list-review': () => ({ verdict: 'pass', issues: [] }),
+      'design-review': () => {
+        designRuns += 1;
+        return designRuns === 1
+          ? { verdict: 'fail', issues: [{ where: 'design.md', problem: 'p', suggestion: 's' }] }
+          : { verdict: 'pass', issues: [] };
+      },
+      'acceptance-review': () => ({ verdict: 'pass', issues: [] }),
+      'repair-1': () => ({ status: 'fixed', summary: 'applied' }),
+    });
+    const r = result as Record<string, unknown>;
+    assert.equal(r.status, 'done');
+    assert.equal(r.pass, true);
+    assert.equal(r.roundsUsed, 2);
+    assert.equal(calls.filter((c) => c === 'phase:round-2').length, 1, `round 2 runs (${calls.join(', ')})`);
+    const round2Start = calls.indexOf('phase:round-2');
+    const round2Agents = calls.slice(round2Start, round2Start + 10).filter((c) => c.startsWith('agent:'));
+    assert.deepEqual(round2Agents, ['agent:design-review'], `only the failed axis is re-reviewed (${round2Agents.join(', ')})`);
+    assert.ok(calls.some((c) => c === 'agent:repair-1'), 'repair runs on a failing axis');
+  }
+});
+
+test('implement capsule supports parallel tasks and serial batches', async () => {
+  const root = builtinSkillsDir();
+  const capsule = loadCapsule(root, CAPSULES[1]!);
+
+  { // independent tasks → one parallel group, agents = count
+    const { result } = await runCapsule(capsule, {
+      tasks: [
+        { id: 'T1', prompt: 'p1' },
+        { id: 'T2', prompt: 'p2' },
+      ],
+    }, {
+      T1: () => ({ changed_files: [{ file: 'a', lines: '1' }], satisfied_requirements: ['REQ-1'] }),
+      T2: () => ({ changed_files: [{ file: 'b', lines: '2' }], satisfied_requirements: ['REQ-2'] }),
+    });
+    const r = result as Record<string, unknown>;
+    assert.equal(r.status, 'done');
+    assert.equal(r.agents, 2);
+  }
+
+  { // overlapping tasks → serial batches, batch order preserved
+    const { result, calls } = await runCapsule(capsule, {
+      batches: [
+        [{ id: 'A', prompt: 'pa' }],
+        [{ id: 'B', prompt: 'pb' }],
+      ],
+    }, {
+      A: () => ({ changed_files: [], satisfied_requirements: ['A'] }),
+      B: () => ({ changed_files: [], satisfied_requirements: ['B'] }),
+    });
+    const r = result as Record<string, unknown>;
+    assert.equal(r.status, 'done');
+    assert.equal(r.agents, 2);
+    assert.ok(calls.indexOf('phase:batch-2') > calls.indexOf('phase:batch-1'), 'batches run serially');
+  }
+
+  { // a failing child fails the whole (batched) run with the batch index
+    const { result } = await runCapsule(capsule, {
+      batches: [
+        [{ id: 'A', prompt: 'pa' }],
+        [{ id: 'B', prompt: 'pb' }],
+      ],
+    }, {
+      A: () => ({ changed_files: [], satisfied_requirements: ['A'] }),
+      // B absent → runAgent returns null (the engine's "child failed" signal).
+    });
+    const r = result as Record<string, unknown>;
+    assert.equal(r.status, 'failed');
+    assert.equal(r.batch, 2);
+  }
+});
+
+test('review capsule runs single-pass and skips the fixer on a clean review', async () => {
+  const root = builtinSkillsDir();
+  const capsule = loadCapsule(root, CAPSULES[2]!);
+  const args = { task: 'scope' };
+
+  { // clean → done, no fix round
+    const { result, calls } = await runCapsule(capsule, args, {
+      review: () => ({ spec_table: [], reports: [] }),
+    });
+    const r = result as Record<string, unknown>;
+    assert.equal(r.status, 'done');
+    assert.equal(r.clean, true);
+    assert.equal((r.reports as unknown[]).length, 0);
+    assert.equal((r.fixes as unknown[]).length, 0);
+    assert.ok(!calls.some((c) => c.startsWith('agent:fix')), `no fix round (${calls.join(', ')})`);
+  }
+
+  { // a report → fixer repairs it and reports back
+    const reports = [
+      { id: 'r1', level: 'critical', file: 'a.js', line: 3, invariant: 'inv', input: 'x', expected: 'y', actual: 'z', test: 't' },
+    ];
+    const { result } = await runCapsule(capsule, args, {
+      review: () => ({ spec_table: [], reports }),
+      fix: () => ({ status: 'fixed', fixes: [{ id: 'r1', diff: 'd', result: 'green', explanation: 'e' }] }),
+    });
+    const r = result as Record<string, unknown>;
+    assert.equal(r.status, 'done');
+    assert.equal(r.clean, false);
+    assert.equal((r.fixes as unknown[]).length, 1);
+  }
+});
+
+test('simplify capsule ends on a pass verdict and accumulates skips across rounds', async () => {
+  const root = builtinSkillsDir();
+  const capsule = loadCapsule(root, CAPSULES[3]!);
+  const args = { goal: 'g', context: { requirements: '', design: '', acceptance: '' } };
+
+  { // pass verdict → done early, trivial recommendations returned, no fix round
+    const { result, calls } = await runCapsule(capsule, args, {
+      'review-1': () => ({
+        verdict: 'pass',
+        recommendations: [{ id: 'r1', safetiness: 'safe', description: 'nit' }],
+      }),
+    });
+    const r = result as Record<string, unknown>;
+    assert.equal(r.status, 'done');
+    assert.equal(r.verdict, 'pass');
+    assert.equal((r.recommendations as unknown[]).length, 1);
+    assert.ok(!calls.some((c) => c.startsWith('agent:fix-')), `no fix round (${calls.join(', ')})`);
+  }
+
+  { // fail → fix round; a pass on the next review round ends the loop
+    const { result } = await runCapsule(capsule, args, {
+      'review-1': () => ({
+        verdict: 'fail',
+        recommendations: [{ id: 'r1', safetiness: 'risky', description: 'x' }],
+      }),
+      'fix-1': () => ({ status: 'fixed', applied_recommendations: ['r1'], skipped: [], summary: 'done' }),
+      'review-2': () => ({ verdict: 'pass', recommendations: [] }),
+    });
+    const r = result as Record<string, unknown>;
+    assert.equal(r.status, 'done');
+    assert.equal(r.rounds, 2);
+    assert.equal(r.verdict, 'pass');
+  }
+});
+
+test('the four SKILL.md call layers invoke run_workflow and never instruct a script copy', () => {
+  const root = builtinSkillsDir();
+  for (const c of CAPSULES) {
+    const skillMd = readFileSync(path.join(root, c.skill, 'SKILL.md'), 'utf8');
+    assert.match(
+      skillMd,
+      new RegExp(`run_workflow\\s*\\(\\s*['"]${c.capsule}['"]`, 'u'),
+      `${c.skill}/SKILL.md must instruct run_workflow('${c.capsule}', args)`,
+    );
+    // The old single-call shape must be gone from the call layer.
+    assert.doesNotMatch(
+      skillMd,
+      /copy verbatim|meta\s*\+\s*script\s*\+\s*args|scripts\/review-workflow\.md.*workflow tool/u,
+      `${c.skill}/SKILL.md must not instruct copying a script into the workflow tool`,
+    );
+  }
+});
+
+test('legacy template/script files are flagged MIGRATED', () => {
+  const root = builtinSkillsDir();
+  for (const rel of LEGACY_SCRIPTS) {
+    const content = readFileSync(path.join(root, rel), 'utf8');
+    assert.match(content, /MIGRATED/u, `${rel}: must carry a MIGRATED banner`);
   }
 });

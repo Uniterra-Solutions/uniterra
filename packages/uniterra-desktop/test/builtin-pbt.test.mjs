@@ -38,6 +38,7 @@ import {
   builtinPlugins,
   copyBuiltins,
   copyBuiltinsStale,
+  ensureWorkflowCapsules,
   expectedBuiltinBundles,
   hasAllBuiltins,
   npmBuiltinSpecs,
@@ -784,4 +785,42 @@ test('READY: the first qualifying URL wins when several appear', async () => {
   stream.write('http://127.0.0.1:3080\n');
   stream.end();
   assert.equal(await promise, 'http://127.0.0.1:1234');
+});
+
+test('WORKFLOW CAPSULES: ensureWorkflowCapsules copies bundled capsules, is idempotent, and refreshes on a changed source', async () => {
+  const dshHome = await mkdtemp(join(tmpdir(), 'uwf-home-'));
+  const skills = await mkdtemp(join(tmpdir(), 'uwf-skills-'));
+  const capsuleSrc = JSON.stringify({ format: 'dsh.workflow', version: 1, source: 'a' });
+  const dest = join(dshHome, 'workflows');
+  try {
+    // Two skills ship capsules; one already exists in target with a user edit.
+    for (const [skill, file] of [
+      ['uniterra-plan', 'plan-review.workflow.json'],
+      ['uniterra-implement', 'implement.workflow.json'],
+    ]) {
+      const dir = join(skills, skill, 'workflows');
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, file), capsuleSrc, 'utf8');
+    }
+    assert.equal(ensureWorkflowCapsules(dshHome, skills), true, 'first provision writes the capsules');
+    assert.equal(await readFile(join(dest, 'plan-review.workflow.json'), 'utf8'), capsuleSrc);
+    assert.equal(await readFile(join(dest, 'implement.workflow.json'), 'utf8'), capsuleSrc);
+
+    // Idempotent: a second provision with identical sources writes nothing.
+    assert.equal(ensureWorkflowCapsules(dshHome, skills), false, 'idempotent when nothing differs');
+
+    // A changed source updates the target (stale detection by content) — the
+    // bundled capsule is the built-in, so a bundle refresh propagates.
+    const updated = JSON.stringify({ format: 'dsh.workflow', version: 1, source: 'b' });
+    await writeFile(join(skills, 'uniterra-plan', 'workflows', 'plan-review.workflow.json'), updated, 'utf8');
+    assert.equal(ensureWorkflowCapsules(dshHome, skills), true, 'a changed source rewrites the stale target');
+    assert.equal(await readFile(join(dest, 'plan-review.workflow.json'), 'utf8'), updated);
+
+    // A missing skills dir is a no-op.
+    assert.equal(ensureWorkflowCapsules(dshHome, undefined), false);
+    assert.equal(ensureWorkflowCapsules(dshHome, join(dshHome, 'no-such-skills')), false);
+  } finally {
+    await rm(dshHome, { recursive: true, force: true });
+    await rm(skills, { recursive: true, force: true });
+  }
 });
