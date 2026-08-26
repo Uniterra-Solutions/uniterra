@@ -1,5 +1,11 @@
 # Review Workflow — fixed script (three parallel review agents + a repair agent)
 
+> **MIGRATED.** This historical script is superseded by the persisted
+> `workflows/plan-review.workflow.json` capsule. The skill now calls
+> `run_workflow('plan-review', args)` — do NOT copy this JS block into a
+> `workflow` tool call. It is retained only as a reference for the orchestration
+> and prompt text the capsule now owns.
+
 A fixed workflow script: it reviews `prd.md`, `design.md`, and `acceptance.md` with
 three parallel agents, then hands the failing axes' issues to a single repair agent
 that applies them to the documents itself. A review axis that already passed is

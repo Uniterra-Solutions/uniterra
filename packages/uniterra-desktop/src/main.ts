@@ -19,7 +19,7 @@ import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startDsh, stopDsh, type DshRuntimeHandle } from './dsh-process.js';
-import { ensureBuiltinPlugins } from './builtin.js';
+import { ensureBuiltinPlugins, ensureWorkflowCapsules } from './builtin.js';
 import {
   resolveUniterraUpdateStatus,
   resolveUpdateAction,
@@ -407,6 +407,10 @@ async function boot(): Promise<void> {
 
   // Bundled skills ride the DSH_BUNDLED_SKILL_DIR provider.
   const skills = skillsDir();
+
+  // Provision the persisted pipeline workflow capsules into the profile's
+  // dsh_workflow personal dir so the skills can run_workflow('<name>', args) them.
+  ensureWorkflowCapsules(effectiveHome, skills);
 
   initUpdateChecker();
   const handle = await startDsh({

@@ -15,10 +15,26 @@ For each error report:
    invariant holds — the test the review agent wrote (`report.test`) must now PASS.
 3. Re-run the exact counterexample / test and confirm it PASSES (green). Then re-run the
    relevant test suite + lint to confirm nothing else broke.
+4. **Add a deterministic unit regression test for EVERY counterexample you fix.** The review
+   agent's property test drives many generated inputs and proves the invariant statistically; a
+   deterministic unit regression makes the bug instantly reproducible without any RNG. For each
+   report:
+   - Write ONE test with the report's concrete minimal `input` and the exact outcome the
+     invariant requires (`expected`), so re-running it re-triggers the original bug if it ever
+     returns.
+   - Name it after the INVARIANT it pins (e.g. `<module>-<behaviour>`), NEVER after the finding
+     id, and place it in the repo's conventional test location in the repo's test framework.
+   - Keep it PERMANENT — a future regression must be caught here, deterministically.
+   - If a deterministic regression test for the same invariant ALREADY exists (e.g. an earlier
+     fixer run, or a colocated unit regression), do NOT duplicate it — strengthen / re-run it
+     instead; never delete or rename it.
+   - Confirm the test is RED against the pre-fix code and GREEN after the fix (the quickest
+     reproduction path), and record it in the fix's `result`.
 
 ## Constraints
 
-- Do NOT delete or rename the review agent's tests.
+- Do NOT delete or rename the review agent's property tests **or** any deterministic regression
+  test that pins a counterexample — they are permanent.
 - Do NOT break already-implemented business logic — all other tests stay green.
 - Do NOT refactor unrelated code or add abstractions / dependency injection unless a report
   specifically demands it.

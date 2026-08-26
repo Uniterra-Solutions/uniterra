@@ -1,5 +1,11 @@
 # Implement Workflow Template — one fixed script, you only fill `meta` + `args`
 
+> **MIGRATED.** This historical script is superseded by the persisted
+> `workflows/implement.workflow.json` capsule. The skill now calls
+> `run_workflow('implement', args)` — do NOT copy this JS block into a `workflow`
+> tool call. It is retained only as a reference for the orchestration and fixed
+> rules the capsule now owns.
+
 One workflow: dispatch subagents to implement an approved task list. Make **ONE** `workflow`
 tool call — `meta`, `script`, and `args` are three properties of ONE arguments object, never
 three separate calls, and never wrapped under a field named `arguments`:

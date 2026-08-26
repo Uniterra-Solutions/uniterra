@@ -38,9 +38,10 @@ over-engineering — never propose removing them.
 
 ## 2. Run the simplify workflow
 
-Use `assets/workflow-template.md` with the `workflow` tool as **ONE call** whose `arguments`
-is a single object with `meta` + `script` + `args` together (never split across parallel
-calls, never wrapped in a field named `arguments`). `args = { goal, context }`. Two stages:
+Invoke the persisted `simplify` workflow by name with the dsh_workflow `run_workflow` tool as
+**ONE call**: `run_workflow('simplify', { goal, context, maxRounds? })`. No JS to copy — the
+orchestration is the `simplify` capsule. `args = { goal, context }` (plus optional
+`maxRounds`, default 8). Two stages:
 
 1. **review agent** (`references/review-agent.md`) — finds simplification
    opportunities against the over-engineering checklist
@@ -85,7 +86,12 @@ applies. Skipped items are never dropped and are returned with the result.
 
 ## Files
 
-- `assets/workflow-template.md` — the review → fix workflow script.
+- `workflows/simplify.workflow.json` — the persisted `simplify` capsule (the dsh_workflow
+  review → fix loop with the REVIEW_PROMPT / FIX_PROMPT embedded; `args` is
+  `{ goal, context, maxRounds? }`). Invoke it by name: `run_workflow('simplify', args)`.
+- `assets/workflow-template.md` — **migrated.** Historical review → fix workflow script. Same
+  loop; superseded by the `simplify` capsule, kept as a reference only, not to be copied into
+  a `workflow` tool call.
 - `references/review-agent.md`, `references/fix-agent.md` — the two agent prompts.
 - `references/overengineering-checklist.md` — the focus checklist of common
   AI-agent over-engineering mistakes.

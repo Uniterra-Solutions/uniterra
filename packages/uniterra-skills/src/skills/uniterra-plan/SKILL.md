@@ -59,12 +59,12 @@ fits their needs:
 
 ### 4. Review the documents with the fixed workflow
 
-- Run the fixed workflow in `scripts/review-workflow.md` with the `workflow` tool as **ONE
-  call** whose `arguments` is a single object with `meta` + `script` + `args` together
-  (never split across parallel calls, never wrapped in a field named `arguments`).
-  `args = { prd_dir, design_dir, acceptance_dir }` (in practice all three are the run
-  directory). The review and repair subagents report to the workflow as JSON (validated by
-  the `schema` each `agent(...)` call passes); only their input prompts are text.
+- Run the persisted `plan-review` workflow by name with the dsh_workflow `run_workflow` tool
+  as **ONE call**: `run_workflow('plan-review', { prd_dir, design_dir, acceptance_dir })`
+  (in practice all three are the run directory). No JS to copy — the orchestration is the
+  `plan-review` capsule. The review and repair subagents report to the workflow as JSON
+  (their structured output via each agent's `outputSchema`); only their input prompts are
+  text. `maxRounds` defaults to 8.
 - It dispatches three parallel review agents, each fed all three dirs:
   - **requirement-list-review** (`prompts/requirement-list-review.md`) — technical
     feasibility + contradictions between requirements.
@@ -81,8 +81,12 @@ fits their needs:
 
 ## Files
 
-- `scripts/review-workflow.md` — the fixed review workflow script (embeds the three
-  fixed prompts + the repair agent; `args` carries the three directory paths).
+- `workflows/plan-review.workflow.json` — the persisted `plan-review` capsule (the
+  dsh_workflow orchestration with the three review prompts + repair agent embedded; `args`
+  carries the three directory paths). Invoke it by name: `run_workflow('plan-review', args)`.
+- `scripts/review-workflow.md` — **migrated.** Historical fixed workflow script (embeds the
+  three prompts + repair agent). Superseded by the `plan-review` capsule; kept as a
+  reference only, not to be copied into a `workflow` tool call.
 - `prompts/requirement-list-review.md` — requirement feasibility + contradiction agent.
 - `prompts/design-review.md` — design over-engineering / minimal-invasiveness agent.
 - `prompts/acceptance-review.md` — acceptance clarity + verifiable-evidence agent.

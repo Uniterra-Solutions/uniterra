@@ -49,10 +49,10 @@ the invariants from the code — so it is not pre-biased by your framing.
 
 ## 2. Run the review workflow
 
-Use `assets/workflow-template.md` with the `workflow` tool as **ONE call** whose `arguments`
-is a single object with `meta` + `script` + `args` together (never split across parallel
-calls, never wrapped in a field named `arguments`). `args = { task }` (the scope). The
-workflow orchestrates **two subagents** — there is no main-agent step inside it:
+Invoke the persisted `review` workflow by name with the dsh_workflow `run_workflow` tool as
+**ONE call**: `run_workflow('review', { task })` (the scope). No JS to copy — the
+orchestration is the `review` capsule. It orchestrates **two subagents** — there is no
+main-agent step inside it:
 
 1. **review agent** (`references/review-agent.md`) — given ONLY the scope (not the orchestrator's
    goal/requirements/design/acceptance, to avoid bias), it reads every business module and
@@ -66,9 +66,12 @@ workflow orchestrates **two subagents** — there is no main-agent step inside i
    file, line, invariant, input, expected/actual, test). Only confirmed counterexamples are
    reported. Returns `{ spec_table, reports }`.
 2. **fixer agent** (`references/fix-agent.md`) — repairs each reported conditional branch so its
-   property test passes, re-runs the counterexample to confirm green, and reports its diff /
-   result / explanation **directly back to you (the main agent)**. It never deletes or weakens
-   the property tests and leaves changes UNCOMMITTED.
+   property test passes, re-runs the counterexample to confirm green, and **adds a DETERMINISTIC
+   unit regression test per counterexample** — one concrete minimal input (the report's `input`) +
+   the exact outcome the invariant requires — so the bug is instantly reproducible with no RNG. It
+   names each regression after the invariant (never the finding id), keeps it permanent, and never
+   deletes or weakens the review agent's property tests or any regression test. It leaves changes
+   UNCOMMITTED.
 
 The workflow **returns** `{ status, clean, reports, fixes }`, and runs a **single pass** (no
 re-review loop) because the PBT executes **> 10,000 runs per invariant**, which is a statistically
@@ -98,7 +101,8 @@ call passes); only the subagent **input prompts** are text.
 
 - The review agent never modifies source (it only writes the property tests that expose and pin
   the counterexamples).
-- The fixer agent leaves changes UNCOMMITTED and never deletes or weakens the property tests.
+- The fixer agent leaves changes UNCOMMITTED and never deletes or weakens the property tests or
+  the deterministic unit regression tests it adds for each counterexample.
 - The main agent (you) never re-runs the property-based tests — the review agent ran them
   (> 10,000 runs each) and the fixer re-confirmed its fixes; trust that evidence and just aggregate.
 - Counterexample reports must reference a concrete file + line + failure mode (the property the
@@ -106,8 +110,12 @@ call passes); only the subagent **input prompts** are text.
 
 ## Files
 
-- `assets/workflow-template.md` — the review → fix workflow script (two subagents; the main agent
-  aggregates the returned reports + fixes itself).
+- `workflows/review.workflow.json` — the persisted `review` capsule (the dsh_workflow
+  review → fix orchestration with the REVIEW_PROMPT / FIXER_PROMPT embedded; `args` is
+  `{ task }`). Invoke it by name: `run_workflow('review', { task })`.
+- `assets/workflow-template.md` — **migrated.** Historical review → fix workflow script. Same
+  two-subagent orchestration; superseded by the `review` capsule, kept as a reference only,
+  not to be copied into a `workflow` tool call.
 - `references/review-agent.md` — formal-spec extraction + property-based proof + shrink.
 - `references/fix-agent.md` — the fixer prompt.
 - `references/main-agent.md` — the main agent's (orchestrator) aggregation guide.

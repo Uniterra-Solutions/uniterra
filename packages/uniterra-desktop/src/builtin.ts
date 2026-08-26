@@ -14,7 +14,15 @@
  * user-installed extras and edits are never touched.
  */
 
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import * as path from 'node:path';
 
@@ -101,6 +109,23 @@ registerBuiltinPlugin({
 });
 registerBuiltinPlugin({ kind: 'vendor', dir: 'dsh-shortcuts', package: 'dsh-shortcuts' });
 
+// The dynamic workflow layer (@dsh-external/workflow): a KodaX-parity
+// multi-agent workflow engine that persists workflows as `.workflow.json`
+// capsules and exposes workflow_list / run_workflow / workflow_manage, so the
+// bundled pipeline skills invoke a workflow by NAME (run_workflow('plan-review',
+// args)) instead of the model copying a large JS block into the native workflow
+// tool — the copy-failure failure mode. Vendored at the v0.1.3 tag (see
+// vendor/dsh-plugins/VENDOR.md); its peer ranges (^0.1.0-rc.5) are reported
+// unsatisfied (warn) against the pinned dsh 0.1.1-rc.2 pre-release family, so
+// it ships as a copy-based built-in (no pnpm install) and loads via
+// ctx.subagents + ctx.tools. The four pipeline capsules are provisioned from
+// the skills package into the profile's workflow dir by ensureWorkflowCapsules.
+registerBuiltinPlugin({
+  kind: 'vendor',
+  dir: 'dsh-workflow',
+  package: '@dsh-external/workflow',
+});
+
 // In-house workspace built-ins ship built — the workspace build must have run
 // before provisioning — and their host bundles are self-contained (runtime
 // deps inlined), so copying the package dir is enough: the profile gets
@@ -137,6 +162,13 @@ registerBuiltinPlugin({
   package: '@cardo/cardo-provider',
   comment: 'Pre-rename workspace built-in: now shipped as @uniterra-solutions/uniterra-provider.',
 });
+
+/** Non-bundle npm dependencies a copy-based built-in needs at runtime but that
+ * the copy mechanism cannot auto-install (the vendored @dsh-external/workflow
+ * plugin runs workflows in a QuickJS sandbox and depends on
+ * `quickjs-emscripten`, which is not part of the dsh profile). Installed with
+ * `dsh plugin add` (a plain dependency, not a profile layer). */
+const PROFILE_RUNTIME_DEPS: readonly string[] = ['quickjs-emscripten@0.32.0'];
 
 /** The pnpm settings every profile needs for plugin installs. */
 const PROFILE_PNPM_WORKSPACE = [
@@ -511,6 +543,15 @@ export function ensureBuiltinPlugins(
       stdio: 'inherit',
     });
   }
+  // Non-bundle runtime deps for the copy-based built-ins (e.g. the vendored
+  // workflow plugin's quickjs-emscripten). These resolve from the profile's
+  // top-level node_modules so the copied plugin can import them.
+  for (const spec of PROFILE_RUNTIME_DEPS) {
+    execFileSync(nodeExec, [dshCli, 'plugin', '--profile', profile, 'add', spec], {
+      env,
+      stdio: 'inherit',
+    });
+  }
 
   // Copy-based built-ins (vendor + workspace): copy under their package name
   // and append the bundle rows to the profile manifest (dsh plugin add can't
@@ -558,4 +599,47 @@ export function builtinSkillsDir(
     ? path.join(monorepoRoot, 'packages', 'uniterra-skills', 'src', 'skills')
     : path.join(resourcesPath, 'skills');
   return existsSync(candidate) ? candidate : undefined;
+}
+
+/**
+ * Provision the four persisted pipeline workflow capsules (plan-review /
+ * implement / review / simplify) into the profile's dsh_workflow personal
+ * directory (`$DSH_HOME/workflows`, the `personalDirectory` the
+ * @dsh-external/workflow plugin scans). The capsules ride the bundled skills
+ * package (`<skillsDir>/<skill>/workflows/*.workflow.json`); the desktop copies
+ * them so a fresh profile can `run_workflow('<name>', args)` them by name.
+ *
+ * Idempotent: a target capsule is only (over)written when missing or when its
+ * content differs from the bundled source — a user's own edit to a same-named
+ * workflow is never clobbered.
+ *
+ * @returns true when any capsule was written.
+ */
+export function ensureWorkflowCapsules(dshHome: string, skillsDir: string | undefined): boolean {
+  if (skillsDir === undefined || !existsSync(skillsDir)) {
+    return false;
+  }
+  let changed = false;
+  const targetDir = path.join(dshHome, 'workflows');
+  const skills = readdirSync(skillsDir);
+  for (const skill of skills) {
+    const workflowsDir = path.join(skillsDir, skill, 'workflows');
+    if (!existsSync(workflowsDir)) {
+      continue;
+    }
+    const entries = readdirSync(workflowsDir).filter((file) => file.endsWith('.workflow.json'));
+    if (entries.length === 0) {
+      continue;
+    }
+    mkdirSync(targetDir, { recursive: true });
+    for (const file of entries) {
+      const source = readFileSync(path.join(workflowsDir, file), 'utf8');
+      const dest = path.join(targetDir, file);
+      if (!existsSync(dest) || readFileSync(dest, 'utf8') !== source) {
+        writeFileSync(dest, source, 'utf8');
+        changed = true;
+      }
+    }
+  }
+  return changed;
 }

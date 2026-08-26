@@ -1,5 +1,11 @@
 # Review Workflow Template
 
+> **MIGRATED.** This historical script is superseded by the persisted
+> `workflows/review.workflow.json` capsule. The skill now calls
+> `run_workflow('review', { task })` — do NOT copy this JS block into a `workflow`
+> tool call. It is retained only as a reference for the REVIEW_PROMPT /
+> FIXER_PROMPT text the capsule now owns.
+
 One workflow: review (formal-spec + property-based proof) → fix. Make **ONE** `workflow` tool call —
 `meta`, `script`, and `args` are three properties of ONE arguments object, never three separate
 calls, and never wrapped under a field named `arguments`:
@@ -179,9 +185,19 @@ For each error report:
    invariant holds — the test the review agent wrote (report.test) must now PASS.
 3. Re-run the exact counterexample / test and confirm it PASSES (green). Then re-run the
    relevant test suite + lint to confirm nothing else broke.
+4. Add a DETERMINISTIC unit regression test for EVERY counterexample you fix — the review agent's
+   property test proves the invariant statistically over many generated inputs, but a single-input
+   unit regression makes the bug instantly reproducible with no RNG. For each report: write ONE
+   test using the report's concrete minimal input and the exact outcome the invariant requires
+   (report.expected), name it after the INVARIANT it pins (never the finding id), place it in the
+   repo's conventional test location in its test framework, and keep it PERMANENT. If a
+   deterministic regression test for the same invariant already exists, do NOT duplicate it —
+   strengthen / re-run it, never delete or rename it. Confirm it is RED against the pre-fix code
+   and GREEN after the fix, and record it in the fix's result.
 
 ## Constraints
-- Do NOT delete or rename the review agent's tests.
+- Do NOT delete or rename the review agent's property tests OR any deterministic regression test
+  that pins a counterexample — they are permanent.
 - Do NOT break already-implemented business logic — all other tests stay green.
 - Do NOT refactor unrelated code or add abstractions / dependency injection unless a report
   specifically demands it.

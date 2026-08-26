@@ -1,5 +1,11 @@
 # Simplify Workflow Template
 
+> **MIGRATED.** This historical script is superseded by the persisted
+> `workflows/simplify.workflow.json` capsule. The skill now calls
+> `run_workflow('simplify', args)` — do NOT copy this JS block into a `workflow`
+> tool call. It is retained only as a reference for the REVIEW_PROMPT /
+> FIX_PROMPT text the capsule now owns.
+
 One workflow: review → fix. Make **ONE** `workflow` tool call — `meta`, `script`, and `args`
 are three properties of ONE arguments object, never three separate calls, and never wrapped
 under a field named `arguments`:
