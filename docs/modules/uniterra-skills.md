@@ -27,48 +27,47 @@ Provision order (`SKILL_NAMES`): `uniterra-pbt-debugging`, `uniterra-plan`, `uni
 
 ## Build / Packaging
 
-`build` = `tsc -b` + `scripts/copy-skills.mjs`: mirrors `src/skills/*` → `dist/skills/`, deletes stale `dist/skills` entries (a deleted skill must not keep shipping), and throws if zero skills were copied (fail fast on a wrong path).
+`build` = `tsc -b` + `scripts/build-workflow-capsules.mjs` + `scripts/copy-skills.mjs`: the capsule builder emits each pipeline workflow's `.workflow.json` into `src/skills/<skill>/workflows/` (the persisted `plan-review` / `implement` / `review` / `simplify` capsules), then `copy-skills.mjs` mirrors `src/skills/*` → `dist/skills/` (including each `workflows/` subdir), deletes stale `dist/skills` entries (a deleted skill must not keep shipping), and throws if zero skills were copied (fail fast on a wrong path).
 
-## Workflow Templates & the dsh `workflow` Tool Contract
+## Workflow Capsules & the `run_workflow` Contract
 
 The four pipeline skills (`uniterra-plan` / `uniterra-implement` / `uniterra-review` /
-`uniterra-simplify`) dispatch their agents through the dsh `workflow` tool. Every
-template embeds the script as a ` ```js ` code fence and MUST instruct the full
-submission contract, or a workflow taken straight from the template fails before the
-script runs:
+`uniterra-simplify`) dispatch their agents through the `@dsh-external/workflow` plugin's
+`run_workflow(name, args)` tool, which runs a **persisted `.workflow.json` capsule**. The
+model never copies a JS block into a `workflow` tool call — the orchestration + agent
+prompts live in the capsule, bundled under each skill's `workflows/` dir (provisioned into
+`$DSH_HOME/workflows` by `ensureWorkflowCapsules`). Capsule contract:
 
-- **`meta` is a separate, REQUIRED tool parameter** (`meta: { name, description }`),
-  never part of the script body — dsh rejects a body opening with
-  `export const meta` (`SCRIPT_PARSE`). Only `name` / `description` / optional
-  `whenToUse` / `phases` (with only `title` / `detail` / `provider` / `model`) are
-  recognized; any other meta field fails the run with `META_INVALID`.
-- **Make ONE `workflow` call** — `meta`, `script`, and `args` are three properties of ONE
-  `arguments` object. Never split them across parallel `workflow` calls (each partial call
-  fails `missing required property "meta"` / `"script"`) and never wrap them under a field
-  named `arguments` (fails `"arguments" must be an object`).
-- **`script`** is the plain-JS body only (no TypeScript), compiled as
-  `(async () => { <body> })()`, ending with `return <json-value>`.
-- **`args`** is free-form JSON exposed as the `args` global.
-- Hooks available in the script realm: `agent(prompt, opts)`, `parallel(thunks)`,
-  `pipeline(items, ...stages)`, `phase(title)`, `log(message)`, `args`. `agent()`
-  accepts only `label` / `phase` / `schema` / `provider` / `model` (anything else is
-  rejected loudly); `schema` must be object-rooted and use only
-  `type` / `properties` / `required` / `additionalProperties` / `items` / `enum` /
-  `const` / `oneOf`.
-- **Subagent reports to the workflow are JSON** — every `agent(...)` call passes a
-  `schema`, and its return is the validated JSON object. Only the subagent **input
-  prompt** is text/markdown; never convert the schema-validated return to markdown.
+- Format: `format: "dsh.workflow"`, `version: 1`, `workflowApiVersion: 1`, plus a
+  `manifest` (lowercase-kebab `name`, `description`, non-empty `phases`, `readOnly`,
+  positive `maxAgents` / `maxConcurrency`, non-empty `patterns` from the six pattern ids)
+  and a `source` string.
+- **`source`** is plain JS (no TypeScript) defining `async function run(wf, args)` and
+  running in a restricted sandbox (no `Math.random` / `Date.now` / `console`, no
+  `import`/`require`/`process`/`fs`/`fetch`/`eval`/`__proto__`). It uses the `wf` API:
+  `wf.phase(name, fn)`, `wf.runAgent({ name, prompt, readOnly, modelHint, outputSchema })`,
+  `wf.parallel(thunks, { concurrency })`, `wf.synthesize(...)`, `wf.artifact(...)`,
+  `wf.log(...)`. `modelHint` is exactly `fast` | `balanced` | `deep`. A manifest
+  `readOnly: true` forbids spawning a write-capable child (`input.readOnly: false` throws),
+  so the mutating workflows (which have a repair/fix agent) are `readOnly: false` and set
+  each review agent `readOnly: true` individually.
+- **Subagent reports to the workflow are the `structured` output** of each
+  `wf.runAgent(...)` call (validated by that call's `outputSchema`). Only the subagent
+  **input prompt** is text/markdown; never convert the structured return to markdown.
 
-Fixed templates (plan / review / simplify / implement) embed the script as a ` ```js `
-fence that the agent copies verbatim, filling only `meta` + `args`; `uniterra-implement`
-consolidates both orchestration shapes (parallel and batched) into a single fixed script
-that branches on `args.tasks` (flat, full parallel) vs `args.batches` (array of task
-arrays, serial across batches).
+The four capsules (`plan-review` / `implement` / `review` / `simplify`) are generated by
+`scripts/build-workflow-capsules.mjs` (embeds the canonical prompt text from the
+`prompts/*.md` / `references/*.md` assets) and emitted into each skill's `workflows/` dir;
+`copy-skills.mjs` mirrors them to `dist/skills/<skill>/workflows/`.
 
-`test/workflow-templates.test.mts` locks this: every embedded ` ```js ` fence parses
-under dsh's wrapper, no body opens with `export const meta`, every template instructs
-the `meta` parameter, and the single-script templates execute to a terminal JSON
-result under stubbed hooks. Keep templates inside this contract when editing them.
+`test/workflow-templates.test.mts` locks this: each capsule is `format: dsh.workflow`
+with a valid manifest and a `source` that compiles and defines `async function run(wf, args)`;
+each capsule's `source` executes to a terminal JSON result under stubbed `wf` hooks
+(axis-shrinking for plan-review, parallel + batched shapes for implement, single-pass with
+a skipped fixer on a clean review, pass-verdict early exit + cross-round skip accumulation
+for simplify); the four SKILL.md call layers invoke `run_workflow('<name>', args)` and no
+longer instruct copying a script; and the legacy template/script files are flagged
+`MIGRATED`.
 
 ## Bundled Skills
 
@@ -91,7 +90,7 @@ The planning phase (Jovaltus methodology). Artifacts live under `<repo>/.plan/<Y
 1. **Clarify** — interactively complete the requirements list AND the architecture design with the user (`ask_user_question`).
 2. **Write the three docs yourself** (no authoring subagents) — `prd.md` (Functional Requirements list), `design.md` (architecture), `acceptance.md` (one acceptance criterion per requirement, each naming an objective verifiable piece of evidence).
 3. **Confirm with the user** — before the automated review, read the three docs back with a short summary and ask via `ask_user_question` whether the content is broadly correct and matches their needs; apply any edits they raise and show the result again, then proceed only once they confirm.
-4. **Review workflow** (`scripts/review-workflow.md`) — three parallel review agents, each fed `prd_dir` / `design_dir` / `acceptance_dir`: requirement-list-review (technical feasibility + contradictions), design-review (over-engineering / minimal complexity / minimal invasiveness / necessary vs unnecessary libraries), acceptance-review (clarity + objective verifiable evidence). The failing axes' issues go to a single repair agent that applies them to the docs itself; then only the axes that FAILED the previous round are re-reviewed — an axis that already passed is never re-dispatched, so the review-agent count shrinks from 3 toward 0. Re-run until all pass.
+4. **Review workflow** (`run_workflow('plan-review', { prd_dir, design_dir, acceptance_dir, maxRounds? })` — the `workflows/plan-review.workflow.json` capsule) — three parallel review agents, each fed `prd_dir` / `design_dir` / `acceptance_dir`: requirement-list-review (technical feasibility + contradictions), design-review (over-engineering / minimal complexity / minimal invasiveness / necessary vs unnecessary libraries), acceptance-review (clarity + objective verifiable evidence). The failing axes' issues go to a single repair agent that applies them to the docs itself; then only the axes that FAILED the previous round are re-reviewed — an axis that already passed is never re-dispatched, so the review-agent count shrinks from 3 toward 0. Re-run until all pass.
 
 ### uniterra-implement
 
@@ -99,7 +98,7 @@ PBT-first implementation against an explicit requirements list. The failing prop
 
 1. **Requirements + design** — read the plan's `prd.md` + `design.md`, or build them interactively (`ask_user_question`) when no design exists; clarify any ambiguous requirement.
 2. **Write ALL failing property tests** in the main session (the red suite), then decompose requirements + design into a **task list** (`assets/task-list-example.md`): one entry per task with its requirements (each pointing at the covering test), context files, conventions, and owned / forbidden file sets.
-3. **Workflow** (`assets/workflow-template.md`) — one fixed script (copy verbatim) handles both shapes: set `args.tasks` (flat) for full parallel when tasks are independent, or `args.batches` (array of task arrays, serial across batches) when they overlap. Each task carries a pre-rendered markdown `prompt` (goal + context + requirements + conventions + constraints) and returns `{changed_files, satisfied_requirements, deviations}` via schema. Each subagent works against the failing tests written in step 2 and **prioritizes STRENGTHENING / completing those test cases** (extend the property, add the missing edge cases and invariant asserts) rather than writing a fresh property test from scratch each time. After the workflow the full suite must be green before review.
+3. **Workflow** (`run_workflow('implement', args)` — the `workflows/implement.workflow.json` capsule) — one orchestration handles both shapes: set `args.tasks` (flat) for full parallel when tasks are independent, or `args.batches` (array of task arrays, serial across batches) when they overlap. Each task carries a pre-rendered markdown `prompt` (goal + context + requirements + conventions + constraints) and returns `{changed_files, satisfied_requirements, deviations}` via schema. Each subagent works against the failing tests written in step 2 and **prioritizes STRENGTHENING / completing those test cases** (extend the property, add the missing edge cases and invariant asserts) rather than writing a fresh property test from scratch each time. After the workflow the full suite must be green before review.
 
 ### uniterra-simplify
 
@@ -107,7 +106,7 @@ Behaviour-preserving simplification — usable standalone, no plan required. Ass
 
 ### uniterra-review
 
-Property-based adversarial review — usable standalone, no plan required. Assemble the **review scope** (task); the review agent is given ONLY that scope — not the orchestrator's goal / requirements / design / acceptance framing, and the orchestrator does NOT pre-read or re-summarize the code (it only names the scope), so the review is not polluted by the main agent's reading before it even starts — then a `workflow` (review → fix) orchestrates **two subagents** (there is no main-agent step inside it): the **review agent** reads every business module in scope in ONE pass, discovers the repo's test + property-testing conventions (never assumes a framework), traverses every conditional branch and extracts its pre/post-conditions + invariant into a formal specification table — and ALSO derives **security invariants** from the security checklist (`references/security-checklist.md`), so the review verifies logic **security** via PBT, not just correctness, writes ALL the property tests in one pass, then runs them together in a **background** job with an iteration budget **> 10,000 runs**. It shrinks every counterexample to its minimal failing input and wraps it as a structured error report (id, severity, file, line, invariant, input, expected/actual, test); only confirmed counterexamples are reported. The **fixer agent** repairs each reported branch so its property test passes, re-runs the counterexample green, and reports a diff + result + explanation **straight back to the main agent** (the orchestrator). The main agent then aggregates every counterexample + fix by severity (**critical / medium / low**) and explicitly lists which business logic is wrong, why, and the user impact, plus whether each was fixed — **without ever re-running the property tests** (the review agent ran them > 10,000 runs each and the fixer re-confirmed its fixes). The workflow is a **single pass** (no re-review loop) because the PBT is a statistically strong (near-formal) proof. Severity: **critical** = wrong results / data loss / a security hole / a core invariant that never holds; **medium** = fails on an edge/error path or a non-core invariant; **low** = a confirmed but non-blocking counterexample (rare — style/naming nits are not reported). A `pass` verdict means no critical/medium counterexample remains open.
+Property-based adversarial review — usable standalone, no plan required. Assemble the **review scope** (task); the review agent is given ONLY that scope — not the orchestrator's goal / requirements / design / acceptance framing, and the orchestrator does NOT pre-read or re-summarize the code (it only names the scope), so the review is not polluted by the main agent's reading before it even starts — then a `workflow` (review → fix) orchestrates **two subagents** (there is no main-agent step inside it): the **review agent** reads every business module in scope in ONE pass, discovers the repo's test + property-testing conventions (never assumes a framework), traverses every conditional branch and extracts its pre/post-conditions + invariant into a formal specification table — and ALSO derives **security invariants** from the security checklist (`references/security-checklist.md`), so the review verifies logic **security** via PBT, not just correctness, writes ALL the property tests in one pass, then runs them together in a **background** job with an iteration budget **> 10,000 runs**. It shrinks every counterexample to its minimal failing input and wraps it as a structured error report (id, severity, file, line, invariant, input, expected/actual, test); only confirmed counterexamples are reported. The **fixer agent** repairs each reported branch so its property test passes, re-runs the counterexample green, and **adds a deterministic unit regression test per counterexample** (a concrete minimal input + the exact outcome the invariant requires) so the bug is instantly reproducible with no RNG; it reports a diff + result + explanation **straight back to the main agent** (the orchestrator). The main agent then aggregates every counterexample + fix by severity (**critical / medium / low**) and explicitly lists which business logic is wrong, why, and the user impact, plus whether each was fixed — **without ever re-running the property tests** (the review agent ran them > 10,000 runs each and the fixer re-confirmed its fixes). The workflow is a **single pass** (no re-review loop) because the PBT is a statistically strong (near-formal) proof. Severity: **critical** = wrong results / data loss / a security hole / a core invariant that never holds; **medium** = fails on an edge/error path or a non-core invariant; **low** = a confirmed but non-blocking counterexample (rare — style/naming nits are not reported). A `pass` verdict means no critical/medium counterexample remains open.
 
 ### uniterra-pbt-debugging
 

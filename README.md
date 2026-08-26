@@ -1,12 +1,12 @@
 # Uniterra
 
-A desktop app built on the DeepSeek Harness (dsh) agent runtime and community dsh plugins: an Electron shell launches the bundled dsh CLI, provisions built-in plugins and skills into the user's profile, and hosts the dsh Web UI in a window. **The goal is to let you build your own desktop agent app through plugins** — it ships 9 npm community plugins, 1 vendored community plugin, 1 optional vendored plugin (the Deep Whale skin, opt-in), and 1 in-house provider plugin, and you can install more at any time.
+A desktop app built on the DeepSeek Harness (dsh) agent runtime and community dsh plugins: an Electron shell launches the bundled dsh CLI, provisions built-in plugins and skills into the user's profile, and hosts the dsh Web UI in a window. **The goal is to let you build your own desktop agent app through plugins** — it ships 9 npm community plugins, 2 vendored community plugins (dsh-shortcuts, plus the dsh_workflow dynamic-workflow layer), 1 optional vendored plugin (the Deep Whale skin, opt-in), and 1 in-house provider plugin, and you can install more at any time.
 
 **Docs: [Documentation](docs/README.md)** (architecture diagrams, module deep dives, setup, testing, workflows) · **Spec: [AGENTS.md](AGENTS.md)**
 
 ## Built-in Plugins
 
-The app ships 12 built-in plugins (9 npm community, 1 vendored, 1 optional, 1 in-house). Source and license:
+The app ships 13 built-in plugins (9 npm community, 2 vendored, 1 optional, 1 in-house). Source and license:
 
 | Plugin                                  | Type     | Source                                                                                                       | License         |
 | --------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------ | --------------- |
@@ -21,6 +21,7 @@ The app ships 12 built-in plugins (9 npm community, 1 vendored, 1 optional, 1 in
 | `dsh-computer-use`                      | npm      | [988hj7tczd-oss/dsh-computer-use](https://github.com/988hj7tczd-oss/dsh-computer-use)                        | MIT             |
 | `dsh-deep-whale`                        | optional | [Small-tailqwq/dsh-deep-whale](https://github.com/Small-tailqwq/dsh-deep-whale)                              | CC BY-NC-SA 4.0 |
 | `dsh-shortcuts`                         | vendored | [Ricketts-Guo/dsh-shortcuts](https://github.com/Ricketts-Guo/dsh-shortcuts)                                  | MIT             |
+| `@dsh-external/workflow`                | vendored | [omdsh-dev/dsh_workflow](https://github.com/omdsh-dev/dsh_workflow)                                          | MIT             |
 | `@uniterra-solutions/uniterra-provider` | in-house | [Uniterra-Solutions/uniterra](https://github.com/Uniterra-Solutions/uniterra) (`packages/uniterra-provider`) | MIT             |
 
 Vendored plugins are pinned at fixed commits — see [vendor/dsh-plugins/VENDOR.md](vendor/dsh-plugins/VENDOR.md).
