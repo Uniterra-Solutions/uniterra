@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/deepseek-ai/deepseek-harness.git",
+  "branch": "master",
+  "commit": "47f943859bef60e4160492346772ded9b24f765a",
+  "version": "0.1.0-rc.5",
+  "testedAt": "2026-08-14T07:35:00+08:00"
+}
