@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0] — 2026-08-27
+
+### Added
+
+- Rebuild the four pipeline workflows (`uniterra-plan` / `uniterra-implement` / `uniterra-review` / `uniterra-simplify`) as persisted `dsh_workflow` capsules (`src/skills/<skill>/workflows/*.workflow.json`, `format: dsh.workflow`). The skills now invoke them by name via `run_workflow('<name>', args)` — no more copying a large JS block into the `workflow` tool, which removes the milestone's copy-failure failure mode.
+- `@dsh-external/workflow` (v0.1.3) is now a vendored built-in exposing `workflow_list` / `run_workflow` / `workflow_manage`; `ensureWorkflowCapsules` provisions the bundled capsules into the profile's `$DSH_HOME/workflows` at boot (byte-idempotent). `quickjs-emscripten@0.32.0` is installed as a profile runtime dependency (the copy-based mechanism cannot auto-install it).
+
+### Changed
+
+- `uniterra-review`: the fixer now adds a DETERMINISTIC unit regression test per counterexample (a concrete minimal input + the exact outcome the invariant requires), so the bug is instantly reproducible without RNG — those deterministic regressions are permanent. The review agent's property tests remain.
+- The workflow-capsule orchestration is now pinned by `test/workflow-(templates|orchestration-pbt|orchestration-regressions).test.*` and `test/workflow-capsule-provision-pbt.test.mjs`.
+
 ## [0.13.2] — 2026-08-25
 
 ### Changed
