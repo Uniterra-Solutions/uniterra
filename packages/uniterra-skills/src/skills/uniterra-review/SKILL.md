@@ -69,7 +69,8 @@ main-agent step inside it:
    property test passes, re-runs the counterexample to confirm green, and **adds a DETERMINISTIC
    unit regression test per counterexample** — one concrete minimal input (the report's `input`) +
    the exact outcome the invariant requires — so the bug is instantly reproducible with no RNG. It
-   names each regression after the invariant (never the finding id), keeps it permanent, and never
+   names each regression after the TEST PURPOSE (the guarantee the test enforces, never the finding
+   id — so a maintainer sees at a glance what it tests), keeps it permanent, and never
    deletes or weakens the review agent's property tests or any regression test. It leaves changes
    UNCOMMITTED.
 

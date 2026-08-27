@@ -22,8 +22,13 @@ For each error report:
    - Write ONE test with the report's concrete minimal `input` and the exact outcome the
      invariant requires (`expected`), so re-running it re-triggers the original bug if it ever
      returns.
-   - Name it after the INVARIANT it pins (e.g. `<module>-<behaviour>`), NEVER after the finding
-     id, and place it in the repo's conventional test location in the repo's test framework.
+   - Name it after the TEST PURPOSE — the guarantee the test enforces — never a finding id, a
+     placeholder, or a where-only label. Match the repo's naming convention and REUSE the same
+     purpose-named title the review agent gave that invariant's property test, so the general
+     property and its minimal-input regression read as ONE pair to a maintainer (e.g.
+     `dedupe-preserves-order`, `resolve-always-under-base-dir`). Reading only the name must tell a
+     maintainer what the test guarantees. Place it in the repo's conventional test location in the
+     repo's test framework.
    - Keep it PERMANENT — a future regression must be caught here, deterministically.
    - If a deterministic regression test for the same invariant ALREADY exists (e.g. an earlier
      fixer run, or a colocated unit regression), do NOT duplicate it — strengthen / re-run it

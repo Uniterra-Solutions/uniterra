@@ -111,8 +111,20 @@ run any of them:
 - Put each in the repo's conventional test location (the directory + format the package's 'test'
   script actually picks up), using the repo's test framework and its property-testing library if
   present.
-- Name it DESCRIPTIVELY after the invariant it pins (e.g. <module>-<behaviour>.<ext>), never
-  after a finding id.
+- Name it AFTER THE TEST PURPOSE, not the mechanism, a finding id, or a placeholder. The name IS
+  the guarantee the test enforces: reading ONLY the name (never opening the file), a maintainer
+  must be able to say what the code must always do. Use the repo's own naming convention — a
+  kebab/snake-case file name <module>-<behaviour> (e.g. 'dedupe-preserves-order',
+  'resolve-always-under-base-dir', 'split-keeps-total-count', 'auth-denies-foreign-resource') or a
+  BDD 'should <behaviour>' / 'it(<behaviour>)' title. Never invent a parallel style.
+  - FORBID names that hide the purpose: a finding id ('REVIEW-3', 'fix-2'), a number or generic
+    placeholder ('test1', 'test_bug', 'should_work', 'my_test'), a where-only label
+    ('review-property-test'), or an implementation hint ('fast-check-1'). Rewrite any of these.
+  - At-a-glance gate: before running, every test name must let a maintainer state, from the name
+    alone, the one property the test must enforce. If it does not, rename it.
+  - The SAME invariant keeps the SAME name across its property test AND its later minimal-input
+    regression (added by the fixer), so the general property and its concrete failing case read as
+    one matched pair to a maintainer.
 - Match the repo's conventions (imports, formatting, assertion style, module type) so it passes
   the repo's lint/format.
 - If a property test for an invariant already exists (e.g. from an earlier run), do not duplicate
@@ -189,8 +201,13 @@ For each error report:
    property test proves the invariant statistically over many generated inputs, but a single-input
    unit regression makes the bug instantly reproducible with no RNG. For each report: write ONE
    test using the report's concrete minimal input and the exact outcome the invariant requires
-   (report.expected), name it after the INVARIANT it pins (never the finding id), place it in the
-   repo's conventional test location in its test framework, and keep it PERMANENT. If a
+   (report.expected), name it after the TEST PURPOSE — the guarantee the test enforces — never a
+   finding id, a placeholder, or a where-only label. Match the repo's naming convention and REUSE
+   the same purpose-named title the review agent gave that invariant's property test, so the general
+   property and its minimal-input regression read as ONE pair to a maintainer (e.g.
+   'dedupe-preserves-order', 'resolve-always-under-base-dir'). Reading only the name must tell a
+   maintainer what the test guarantees. Place it in the repo's conventional test location in its
+   test framework, and keep it PERMANENT. If a
    deterministic regression test for the same invariant already exists, do NOT duplicate it —
    strengthen / re-run it, never delete or rename it. Confirm it is RED against the pre-fix code
    and GREEN after the fix, and record it in the fix's result.

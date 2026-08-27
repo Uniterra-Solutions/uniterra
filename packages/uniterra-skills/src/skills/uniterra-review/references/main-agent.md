@@ -19,8 +19,17 @@ You receive `{ status, clean, reports, fixes }` from the workflow:
      mishandles.
    - **impact** — the ACTUAL user-visible impact.
    - **fixed** — whether the fixer resolved it (yes/no; reference the diff/result).
+   - **test** — the test (the review agent's property test + the fixer's deterministic regression)
+     that pins it, and confirm its NAME states the guarantee it enforces — a purpose-named
+     `<behaviour>`/`should <behaviour>` title, never a finding id or placeholder. A maintainer must
+     see at a glance what it tests.
 
-4. Verdict: `pass` if no `critical`/`medium` counterexample remains open (unfixed); `fail` if any
+4. **Naming gate** — before you report `pass`, verify every test named in step 3 is purpose-named.
+   If a `report.test` or a regression title names only a finding id, a generic placeholder, or a
+   where-only label and does not state the guarantee it enforces, raise it as a `low` issue naming
+   the test itself, so a hidden-meaning test is never silently accepted.
+
+5. Verdict: `pass` if no `critical`/`medium` counterexample remains open (unfixed); `fail` if any
    `critical`/`medium` counterexample is still open. When `clean` is true (no counterexample at all),
    the code is proven sound — report `pass`.
 
