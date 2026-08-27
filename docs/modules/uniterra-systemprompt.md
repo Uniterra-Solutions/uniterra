@@ -27,12 +27,13 @@ Appended to every turn:
 | 9   | Research the latest usage and APIs of external libraries before writing code; never write from memory                                                                                                                                                                                                        |
 | 10  | Develop test-driven: understand the logic, write tests for each piece of business logic, minimal change to pass, then refactor                                                                                                                                                                               |
 | 11  | Reply in the user's language by default                                                                                                                                                                                                                                                                      |
+| 12  | When you start a background tool (a background subagent or job), start it and then STOP — wait for the completion notification, do not poll or sleep-wait to burn tokens; use the time for independent work, else end your turn and let the notification wake you                                            |
 
 ## Test Guarantees
 
 - `before_agent_start` handler is registered.
 - Output starts with the base prompt and includes rules 1, 10, 11 verbatim.
-- The thinking-cost framing (rules 2–3) and the concise-output rule (4) are asserted by dedicated tests.
+- The thinking-cost framing (rules 2–3), the concise-output rule (4), and the background-tool no-poll rule (12) are asserted by dedicated tests.
 - Running the handler twice yields identical output with exactly one occurrence of each rule (no accumulation).
 
 ## Dependencies
