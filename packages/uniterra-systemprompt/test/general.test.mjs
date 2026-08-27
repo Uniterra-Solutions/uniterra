@@ -48,6 +48,13 @@ test('output stays concise: essentials only, no filler', () => {
   assert.ok(systemPrompt.includes('No filler'));
 });
 
+test('background tools are started then awaited via notification, not polled', () => {
+  const { systemPrompt } = run('base');
+  assert.ok(systemPrompt.includes('background tool'));
+  assert.ok(systemPrompt.includes('wait for the completion notification'));
+  assert.ok(systemPrompt.includes('do not poll or sleep-wait to burn tokens'));
+});
+
 test('does not accumulate duplicate rules across turns', () => {
   const handler = loadHandler();
   const base = 'base prompt';

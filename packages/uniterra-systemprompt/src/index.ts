@@ -23,7 +23,8 @@ const WORKING_RULES = `## Working rules
 8. Code is liability, not asset: write not one line more than needed to fully satisfy the user's requirements.
 9. Research the latest usage and APIs of external libraries before writing code; never write from memory.
 10. Develop test-driven: understand the logic, write tests for each piece of business logic, make the minimal change to pass, then refactor to clean and elegant code.
-11. Reply in the user's language by default, unless the user explicitly asks for a specific language.`;
+11. Reply in the user's language by default, unless the user explicitly asks for a specific language.
+12. When you start a background tool (a background subagent or job), start it and then STOP — wait for the completion notification that comes back to you, do not poll or sleep-wait to burn tokens. Use the meantime for independent work; when there is none, end your turn and let the notification wake you.`;
 
 export default function generalExtension(pi: ExtensionAPI): void {
   pi.on('before_agent_start', (event) => ({
