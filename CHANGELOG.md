@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.14.1] — 2026-08-27
+
+### Added
+
+- Vendoring convention: we vendor a plugin **only because we customize it** (edit its copied source in place). A plugin we do not modify stays a `node_modules`/npm import. The divergence + pending-upstream note is recorded in the `vendor/dsh-plugins/VENDOR.md` pin-ledger row (a **LOCAL PATCH** note). Synced across `AGENTS.md`, `docs/conventions.md`, `docs/modules/vendor-plugins.md`, `docs/workflows.md`, `README.md`.
+
+### Fixed
+
+- **Full-access mode workflow failure** (`@dsh-external/workflow`, vendored patch). When the DSH session's effective approval policy is `never` (the `danger-full-access` / no-approval-preset mode), `run_workflow` for a `capability-generated` / `trusted-local` workflow was DENIED before any child started: the workflow engine's static `approvalMode` gate still requested approval, and the DSH approval service auto-rejects every request under `never` (fail-closed). `DynamicWorkflowEngine.needsApproval` now honors the live session approval policy — a `never` session runs a workflow ungated. Regression net: `packages/uniterra-desktop/test/workflow-engine-approval-pbt.test.mjs` (PBT + deterministic anchors, via `workflow-engine-stub-loader.mjs`). Documented in `vendor/dsh-plugins/VENDOR.md`.
+
 ## [0.14.0] — 2026-08-27
 
 ### Added
