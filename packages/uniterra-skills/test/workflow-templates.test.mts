@@ -184,6 +184,25 @@ test('every pipeline skill ships a valid dsh.workflow capsule', () => {
   }
 });
 
+test('every pipeline workflow agent is write-capable (no readOnly:true runAgent)', () => {
+  // The pipeline agents must write code / run tests in the repo to verify their
+  // conclusions. A `readOnly: true` runAgent makes the dsh_workflow engine give
+  // the child a read-only toolFilter allow-list (read/glob/grep/... only), so it
+  // can never write the counterexample it must prove — the reported bug where the
+  // workflow agent did not inherit the main agent's write tools. Pin that no
+  // pipeline capsule spawns a read-only child.
+  const root = builtinSkillsDir();
+  for (const c of CAPSULES) {
+    const source = loadCapsule(root, c).source as string;
+    const readOnly = [...source.matchAll(/\breadOnly\s*:\s*(true|false)\b/gu)].map((m) => m[1]);
+    assert.ok(readOnly.length > 0, `${c.capsule}: source declares readOnly on its runAgent calls`);
+    assert.ok(
+      !readOnly.includes('true'),
+      `${c.capsule}: every runAgent must be write-capable (readOnly: false); found readOnly:true`,
+    );
+  }
+});
+
 test('plan-review capsule shrinks to only the failing axes and locks the result shape', async () => {
   const root = builtinSkillsDir();
   const capsule = loadCapsule(root, CAPSULES[0]!);

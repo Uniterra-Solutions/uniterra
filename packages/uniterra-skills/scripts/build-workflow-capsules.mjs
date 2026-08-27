@@ -68,11 +68,12 @@ const SCHEMAS = {
  * failing axes' issues to one repair agent that edits the docs itself, then
  * re-review ONLY the axes that failed (a passed axis is never re-dispatched).
  *
- * manifest.readOnly is false because the repair agent must write to the plan
- * documents; each REVIEW agent is individually read-only (C3's "readOnly: true"
- * reading applies to the review agents, not the whole mutating workflow — the
- * plugin rejects a write-capable child under a readOnly manifest, so a manifest
- * readOnly of true would make the repair agent impossible).
+ * Every agent in the pipeline is write-capable (readOnly: false), including the
+ * reviewers: the workflow agents must run tests / write code in the repo to
+ * verify their conclusions (a reviewer that cannot write cannot prove a
+ * counterexample). The manifest readOnly is false so a write-capable child is
+ * admitted — the plugin rejects a write-capable child under a readOnly
+ * manifest, so the manifest must stay false for the repair/fix agents to work.
  */
 function planReviewSource() {
   const requirement = prompt('plan-req', 'uniterra-plan', 'prompts', 'requirement-list-review.md');
@@ -138,7 +139,7 @@ Return: status ("fixed" | "failed") and a short summary of what was applied.`;
       pending.map(r => () => wf.runAgent({
         name: r.label,
         prompt: r.prompt + '\\n\\n' + inputs(),
-        readOnly: true,
+        readOnly: false,
         modelHint: 'deep',
         outputSchema: REVIEW_SCHEMA,
       })),
@@ -275,7 +276,7 @@ function reviewSource() {
   const review = await wf.phase('review', () => wf.runAgent({
     name: 'review',
     prompt: REVIEW_PROMPT + '\\n\\n## Review scope\\n' + task,
-    readOnly: true,
+    readOnly: false,
     modelHint: 'deep',
     outputSchema: REVIEW_SCHEMA,
   }));
@@ -374,7 +375,7 @@ function simplifySource() {
     const review = await wf.phase('round-' + round, () => wf.runAgent({
       name: 'review-' + round,
       prompt: REVIEW_PROMPT + '\\n\\n## Goal\\n' + goal + '\\n\\n' + contextBlock() + skippedBlock,
-      readOnly: true,
+      readOnly: false,
       modelHint: 'deep',
       outputSchema: REVIEW_SCHEMA,
     }));
