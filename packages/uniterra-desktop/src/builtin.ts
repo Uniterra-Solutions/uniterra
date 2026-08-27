@@ -21,8 +21,10 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import * as path from 'node:path';
 
@@ -255,17 +257,55 @@ export function hasAllBuiltins(profileDirPath: string): boolean {
   }
 }
 
+/**
+ * A deterministic content fingerprint of a package dir, over every file except
+ * `package.json` and `node_modules`/`.git`. Used only as a staleness oracle: two
+ * copies that ship the same implementation bytes yield the same fingerprint.
+ * `package.json` is excluded because its `version` is compared explicitly (and
+ * its `name` legitimately equals the package name on both sides), while
+ * `node_modules` is excluded because a profile re-flow can materialise deps
+ * under a copy without the source dir carrying them.
+ */
+function fingerprintDir(dir: string): string {
+  const hash = createHash('sha256');
+  const walk = (current: string, rel: string): void => {
+    for (const name of readdirSync(current)) {
+      if (name === 'node_modules' || name === '.git' || name === 'package.json') {
+        continue;
+      }
+      const absolute = path.join(current, name);
+      const relative = rel === '' ? name : path.join(rel, name);
+      if (statSync(absolute).isDirectory()) {
+        walk(absolute, relative);
+      } else {
+        hash.update(relative);
+        hash.update('\0');
+        hash.update(readFileSync(absolute));
+        hash.update('\0');
+      }
+    }
+  };
+  walk(dir, '');
+  return hash.digest('hex');
+}
+
 /** Whether the installed copy under `dest` matches the source package dir.
- * Content identity is the `package.json` `version` field — a fixed
- * distribution can ship under the SAME package name, so a bundle list can
- * never tell staleness. A missing or illegible copy on either side is stale. */
+ * Staleness is content identity: the `package.json` `version` field is the
+ * bundle-level signal (a fixed distribution can ship under the SAME package
+ * name, so a bundle list can never tell staleness), AND a content fingerprint
+ * catches a customized (locally patched) copy that changed under the SAME
+ * version — otherwise a hand edit to the source would never propagate to an
+ * already-provisioned profile. A missing or illegible copy on either side is
+ * stale. */
 function copyEntryStale(sourceDir: string, destDir: string): boolean {
   try {
     const sourceVersion = (readJson(path.join(sourceDir, 'package.json')) as { version?: string })
       .version;
     const installedVersion = (readJson(path.join(destDir, 'package.json')) as { version?: string })
       .version;
-    return sourceVersion !== installedVersion;
+    return (
+      sourceVersion !== installedVersion || fingerprintDir(sourceDir) !== fingerprintDir(destDir)
+    );
   } catch {
     return true;
   }

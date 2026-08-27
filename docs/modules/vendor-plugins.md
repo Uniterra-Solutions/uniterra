@@ -66,14 +66,14 @@ Ships pre-built (self-contained host bundle, runtime deps inlined) — copied wi
 7. Copy each vendored + workspace built-in into `node_modules/<pkg-name>` and append its bundle row to the profile `package.json` `dsh.profile.bundles` (optional entries are NOT copied here — `reconcileOptionalPlugins` owns them).
 8. Expected bundle rows: `@deepseek-ai/dsh-base`, `@deepseek-ai/dsh-web-app`, + every active built-in package name EXCEPT optional (an optional row appears only when its toggle enables it).
 
-Staleness (re-provision trigger): installed copy's `package.json` `version` ≠ source `version`, or unreadable — content identity, not bundle-list (a fixed distribution can ship under the same package name). Optional entries are exempt — their freshness is owned by `reconcileOptionalPlugins`. This heals existing profiles on their next launch after a built-in swap.
+Staleness (re-provision trigger): installed copy's `package.json` `version` ≠ source `version`, OR the source's content fingerprint ≠ the installed copy's (so a content-only local patch under the SAME version is caught), or unreadable — content identity, not bundle-list (a fixed distribution can ship under the same package name). The fingerprint ignores `package.json` (its `version` is compared explicitly) and `node_modules`/`.git`. Optional entries are exempt — their freshness is owned by `reconcileOptionalPlugins`. This heals existing profiles on their next launch after a built-in swap — so a customized vendored plugin's local patch propagates even without bumping its version.
 
 ## Update Policy (bumping a vendored plugin)
 
 Two distinct actions:
 
 - **Bump** (a plugin is NOT customized): `git -C vendor/dsh-plugins/<name> fetch --depth 1 origin`; checkout the new commit; verify it still targets the uniterra-pinned dsh family (0.1.1-rc.2 / cordis 4.0.1); re-run the smoke test; update the pin-ledger row. No in-place edits.
-- **Customize** (a plugin we patch): keep the pinned commit, edit the copied source in place, and record the divergence + pending-upstream note in the pin-ledger row (a **LOCAL PATCH** note). A plugin we customize is vendored FOR that reason; an unmodified plugin must NOT be vendored — keep it a `node_modules`/npm import instead.
+- **Customize** (a plugin we patch): keep the pinned commit, edit the copied source in place, and record the divergence + pending-upstream note in the pin-ledger row (a **LOCAL PATCH** note). The desktop detects the drift by content fingerprint, so the patch propagates into an already-provisioned profile on its next launch — no version bump required. A plugin we customize is vendored FOR that reason; an unmodified plugin must NOT be vendored — keep it a `node_modules`/npm import instead.
 
 Smoke test: sandbox `DSH_HOME`, boot the profile, expect HTTP 200 on the web port with no load error mentioning the plugins.
 

@@ -366,6 +366,39 @@ test('STALE: a missing or illegible installed copy is stale (forces re-provision
   }
 });
 
+test('STALE regression: a customized copy with the SAME version but DIFFERENT content is stale', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'uniterra-stale-'));
+  try {
+    const vendor = join(dir, 'vendor');
+    const source = join(dir, 'source');
+    const profile = join(dir, 'profiles', 'web');
+    await mkdir(profile, { recursive: true });
+    await writeProfileManifest(dir, []);
+    // Seed every copy built-in at the SAME version on both sides, so the only
+    // difference is the extra file below (mirrors the all-fresh baseline).
+    for (const entry of copyEntries()) {
+      const root = entry.root === 'vendor' ? vendor : source;
+      await writeCopySource(root, entry.dir, '1.0.0');
+      await writeInstalledCopy(profile, entry.package, '1.0.0');
+    }
+    // A vendored plugin hand-patched under the SAME version: the bundled
+    // source's lib/ differs from the profile's installed lib/. Version identity
+    // alone calls this fresh — content drift must mark it stale, or a local
+    // patch never propagates to an already-provisioned profile (the reported
+    // bug: an updated app still ran the OLD workflow engine and denied the run).
+    const entry = VENDOR[0];
+    const root = join(entry.root === 'vendor' ? vendor : source, entry.dir);
+    const installed = join(profile, 'node_modules', ...entry.package.split('/'));
+    await mkdir(join(root, 'lib'), { recursive: true });
+    await writeFile(join(root, 'lib', 'engine.js'), 'source: patched');
+    await mkdir(join(installed, 'lib'), { recursive: true });
+    await writeFile(join(installed, 'lib', 'engine.js'), 'installed: buggy');
+    assert.equal(copyBuiltinsStale(profile, vendor, source), true);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('STALE: optional entries never force a stale verdict (reconcile owns them)', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'uniterra-stale-'));
   try {
