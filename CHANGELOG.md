@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.7] — 2026-08-28
+
+### Added
+
+- **Workflow prompts require dsh's built-in `structured_output` tool** (`packages/uniterra-skills`). Every pipeline agent prompt — the plan-review reviewers, the `implement` subagents, and the review/simplify review + fix agents — now requires reporting the result via dsh's built-in `structured_output` tool exactly once with the exact schema, and forbids finishing with a plain-text JSON string or a markdown code block. This kills the failure mode where an agent printed the output JSON as a string in its final message (which fell into a slow "structured output repair" path or failed validation). Also fixed: prompt extraction now masks escaped backticks, so the `implement` capsule's FIXED_RULES is no longer silently truncated at `\`owned_files\`;` — the subagents were missing the forbidden-files / strengthen-tests / conventions rules.
+- **`plan-review` runs a SINGLE parallel review pass** (`packages/uniterra-skills`). The `plan-review` capsule dispatches the three review agents once — no repair agent, no re-review loop (`maxRounds` removed) — and returns `{ status, pass, passed, failures }`; the main agent applies each failing axis's issues itself and may re-run the review as a fresh, independent single pass.
+- **Scaffolding CLIs for the pipeline skills** (`packages/uniterra-skills`). `uniterra-plan` ships `scripts/init_plan.mjs` — scaffold `<repo>/.plan/<YYYYMMDD>/<plan-name>/` with the `prd.md` / `design.md` / `acceptance.md` templates the agent fills in. `uniterra-implement` ships `scripts/init_task.mjs` — scaffold `.dsh/<YYYYMMDD>/<task-name>/task.md` per task and maintain the run's `tasks.json` manifest, so the agent fills in placeholders and dispatches; the skill also states explicitly that NO separate plan document is written.
+- **`wf.readFile` on the workflow API** (`@dsh-external/workflow`, vendored patch). The engine exposes `wf.readFile(path)` — repo-relative, workspace-contained, UTF-8, `WorkflowControlError` on escape / ENOENT — so a capsule can inline a file's content into a subagent prompt. The `implement` capsule uses it to inline each task's brief (the subagent does not read the file itself) while `run_workflow` args stay tiny (paths, not briefs). Regression net: `packages/uniterra-desktop/test/workflow-engine-readfile.test.mjs`.
+- **Background-tool wait rule** (`packages/uniterra-systemprompt`). Working rule 12: after starting a background subagent/job, stop and wait for the completion notification instead of polling or sleep-waiting to burn tokens — use the meantime for independent work, else end the turn and let the notification wake the agent.
+
+### Changed
+
+- Project docs and conventions (README, `docs/`, AGENTS.md) now describe the single-pass plan review, the scaffolding CLIs, the inlined subagent briefs, and the `structured_output` reporting requirement.
+
 ## [0.14.6] — 2026-08-28
 
 ### Fixed
