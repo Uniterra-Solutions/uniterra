@@ -24,7 +24,7 @@ The app ships 13 built-in plugins (9 npm community, 2 vendored, 1 optional, 1 in
 | `@dsh-external/workflow`                | vendored | [omdsh-dev/dsh_workflow](https://github.com/omdsh-dev/dsh_workflow)                                          | MIT             |
 | `@uniterra-solutions/uniterra-provider` | in-house | [Uniterra-Solutions/uniterra](https://github.com/Uniterra-Solutions/uniterra) (`packages/uniterra-provider`) | MIT             |
 
-Vendored plugins are pinned at fixed commits — see [vendor/dsh-plugins/VENDOR.md](vendor/dsh-plugins/VENDOR.md).
+Vendored plugins are pinned at fixed commits — see [vendor/dsh-plugins/VENDOR.md](vendor/dsh-plugins/VENDOR.md). We vendor a plugin **only because we customize it** (edit its copied source in place, recording the divergence + pending-upstream note in the `VENDOR.md` pin ledger); a plugin we do not modify stays a `node_modules`/npm import.
 
 `dsh-deep-whale` is an optional (opt-in) skin — not installed by default. It is licensed under CC BY-NC-SA 4.0 and is redistributed free of charge, unmodified, for non-commercial use. If you are its author and do not want it bundled, please open an issue and we will remove it.
 

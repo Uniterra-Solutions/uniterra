@@ -27,10 +27,16 @@ Task recipes. Each links to the module/skill that owns the details.
 
 ## Bump a Vendored Plugin
 
+Only for a plugin we do NOT customize (a customized plugin is edited in place — see below):
+
 1. `git -C vendor/dsh-plugins/<name> fetch --depth 1 origin`; checkout the new commit.
 2. Verify dsh-family compatibility (0.1.1-rc.2 / cordis 4.0.1); re-run the smoke test.
 3. Update the pin-ledger row in `vendor/dsh-plugins/VENDOR.md`.
    Details: [modules/vendor-plugins.md](modules/vendor-plugins.md).
+
+## Customize a Vendored Plugin
+
+Vendor it because we need to modify it, then edit the copied source in place and record the divergence + pending-upstream note in the pin-ledger row (`VENDOR.md` **LOCAL PATCH** note). An unmodified plugin is NOT vendored — keep it a `node_modules`/npm import.
 
 ## Add a Built-in npm Plugin
 

@@ -70,17 +70,16 @@ Staleness (re-provision trigger): installed copy's `package.json` `version` ≠ 
 
 ## Update Policy (bumping a vendored plugin)
 
-Per `vendor/dsh-plugins/VENDOR.md`:
+Two distinct actions:
 
-1. `git -C vendor/dsh-plugins/<name> fetch --depth 1 origin`; checkout the new commit.
-2. Verify it still targets the uniterra-pinned dsh family (0.1.1-rc.2 / cordis 4.0.1); re-run the smoke test.
-3. Update the pin-ledger row in `VENDOR.md`.
+- **Bump** (a plugin is NOT customized): `git -C vendor/dsh-plugins/<name> fetch --depth 1 origin`; checkout the new commit; verify it still targets the uniterra-pinned dsh family (0.1.1-rc.2 / cordis 4.0.1); re-run the smoke test; update the pin-ledger row. No in-place edits.
+- **Customize** (a plugin we patch): keep the pinned commit, edit the copied source in place, and record the divergence + pending-upstream note in the pin-ledger row (a **LOCAL PATCH** note). A plugin we customize is vendored FOR that reason; an unmodified plugin must NOT be vendored — keep it a `node_modules`/npm import instead.
 
 Smoke test: sandbox `DSH_HOME`, boot the profile, expect HTTP 200 on the web port with no load error mentioning the plugins.
 
 ## Gotchas
 
-- Never hand-edit `vendor/dsh-plugins/` contents — bump via the update policy (AGENTS.md prohibition).
+- Don't hand-edit `vendor/dsh-plugins/` unless the plugin is one we **customize** — a customized plugin is vendored FOR that reason and edited in place, with the divergence + pending-upstream note recorded in the `VENDOR.md` pin ledger (see the `dsh-workflow` row's **LOCAL PATCH** note). A plugin we do not customize stays a `node_modules`/npm import (bumped via the update policy, never in-place edits). Do not vendor a plugin you will not modify.
 - `vendor/dsh-runtime/` is a legacy 0.5.0 snapshot (its manifest still references the retired `deep-whale-day-night-theme`); the current boot path resolves the dsh CLI from `packages/uniterra-desktop/node_modules` — see [uniterra-desktop.md](uniterra-desktop.md).
 - The root `pnpm-workspace.yaml` `minimumReleaseAgeExclude` mirrors the npm built-in set — keep the two lists in sync when adding npm built-ins.
 

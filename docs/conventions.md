@@ -36,7 +36,7 @@ Single quotes, trailing commas, print width 100, LF line endings. Run `pnpm form
 - Commit messages: imperative subject line; Conventional-Commit style used in practice (`feat:`, `fix:`, `chore(release):` — see `CHANGELOG.md`).
 - Pre-commit: `.husky/pre-commit` runs `lint-staged` — `*.{ts,tsx}` → `prettier --write` + `eslint --fix --max-warnings 0`; `*.{json,md,yaml,yml}` → `prettier --write`. Any ESLint warning/error blocks the commit.
 - Never commit `.env` files or secrets; never edit `generated/` or `node_modules/`.
-- Never edit `vendor/dsh-plugins/` in place — bump via the `VENDOR.md` update policy.
+- Don't hand-edit `vendor/dsh-plugins/` unless the plugin is one we **customize** — a customized plugin is vendored FOR that reason and edited in place, with the divergence + pending-upstream note recorded in the `vendor/dsh-plugins/VENDOR.md` pin ledger; a plugin we do not customize stays a `node_modules`/npm import (bumped via the `VENDOR.md` update policy, never in-place edits). Do not vendor a plugin you will not modify.
 - Root `prepare` script is `husky || true` — GitHub source tarballs ship no `.git`, so husky must tolerate absence.
 
 ## Testing
