@@ -100,6 +100,7 @@ function proxyApi(wf, args) {
         synthesize: (input) => controlled('synthesize', () => wf.synthesize({ inputs: jsonClone(input.inputs, 'synthesis inputs'), rubric: nonEmpty(input.rubric, 'synthesis rubric') })),
         workflow: (name, nestedArgs) => controlled('workflow', () => wf.workflow(nonEmpty(name, 'workflow name'), jsonClone(nestedArgs, 'nested workflow args', true))),
         artifact: (name, value) => controlled('artifact', () => wf.artifact(nonEmpty(name, 'artifact name'), jsonClone(value, 'artifact value'))),
+        readFile: (path) => controlled('readFile', () => wf.readFile(nonEmpty(path, 'readFile path'))),
         log: (event) => {
             const normalized = typeof event === 'string' ? nonEmpty(event, 'log message') : jsonClone(object(event, 'log event'), 'log event');
             wf.log(normalized);
@@ -229,6 +230,7 @@ const GUEST_BOOTSTRAP = String.raw `
     synthesize: input => call('synthesize', input),
     workflow: (name, args) => call('workflow', { name, args }),
     artifact: (name, value) => call('artifact', { name, value }),
+    readFile: path => call('readFile', { path }),
     log: event => { sync('log', { event }); },
   });
   Object.defineProperty(globalThis, 'wf', { value: wf, writable: false, configurable: false });
@@ -308,6 +310,7 @@ export async function runRestrictedWorkflowScript(options) {
             case 'synthesize': return await api.synthesize(record);
             case 'workflow': return await api.workflow(nonEmpty(record.name, 'workflow name'), jsonClone(record.args, 'nested workflow args', true));
             case 'artifact': return await api.artifact(nonEmpty(record.name, 'artifact name'), jsonClone(record.value, 'artifact value'));
+            case 'readFile': return await api.readFile(nonEmpty(record.path, 'path'));
             default: throw new WorkflowScriptError(`unknown workflow bridge method: ${method}`, { fatal: true });
         }
     };

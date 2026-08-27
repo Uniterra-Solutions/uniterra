@@ -242,6 +242,8 @@ export interface WorkflowApi {
     }): Promise<WorkflowSynthesis>;
     workflow(name: string, args?: unknown): Promise<unknown>;
     artifact(name: string, value: unknown): Promise<WorkflowArtifactRef>;
+    /** Read a workspace (repo-relative) file as a UTF-8 string. */
+    readFile(path: string): Promise<string>;
     log(event: string | {
         readonly message: string;
         readonly data?: unknown;

@@ -1002,6 +1002,20 @@ export class DynamicWorkflowEngine {
                 this.emit(run, 'artifact-written', { name, path: artifact.path });
                 return artifact;
             },
+            readFile: async (path) => {
+                const cwd = cwdOf(run.input.parent);
+                const target = workspacePath(cwd, path);
+                if (target === undefined)
+                    throw new WorkflowControlError(`workflow readFile path escapes the workspace: ${path}`);
+                try {
+                    return await readFile(target.absolute, 'utf8');
+                }
+                catch (error) {
+                    if (error instanceof Error && error.code === 'ENOENT')
+                        throw new WorkflowControlError(`workflow readFile: no such file ${path}`);
+                    throw new WorkflowControlError(`workflow readFile failed: ${message(error)}`);
+                }
+            },
             log: event => {
                 const normalized = typeof event === 'string' ? { message: event } : snapshotWorkflowJson(event, 'workflow log event');
                 this.emit(run, 'workflow-log', normalized);
