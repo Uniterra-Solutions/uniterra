@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.5] — 2026-08-28
+
+### Changed
+
+- **Adversarial tests are named by test purpose** (`uniterra-review`). The review agent and the fixer now name every property test and deterministic regression after the TEST PURPOSE it pins — the guarantee the test enforces — never a finding id, a placeholder, or a where-only label, so a maintainer sees at a glance what it tests. An at-a-glance gate requires each name to state the property it enforces, and the property test + its minimal-input regression share the same purpose-named title. The main agent's aggregation adds a naming gate that flags any hidden-meaning test.
+
+### Fixed
+
+- **`run_workflow('implement', …)` args were frequently malformed** (`packages/uniterra-skills`). Each task's full markdown brief was embedded inline in the `args` JSON, which the model often corrupted (`invalid arguments: "arguments" must be an object`) or degraded to a silent `{ status: 'done', agents: 0 }`. Tasks now carry only `{ id, name, promptFile }` — a repo-relative path to a file holding the task brief, which the subagent reads with the `read` tool. The `implement` capsule requires `promptFile` and fails loudly when a task lacks it. Convention synced across `AGENTS.md`, `docs/conventions.md`, `docs/workflows.md`, `docs/modules/uniterra-skills.md`, `README.md`.
+
 ## [0.14.4] — 2026-08-27
 
 ### Fixed
