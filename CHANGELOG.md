@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.2] — 2026-08-27
+
+### Fixed
+
+- **Vendored-plugin patch not propagating to existing profiles** (`packages/uniterra-desktop`, `@dsh-external/workflow`). The desktop detected a copy-based built-in as stale by comparing ONLY the `package.json` `version`. A customized vendored plugin hand-edited under the SAME version — the `@dsh-external/workflow` full-access approval patch, version stayed `0.1.3` — was therefore never re-provisioned: on update the profile kept running the OLD workflow engine, so `run_workflow` was still denied (`"workflow approval rejected"` under the `never`-approval policy). `copyEntryStale` now also compares a SHA-256 content fingerprint (ignoring `package.json`/`node_modules`/`.git`), so any content-only local patch propagates into an already-provisioned profile on its next launch. Regression net: `packages/uniterra-desktop/test/builtin-pbt.test.mjs` (`STALE regression: a customized copy with the SAME version but DIFFERENT content is stale`).
+
 ## [0.14.1] — 2026-08-27
 
 ### Added
