@@ -257,17 +257,32 @@ export function hasAllBuiltins(profileDirPath: string): boolean {
   }
 }
 
-/**
- * A deterministic content fingerprint of a package dir, over every file except
- * `package.json` and `node_modules`/`.git`. Used only as a staleness oracle: two
- * copies that ship the same implementation bytes yield the same fingerprint.
- * `package.json` is excluded because its `version` is compared explicitly (and
- * its `name` legitimately equals the package name on both sides), while
- * `node_modules` is excluded because a profile re-flow can materialise deps
- * under a copy without the source dir carrying them.
- */
-function fingerprintDir(dir: string): string {
+/** A deterministic content fingerprint of the given implementation files under
+ * `baseDir`, over each file's bytes in sorted path order. Used only as a
+ * staleness oracle: two copies that ship the same bytes for the same paths
+ * yield the same digest. Files solely on one side are excluded by the caller. */
+function contentFingerprint(relPaths: string[], baseDir: string): string {
   const hash = createHash('sha256');
+  for (const rel of relPaths) {
+    hash.update(rel);
+    hash.update('\0');
+    hash.update(readFileSync(path.join(baseDir, rel)));
+    hash.update('\0');
+  }
+  return hash.digest('hex');
+}
+
+/** The relative implementation paths present in BOTH dirs, sorted (excluding
+ * `package.json`, `node_modules`, `.git`). Comparing only shared files keeps
+ * the oracle honest: `package.json` is handled by the explicit version check
+ * (its `name` legitimately equals the package name on both sides), and a file
+ * on ONLY one side is not a staleness signal — the installed copy is a
+ * faithful copy in practice, but a profile may legitimately differ in either
+ * direction (a partial fixture, a plugin-generated file), while a customized
+ * built-in is hand-edited in files that exist on BOTH sides (e.g.
+ * `lib/engine.js`). */
+function sharedFiles(sourceDir: string, destDir: string): string[] {
+  const files: string[] = [];
   const walk = (current: string, rel: string): void => {
     for (const name of readdirSync(current)) {
       if (name === 'node_modules' || name === '.git' || name === 'package.json') {
@@ -278,34 +293,36 @@ function fingerprintDir(dir: string): string {
       if (statSync(absolute).isDirectory()) {
         walk(absolute, relative);
       } else {
-        hash.update(relative);
-        hash.update('\0');
-        hash.update(readFileSync(absolute));
-        hash.update('\0');
+        const dest = path.join(destDir, relative);
+        if (existsSync(dest) && statSync(dest).isFile()) {
+          files.push(relative);
+        }
       }
     }
   };
-  walk(dir, '');
-  return hash.digest('hex');
+  walk(sourceDir, '');
+  return files.sort();
 }
 
 /** Whether the installed copy under `dest` matches the source package dir.
  * Staleness is content identity: the `package.json` `version` field is the
  * bundle-level signal (a fixed distribution can ship under the SAME package
- * name, so a bundle list can never tell staleness), AND a content fingerprint
- * catches a customized (locally patched) copy that changed under the SAME
- * version — otherwise a hand edit to the source would never propagate to an
- * already-provisioned profile. A missing or illegible copy on either side is
- * stale. */
+ * name, so a bundle list can never tell staleness), AND the bytes of the
+ * implementation files shared by both sides — so a customized (locally
+ * patched) copy that changed under the SAME version is caught, otherwise a
+ * hand edit to the source would never propagate to an already-provisioned
+ * profile. A missing or illegible copy on either side is stale. */
 function copyEntryStale(sourceDir: string, destDir: string): boolean {
   try {
     const sourceVersion = (readJson(path.join(sourceDir, 'package.json')) as { version?: string })
       .version;
     const installedVersion = (readJson(path.join(destDir, 'package.json')) as { version?: string })
       .version;
-    return (
-      sourceVersion !== installedVersion || fingerprintDir(sourceDir) !== fingerprintDir(destDir)
-    );
+    if (sourceVersion !== installedVersion) {
+      return true;
+    }
+    const shared = sharedFiles(sourceDir, destDir);
+    return contentFingerprint(shared, sourceDir) !== contentFingerprint(shared, destDir);
   } catch {
     return true;
   }

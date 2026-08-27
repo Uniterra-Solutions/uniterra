@@ -386,8 +386,8 @@ test('STALE regression: a customized copy with the SAME version but DIFFERENT co
     // alone calls this fresh — content drift must mark it stale, or a local
     // patch never propagates to an already-provisioned profile (the reported
     // bug: an updated app still ran the OLD workflow engine and denied the run).
-    const entry = VENDOR[0];
-    const root = join(entry.root === 'vendor' ? vendor : source, entry.dir);
+    const entry = copyEntries().find((e) => e.root === 'vendor');
+    const root = join(vendor, entry.dir);
     const installed = join(profile, 'node_modules', ...entry.package.split('/'));
     await mkdir(join(root, 'lib'), { recursive: true });
     await writeFile(join(root, 'lib', 'engine.js'), 'source: patched');
