@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.6] — 2026-08-28
+
+### Fixed
+
+- **Workflow agents were truncated by an absurdly small output-token ceiling** (`@dsh-external/workflow`, vendored patch). The plugin's built-in model tiers defaulted `maxTokens` to 4_096 (`fast`) / 8_192 (`balanced`) / 16_384 (`deep`). Every `run_workflow` child without an explicit `maxTokens` resolved to the `balanced` tier and was handed `agentOptions.maxTokens = 8_192`, which the provider forwards verbatim as `max_output_tokens`. A reasoning-heavy child — e.g. the review workflow's FIXER AGENT — spent the whole 8_192 ceiling inside one giant chain-of-thought trace, and the upstream gateway ended the response as `response.incomplete` → `INCOMPLETE` ("response not completed"). Normal subagent/main-agent calls never route through the plugin's `modelTiers`, so they use the model's real default and are not truncated — which is exactly why the failure only ever appeared on workflow agents. All three tier ceilings are now the model's real max output (384_000), so a workflow agent is never capped below the model's own capability. Regression net: `packages/uniterra-desktop/test/workflow-tier-defaults.test.mjs` (`{fast,balanced,deep}MaxTokens default ceiling is not artificially small`). Documented in `vendor/dsh-plugins/VENDOR.md`.
+
 ## [0.14.5] — 2026-08-28
 
 ### Changed
