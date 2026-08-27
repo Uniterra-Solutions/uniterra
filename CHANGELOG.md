@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.4] — 2026-08-27
+
+### Fixed
+
+- **Pipeline workflow agents were read-only** (`packages/uniterra-skills`). The `plan-review` / `review` / `simplify` workflows spawned their review/planner agents with `readOnly: true`, which makes the `@dsh-external/workflow` engine hand the child a read-only `toolFilter` allow-list (`read`/`glob`/`grep`/`lsp`/`skill`/`web_search` only). Those agents therefore never inherited the parent agent's write tools and could not write the code/tests that prove their conclusion — the reported "workflow agent did not inherit the main agent's toolset". All four pipeline workflows are write-capable by design; every `runAgent` now sets `readOnly: false`, so each child inherits the full parent toolset with no read-only restriction. Regression net: `packages/uniterra-skills/test/workflow-templates.test.mts` (`every pipeline workflow agent is write-capable (no readOnly:true runAgent)`).
+
 ## [0.14.3] — 2026-08-27
 
 ### Fixed
