@@ -16,7 +16,7 @@ three separate calls, and never wrapped under a field named `arguments`:
   "script": "<the JS below — copy verbatim, do not edit>",
   "args": {
     "goal": "-one-line feature goal-",
-    "tasks": [{ "id": "T1", "name": "-task name-", "prompt": "-rendered markdown block-" }]
+    "tasks": [{ "id": "T1", "name": "-task name-", "promptFile": ".dsh/tasks/T1.md" }]
   }
 }
 ```
@@ -26,22 +26,33 @@ parallel calls fails with `missing required property "meta"` / `"script"`; wrapp
 `arguments` fails with `"arguments" must be an object`. `meta` must contain only `name` and
 `description` (plus optional `whenToUse`/`phases`). `args` may carry an optional `maxRounds`.
 
+**Keep `args` tiny — never embed the task brief in it.** Each task carries a `promptFile`
+(repo-relative path to a file holding the rendered markdown task brief); the subagent reads that
+file. Writing the brief to a file keeps `run_workflow`'s `args` JSON to a handful of short
+strings, so it is always valid and never corrupts the tool call (the exact failure mode when a
+long brief was embedded inline).
+
 **You choose only the orchestration shape, not the script.** This one script handles both:
 
 - independent tasks → `args.tasks` (flat array, all run in parallel);
 - overlapping tasks → `args.batches` (array of task arrays; batches run serially, agents
   within a batch run in parallel).
 
-Use exactly one of `tasks` or `batches` — never both. Render each task into a markdown
-`prompt` (see `assets/task-list-example.md`). For the shape decision and partition rules, see
-`references/parallel-workflow.md` and `references/batched-workflow.md`.
+Use exactly one of `tasks` or `batches` — never both. Write each task's brief to its prompt file
+and reference it via `promptFile` (see `assets/task-list-example.md`). For the shape decision and
+partition rules, see `references/parallel-workflow.md` and `references/batched-workflow.md`.
 
 ## Fixed rules (appended by the script)
 
 ```js
 const FIXED_RULES = `You are an isolated subagent implementing ONE task of an approved project. You have no
-prior conversation context — everything you need is in the prompt below. Do not ask for
-clarification; make a reasonable, documented decision where the task is ambiguous.
+prior conversation context — everything you need is in your task file + the rules below. Do not
+ask for clarification; make a reasonable, documented decision where the task is ambiguous.
+
+- FIRST read your task file with the read tool (the 'task file' path in the Task block). It is
+  your full brief — goal, context files, requirements with their allocated failing tests,
+  conventions, constraints — and the source of truth. Never guess or reconstruct the brief from
+  memory.
 
 - Work at the repo root (your cwd). Leave all changes UNCOMMITTED — a later review reads the diff.
 - Touch only the files named in your task's \`owned_files\`; never modify \`forbidden_files\` or any
@@ -92,12 +103,36 @@ const { tasks, batches } = args;
 // otherwise → one parallel group.
 const groups = batches ?? [tasks];
 
+// Build a SMALL prompt per task: the full brief lives in a file the subagent
+// reads (t.promptFile, a repo-relative path), so args stay tiny. `taskPrompt`
+// throws if a task is missing `promptFile` (a contract violation).
+function taskPrompt(t) {
+  if (t == null || typeof t !== 'object') throw new Error('implement task must be an object');
+  const id = t.id === undefined ? 'task' : String(t.id);
+  if (typeof t.promptFile !== 'string' || t.promptFile.trim().length === 0) {
+    throw new Error(
+      'implement task "' +
+        id +
+        '" is missing a promptFile path: write the task brief to a file and pass its repo-relative path (keep args small)',
+    );
+  }
+  return [
+    '## Task to implement',
+    '- task id: ' + id,
+    '- task name: ' + (t.name === undefined ? id : String(t.name)),
+    '- task file: ' + t.promptFile,
+    '',
+    'Read the task file NOW with the read tool — it is your full task brief (goal, owned/forbidden files, requirements + allocated failing tests, conventions, constraints). Then follow the fixed rules below.',
+  ].join('\n');
+}
+
 const results = [];
 for (let b = 0; b < groups.length; b++) {
   if (groups.length > 1) phase('batch-' + (b + 1));
   const done = await parallel(
     groups[b].map(
-      (t) => () => agent(t.prompt + '\n\n' + FIXED_RULES, { label: t.id, schema: RETURN_SCHEMA }),
+      (t) => () =>
+        agent(taskPrompt(t) + '\n\n' + FIXED_RULES, { label: t.id, schema: RETURN_SCHEMA }),
     ),
   );
   if (done.some((r) => r === null)) return { status: 'failed', batch: b + 1 };

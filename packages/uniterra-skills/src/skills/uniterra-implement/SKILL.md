@@ -39,9 +39,9 @@ tests that encode the business logic as invariants — never write implementatio
    implementation: subagents strengthen and complete them (never rewrite them from
    scratch) and turn them green.
 2. Decompose requirements + design into a **task list** (`assets/task-list-example.md`):
-   one entry per task, with its `prompt` already rendered to markdown (goal, context
-   files, requirements with their test, conventions, constraints). Keeping `args` flat
-   (a markdown string per task) avoids the deep-nested-JSON tool-call corruption.
+   one entry per task. Write each task's full brief to a prompt file (`.dsh/tasks/<id>.md`)
+   and reference it via `promptFile`. Keep `args` tiny (ids + paths only) — a big brief
+   embedded inline is exactly what corrupts the run_workflow tool-call JSON.
 3. Choose the workflow shape by task overlap — you only pick the shape, never write JS:
    - Independent tasks → set `args.tasks` (flat array) — `references/parallel-workflow.md`.
    - Overlapping tasks → set `args.batches` (array of task arrays) — `references/batched-workflow.md`.
@@ -53,10 +53,10 @@ tests that encode the business logic as invariants — never write implementatio
 - Run it with the dsh_workflow `run_workflow` tool as **ONE call**:
   `run_workflow('implement', { tasks })` for independent tasks, or
   `run_workflow('implement', { batches })` for overlapping batches. No JS to copy — the
-  orchestration is the persisted `implement` capsule. `tasks`/`batches` mirror the old
-  shapes exactly (each entry `{ id, name, prompt }`). Each subagent reads its `task.prompt`
-  and makes its requirements' failing tests green, returning a JSON report (changed files,
-  satisfied requirements, deviations) as its structured output.
+  orchestration is the persisted `implement` capsule. Each entry is `{ id, name, promptFile }`
+  (a repo-relative path, NOT the brief text). Each subagent reads its `promptFile` first (the
+  full brief), then makes its requirements' failing tests green, returning a JSON report
+  (changed files, satisfied requirements, deviations) as its structured output.
 - `run_workflow` returns `{ status: 'done', agents }` on success (every task returned a
   valid JSON report); `{ status: 'failed', batch }` when a subagent failed. The subagent
   reports to the workflow as **JSON** (its structured output); only its input prompt is

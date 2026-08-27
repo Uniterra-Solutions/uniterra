@@ -210,6 +210,25 @@ function implementSource() {
     },
   };
 
+  // Build a SMALL per-task prompt. The task brief lives in a file the subagent
+  // reads (promptFile, a repo-relative path), so run_workflow args stay tiny
+  // and the tool-call JSON is never corrupted by an embedded task brief.
+  function taskPrompt(t) {
+    if (t == null || typeof t !== 'object') throw new Error('implement task must be an object');
+    const id = t.id === undefined ? 'task' : String(t.id);
+    if (typeof t.promptFile !== 'string' || t.promptFile.trim().length === 0) {
+      throw new Error('implement task "' + id + '" is missing a promptFile path: write the task brief to a file and pass its repo-relative path (keep args small)');
+    }
+    return [
+      '## Task to implement',
+      '- task id: ' + id,
+      '- task name: ' + (t.name === undefined ? id : String(t.name)),
+      '- task file: ' + t.promptFile,
+      '',
+      'Read the task file NOW with the read tool — it is your full task brief (goal, owned/forbidden files, requirements + their allocated failing tests, conventions, constraints). Then follow the fixed rules below.',
+    ].join('\\n');
+  }
+
   const groups = batches ?? (tasks ? [tasks] : []);
   const results = [];
 
@@ -217,8 +236,8 @@ function implementSource() {
     const label = groups.length > 1 ? 'batch-' + (b + 1) : 'implement';
     const done = await wf.phase(label, () => wf.parallel(
       groups[b].map(t => () => wf.runAgent({
-        name: t.id,
-        prompt: t.prompt + '\\n\\n' + FIXED_RULES,
+        name: String(t?.id ?? 'task'),
+        prompt: taskPrompt(t) + '\\n\\n' + FIXED_RULES,
         readOnly: false,
         modelHint: 'balanced',
         outputSchema: RETURN_SCHEMA,
@@ -432,7 +451,8 @@ const capsules = [
     file: 'plan-review',
     skillDir: 'uniterra-plan',
     name: 'plan-review',
-    description: 'Review plan documents (requirements / design / acceptance) with three parallel agents, repair the failing axes, and re-review only the axes that failed until all pass.',
+    description:
+      'Review plan documents (requirements / design / acceptance) with three parallel agents, repair the failing axes, and re-review only the axes that failed until all pass.',
     phases: ['requirement-list-review', 'design-review', 'acceptance-review'],
     readOnly: false,
     patterns: ['fan-out-and-synthesize', 'loop-until-done'],
@@ -453,7 +473,8 @@ const capsules = [
     file: 'implement',
     skillDir: 'uniterra-implement',
     name: 'implement',
-    description: 'Dispatch an approved task list to subagents — all task in parallel, or serial batches of parallel tasks — and collect each agent JSON report.',
+    description:
+      'Dispatch an approved task list to subagents — all task in parallel, or serial batches of parallel tasks — and collect each agent JSON report.',
     phases: ['implement'],
     readOnly: false,
     patterns: ['fan-out-and-synthesize'],
@@ -463,7 +484,8 @@ const capsules = [
     file: 'review',
     skillDir: 'uniterra-review',
     name: 'review',
-    description: 'Property-based adversarial review: extract a formal spec table + >10k-run PBT counterexamples, then fix each counterexample.',
+    description:
+      'Property-based adversarial review: extract a formal spec table + >10k-run PBT counterexamples, then fix each counterexample.',
     phases: ['review', 'fix'],
     readOnly: false,
     patterns: ['adversarial-verification'],
@@ -473,7 +495,8 @@ const capsules = [
     file: 'simplify',
     skillDir: 'uniterra-simplify',
     name: 'simplify',
-    description: 'Behaviour-preserving simplification: review → fix until simple, with a hard round cap and cross-round skip accumulation.',
+    description:
+      'Behaviour-preserving simplification: review → fix until simple, with a hard round cap and cross-round skip accumulation.',
     phases: ['round-1'],
     readOnly: false,
     patterns: ['loop-until-done'],

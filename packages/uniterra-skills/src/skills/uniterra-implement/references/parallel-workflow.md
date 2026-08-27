@@ -14,15 +14,15 @@ only choose the orchestration shape by setting `args.tasks` (flat array) instead
    batched scenario instead.
 3. Each task's `forbidden_files` = every OTHER task's `owned_files` (the partition must be
    complete so parallel agents never collide).
-4. Render each task into a markdown `prompt` (see `assets/task-list-example.md`), so `args`
-   stays flat.
+4. Write each task's brief to its prompt file and reference it via `promptFile`
+   (see `assets/task-list-example.md`), so `args` stays tiny.
 
 ## `args` shape
 
 ```json
 {
   "goal": "...",
-  "tasks": [{ "id": "T1", "name": "...", "prompt": "...markdown..." }]
+  "tasks": [{ "id": "T1", "name": "...", "promptFile": ".dsh/tasks/T1.md" }]
 }
 ```
 
