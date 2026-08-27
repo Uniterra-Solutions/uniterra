@@ -7,7 +7,8 @@
  * SEEDED generated inputs. This file pins each counterexample with a single
  * CONCRETE minimal input + its exact expected outcome, so a regression is caught
  * immediately and deterministically (no RNG) and documented as a one-shot unit
- * test. Each test is named after the INVARIANT it pins (never a finding id).
+ * test. Each test is named after the TEST PURPOSE it pins — the guarantee the test
+ * enforces — never a finding id, so a maintainer sees at a glance what it tests.
  *
  * Counterexamples locked here (the review agent confirmed each red):
  *  1. REVIEW: a fixer that reports `status:'failed'` must surface as a `failed`
@@ -265,7 +266,7 @@ test('IMPLEMENT: the runner never throws when neither tasks nor batches are give
 test('IMPLEMENT: a concrete task is dispatched and reported (positive control)', async () => {
   const { result, calls } = await runCapsule(
     IMPLEMENT_RUN,
-    { tasks: [{ id: 'T1', prompt: 'p1' }, { id: 'T2', prompt: 'p2' }] },
+    { tasks: [{ id: 'T1', name: 'T1', promptFile: '.dsh/tasks/T1.md' }, { id: 'T2', name: 'T2', promptFile: '.dsh/tasks/T2.md' }] },
     (name) => ({ changed_files: [], satisfied_requirements: [name] }),
   );
   assert.equal(result.status, 'done');
@@ -281,9 +282,9 @@ test('IMPLEMENT: a failing child fails the run with the first failing batch (bat
     IMPLEMENT_RUN,
     {
       batches: [
-        [{ id: 'A', prompt: 'pa' }],
-        [{ id: 'B', prompt: 'pb' }],
-        [{ id: 'C', prompt: 'pc' }],
+        [{ id: 'A', name: 'A', promptFile: '.dsh/tasks/A.md' }],
+        [{ id: 'B', name: 'B', promptFile: '.dsh/tasks/B.md' }],
+        [{ id: 'C', name: 'C', promptFile: '.dsh/tasks/C.md' }],
       ],
     },
     (name) => (name === 'B' ? null : { changed_files: [], satisfied_requirements: [name] }),

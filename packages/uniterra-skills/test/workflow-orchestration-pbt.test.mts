@@ -362,7 +362,7 @@ test('IMPLEMENT: on failure the reported batch is the first batch with a null ch
   for (let seed = 0; seed < 3000; seed += 1) {
     const rng = lcg(seed);
     const numBatches = randInt(rng, 1, 4);
-    const batches: Array<Array<{ id: string; prompt: string; fail: boolean }>> = [];
+    const batches: Array<Array<{ id: string; promptFile: string; fail: boolean }>> = [];
     const all = [];
     for (let b = 0; b < numBatches; b += 1) {
       const n = randInt(rng, 1, 3);
@@ -370,7 +370,7 @@ test('IMPLEMENT: on failure the reported batch is the first batch with a null ch
       for (let t = 0; t < n; t += 1) {
         const id = `T${b}-${t}`;
         const fail = rng() < 0.4;
-        group.push({ id, prompt: 'p', fail });
+        group.push({ id, name: id, promptFile: '.dsh/tasks/' + id + '.md', fail });
         all.push(id);
       }
       batches.push(group);
@@ -408,13 +408,16 @@ test('IMPLEMENT: on failure the reported batch is the first batch with a null ch
   }
 });
 
-test('IMPLEMENT robustness: the runner never throws — it degrades to a sensible terminal for any args', async () => {
-  // The manifest has no inputSchema, so arbitrary args must not crash the capsule.
+test('IMPLEMENT robustness: the runner never throws for contract-valid or empty args, and a task missing promptFile fails loudly', async () => {
+  // The manifest has no inputSchema, but each task now REQUIRES a `promptFile` (the
+  // brief lives in a file so args stay tiny). Empty/absent shapes still degrade to a
+  // terminal; a PROVIDED task without promptFile is a contract violation that surfaces
+  // a clear error instead of silently producing an empty subagent prompt.
   const shapes = [
     {},
-    { tasks: [{ id: 'T1', prompt: 'p' }] },
+    { tasks: [{ id: 'T1', name: 'T1', promptFile: '.dsh/tasks/T1.md' }] },
     { tasks: [], batches: [] },
-    { batches: [[{ id: 'A', prompt: 'p' }], [{ id: 'B', prompt: 'p' }]] },
+    { batches: [[{ id: 'A', name: 'A', promptFile: '.dsh/tasks/A.md' }], [{ id: 'B', name: 'B', promptFile: '.dsh/tasks/B.md' }]] },
   ];
   for (const args of shapes) {
     await assert.doesNotReject(
@@ -426,6 +429,13 @@ test('IMPLEMENT robustness: the runner never throws — it degrades to a sensibl
       `implement must not throw for args=${JSON.stringify(args)}`,
     );
   }
+  // A task entry WITHOUT promptFile is a contract violation → visible error, not a
+  // silent no-op (this is the fail-fast that replaced the old `{done, agents:0}`).
+  await assert.rejects(
+    () => runCapsule(IMPLEMENT_RUN, { tasks: [{ id: 'X', name: 'X' }] }, () => ({ changed_files: [], satisfied_requirements: [] })),
+    /promptFile/,
+    'a task without promptFile fails loudly',
+  );
 });
 
 // ---------------------------------------------------------------------------

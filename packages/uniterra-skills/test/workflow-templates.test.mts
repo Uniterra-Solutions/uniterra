@@ -258,8 +258,8 @@ test('implement capsule supports parallel tasks and serial batches', async () =>
   { // independent tasks → one parallel group, agents = count
     const { result } = await runCapsule(capsule, {
       tasks: [
-        { id: 'T1', prompt: 'p1' },
-        { id: 'T2', prompt: 'p2' },
+        { id: 'T1', name: 'T1', promptFile: '.dsh/tasks/T1.md' },
+        { id: 'T2', name: 'T2', promptFile: '.dsh/tasks/T2.md' },
       ],
     }, {
       T1: () => ({ changed_files: [{ file: 'a', lines: '1' }], satisfied_requirements: ['REQ-1'] }),
@@ -273,8 +273,8 @@ test('implement capsule supports parallel tasks and serial batches', async () =>
   { // overlapping tasks → serial batches, batch order preserved
     const { result, calls } = await runCapsule(capsule, {
       batches: [
-        [{ id: 'A', prompt: 'pa' }],
-        [{ id: 'B', prompt: 'pb' }],
+        [{ id: 'A', name: 'A', promptFile: '.dsh/tasks/A.md' }],
+        [{ id: 'B', name: 'B', promptFile: '.dsh/tasks/B.md' }],
       ],
     }, {
       A: () => ({ changed_files: [], satisfied_requirements: ['A'] }),
@@ -289,8 +289,8 @@ test('implement capsule supports parallel tasks and serial batches', async () =>
   { // a failing child fails the whole (batched) run with the batch index
     const { result } = await runCapsule(capsule, {
       batches: [
-        [{ id: 'A', prompt: 'pa' }],
-        [{ id: 'B', prompt: 'pb' }],
+        [{ id: 'A', name: 'A', promptFile: '.dsh/tasks/A.md' }],
+        [{ id: 'B', name: 'B', promptFile: '.dsh/tasks/B.md' }],
       ],
     }, {
       A: () => ({ changed_files: [], satisfied_requirements: ['A'] }),
