@@ -677,6 +677,15 @@ export class DynamicWorkflowEngine {
     needsApproval(input) {
         if (input.requireApproval !== undefined)
             return input.requireApproval;
+        // Full-access mode: the DSH session's effective approval policy is
+        // 'never' — approval prompts are disabled and any ApprovalService.request()
+        // is auto-rejected (fail-closed). A workflow must run without its own
+        // approval gate in that mode, otherwise it is DENIED before any child
+        // starts. Honor the session policy instead of only the plugin's static
+        // approvalMode.
+        if (this.deps.approval !== undefined
+            && this.deps.approval.effectivePolicy(input.parent?.session) === 'never')
+            return false;
         if (this.deps.config.approvalMode === 'always')
             return true;
         return this.deps.config.approvalMode === 'generated-and-local'
