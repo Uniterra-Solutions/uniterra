@@ -13,15 +13,16 @@ of `args.tasks`, and copy the template's script verbatim.
 2. Partition tasks into the smallest number of batches such that overlapping tasks land in
    DIFFERENT batches; tasks that only depend on earlier batches sit in later batches.
 3. `args.batches` is an array of task arrays (not the flat task list) — partition before
-   dispatching. Write each task's brief to its prompt file and reference it via `promptFile`
-   (see `assets/task-list-example.md`), so `args` stays tiny.
+   dispatching. Scaffold each task's brief with the init CLI
+   (`node "<skill_base>/scripts/init_task.mjs" <id> <name>`), fill in the placeholders, and
+   reference it via `promptFile` — `args` stays tiny.
 
 ## `args` shape
 
 ```json
 {
   "goal": "...",
-  "batches": [[{ "id": "T1", "name": "...", "promptFile": ".dsh/tasks/T1.md" }]]
+  "batches": [[{ "id": "T1", "name": "...", "promptFile": ".dsh/20260828/auth-issue/task.md" }]]
 }
 ```
 

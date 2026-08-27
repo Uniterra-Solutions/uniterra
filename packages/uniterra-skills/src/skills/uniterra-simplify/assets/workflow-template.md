@@ -104,7 +104,10 @@ Return a verdict ("pass" | "fail") and a structured recommendations list. Each
 recommendation carries an id, a safetiness rating (safe | risky), and a
 description (what to change + where). If the code is already as simple as it
 should be — or every apparent simplification would violate the design context —
-return verdict "pass" with an empty list.`;
+return verdict "pass" with an empty list.
+
+Report it with the `structured_output` tool exactly once. Do NOT finish with a plain-text JSON
+string or a markdown code block — only the `structured_output` call counts as your result.`;
 
 const FIX_PROMPT = `You are an isolated subagent. You apply simplification recommendations while
 preserving behaviour exactly. You have no prior conversation context — everything
@@ -140,7 +143,9 @@ Return: status ("fixed" | "failed"), applied_recommendations (the ids applied,
 including risky ones that passed their equivalence tests), skipped (a list of
 { id, reason } for the ones NOT applied — only a genuine reason: an equivalence
 test failed and the change was reverted, or the code is already in the
-recommended shape), and a short summary.`;
+recommended shape), and a short summary. Report it with the `structured_output`
+tool exactly once — do NOT finish with a plain-text JSON string or a markdown code
+block; only the `structured_output` call counts as your result.`;
 
 const REVIEW_SCHEMA = {
   type: 'object',

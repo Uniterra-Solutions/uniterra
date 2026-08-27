@@ -4,9 +4,9 @@ description: >
   Company-standard implementation phase on DeepSeek Harness: PBT-first
   execution against an explicit requirements list. Establish the requirements
   and design (interactive clarification via ask_user_question when anything is
-  unclear), decompose into tasks, then dispatch subagents through a workflow
-  script — fully parallel when tasks are independent, batched (parallel within
-  a batch, serial across batches) when they overlap — to turn the failing
+  unclear), scaffold each subagent task doc, then dispatch subagents through a
+  workflow script — fully parallel when tasks are independent, batched (parallel
+  within a batch, serial across batches) when they overlap — to turn the failing
   property tests green. LOAD when:
   - User asks to execute an approved plan (execute_plan / 執行計畫)
   - User asks to implement a planned or well-specified task/feature
@@ -19,6 +19,11 @@ description: >
 Pipeline position: after `uniterra-plan`, or standalone when the task is well-specified.
 Every implementation starts from an explicit requirements list and the failing property
 tests that encode the business logic as invariants — never write implementation code first.
+
+> **Do NOT write a plan document.** The plan already exists: read the PRD + design doc
+> from the plan's run directory (`uniterra-plan`) or take them from the user's request.
+> Your job is to decompose the existing requirements into tasks, generate the task docs,
+> and dispatch subagents — not to author a new plan.
 
 ## Workflow
 
@@ -39,9 +44,21 @@ tests that encode the business logic as invariants — never write implementatio
    implementation: subagents strengthen and complete them (never rewrite them from
    scratch) and turn them green.
 2. Decompose requirements + design into a **task list** (`assets/task-list-example.md`):
-   one entry per task. Write each task's full brief to a prompt file (`.dsh/tasks/<id>.md`)
-   and reference it via `promptFile`. Keep `args` tiny (ids + paths only) — a big brief
-   embedded inline is exactly what corrupts the run_workflow tool-call JSON.
+   one entry per task. Scaffold each task's brief with the init CLI (no hand-writing of
+   boilerplate). Run it in the repo root (your cwd):
+
+   ```
+   node "<skill_base>/scripts/init_task.mjs" "<task-id>" "<task-name>"
+   ```
+
+   It creates `<cwd>/.dsh/<YYYYMMDD>/<task-name>/task.md` (the full brief the capsule inlines
+   into the subagent prompt via `promptFile`) and maintains `.dsh/<YYYYMMDD>/tasks.json` (the
+   `{ tasks: [...] }` argument for the workflow). It prints the `promptFile` path and the
+   ready-to-use per-task JSON. Pass an optional third arg (a timestamp) to override the default
+   date. (The skill base dir is the one listed in `skill_resources`.) Then fill in the brief's
+   placeholders (goal, context files, requirements + their allocated tests, conventions,
+   constraints) and dispatch — you do not need to hand-build the directory or the tasks array.
+
 3. Choose the workflow shape by task overlap — you only pick the shape, never write JS:
    - Independent tasks → set `args.tasks` (flat array) — `references/parallel-workflow.md`.
    - Overlapping tasks → set `args.batches` (array of task arrays) — `references/batched-workflow.md`.
@@ -54,9 +71,10 @@ tests that encode the business logic as invariants — never write implementatio
   `run_workflow('implement', { tasks })` for independent tasks, or
   `run_workflow('implement', { batches })` for overlapping batches. No JS to copy — the
   orchestration is the persisted `implement` capsule. Each entry is `{ id, name, promptFile }`
-  (a repo-relative path, NOT the brief text). Each subagent reads its `promptFile` first (the
-  full brief), then makes its requirements' failing tests green, returning a JSON report
-  (changed files, satisfied requirements, deviations) as its structured output.
+  (a repo-relative path, NOT the brief text). The capsule inlines the task's `promptFile` brief
+  into the subagent prompt (the subagent does NOT read it), then the subagent makes its
+  requirements' failing tests green, returning a JSON report (changed files, satisfied
+  requirements, deviations) as its structured output.
 - `run_workflow` returns `{ status: 'done', agents }` on success (every task returned a
   valid JSON report); `{ status: 'failed', batch }` when a subagent failed. The subagent
   reports to the workflow as **JSON** (its structured output); only its input prompt is
@@ -82,6 +100,8 @@ tests that encode the business logic as invariants — never write implementatio
 - `workflows/implement.workflow.json` — the persisted `implement` capsule (dsh_workflow
   `format: dsh.workflow`). Its `source` is the fixed orchestration (both parallel and
   batched shapes); do NOT copy it — invoke it by name with `run_workflow('implement', args)`.
+- `scripts/init_task.mjs` — the scaffolding CLI. Run it per task to generate the task doc
+  under `.dsh/<YYYYMMDD>/<task-name>/` and maintain the run's `tasks.json` manifest.
 - `assets/workflow-template.md` — **migrated.** Historical JS template + the ONE-call
   submission format. Superseded by the `implement` capsule; kept as a reference only, not
   to be copied into a `workflow` tool call.

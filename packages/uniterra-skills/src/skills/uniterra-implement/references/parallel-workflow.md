@@ -14,15 +14,17 @@ only choose the orchestration shape by setting `args.tasks` (flat array) instead
    batched scenario instead.
 3. Each task's `forbidden_files` = every OTHER task's `owned_files` (the partition must be
    complete so parallel agents never collide).
-4. Write each task's brief to its prompt file and reference it via `promptFile`
-   (see `assets/task-list-example.md`), so `args` stays tiny.
+4. Scaffold each task's brief with the init CLI (`node "<skill_base>/scripts/init_task.mjs" <id> <name>`)
+   — it writes the brief into `.dsh/<YYYYMMDD>/<task-name>/task.md` and keeps the run's
+   `tasks.json` manifest — then fill in the placeholders and reference it via `promptFile`.
+   `args` stays tiny.
 
 ## `args` shape
 
 ```json
 {
   "goal": "...",
-  "tasks": [{ "id": "T1", "name": "...", "promptFile": ".dsh/tasks/T1.md" }]
+  "tasks": [{ "id": "T1", "name": "...", "promptFile": ".dsh/20260828/token-issuance/task.md" }]
 }
 ```
 

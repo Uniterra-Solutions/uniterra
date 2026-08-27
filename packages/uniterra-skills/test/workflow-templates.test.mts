@@ -16,7 +16,7 @@
  *     `wf` hooks, proving the `wf.phase` / `wf.runAgent` / `wf.parallel` calls,
  *     the `outputSchema` structured results, and the terminal `return` all match
  *     the dsh_workflow engine contract (mirrors the old templates' behaviour:
- *     plan-review axis-shrinking, implement parallel + batched shapes, review
+ *     plan-review single review pass, implement parallel + batched shapes, review
  *     single pass with a skipped fixer on a clean run, simplify pass-verdict
  *     early exit + cross-round skip accumulation).
  *  3. The SKILL.md call layer already invokes `run_workflow('<name>', args)` and
@@ -121,6 +121,7 @@ function stubWf(
     synthesize: async (): Promise<{ text: string }> => ({ text: '' }),
     workflow: async (): Promise<null> => null,
     artifact: async (): Promise<{ name: string; path: string }> => ({ name: '', path: '' }),
+    readFile: async (): Promise<string> => '# stub brief\n\nGoal: stub\nRequirements: REQ-1 (test: a)\nowned_files: a.js\nforbidden_files: b.js',
     log: (): void => undefined,
   };
   return { wf, calls };
@@ -203,12 +204,32 @@ test('every pipeline workflow agent is write-capable (no readOnly:true runAgent)
   }
 });
 
-test('plan-review capsule shrinks to only the failing axes and locks the result shape', async () => {
+test('pipeline prompts embed the FULL fixed rules and require the structured_output tool', () => {
+  // Regression: extractPrompt used to truncate a prompt body at the first
+  // escaped backtick followed by `;` (e.g. `owned_files`;), silently dropping
+  // every rule after it. Pin that the embedded prompts are complete AND tell
+  // the subagent to report via dsh's built-in `structured_output` tool instead
+  // of printing a JSON string in its final message.
+  const root = builtinSkillsDir();
+  const implement = loadCapsule(root, CAPSULES[1]!).source as string;
+  assert.ok(implement.includes('structured_output'), 'implement agents are told to use structured_output');
+  assert.ok(implement.includes('AGENTS.md / CLAUDE.md'), 'implement fixed rules embed the conventions rule (not truncated at `owned_files`)');
+  assert.ok(implement.includes('STRENGTHENING'), "implement fixed rules embed the strengthen-don't-rewrite rule (not truncated)");
+  for (const c of [CAPSULES[0]!, CAPSULES[2]!, CAPSULES[3]!]) {
+    const source = loadCapsule(root, c).source as string;
+    assert.ok(
+      source.includes('structured_output'),
+      `${c.capsule}: the agent prompt must require the structured_output tool`,
+    );
+  }
+});
+
+test('plan-review capsule runs a single parallel review and locks the result shape', async () => {
   const root = builtinSkillsDir();
   const capsule = loadCapsule(root, CAPSULES[0]!);
   const args = { prd_dir: '/p', design_dir: '/d', acceptance_dir: '/a' };
 
-  // All three axes pass → done immediately, no re-review, no repair.
+  // All three axes pass → one parallel pass, done, no repair, no re-review.
   {
     const { result, calls } = await runCapsule(capsule, args, {
       'requirement-list-review': () => ({ verdict: 'pass', issues: [] }),
@@ -218,36 +239,35 @@ test('plan-review capsule shrinks to only the failing axes and locks the result 
     const r = result as Record<string, unknown>;
     assert.equal(r.status, 'done');
     assert.equal(r.pass, true);
-    assert.equal(r.roundsUsed, 1);
-    assert.ok(
-      !calls.some((c) => c.startsWith('agent:repair-')),
-      `no repair on a clean pass (${calls.join(', ')})`,
-    );
+    assert.deepEqual([...((r.passed as string[]) ?? [])].sort(), ['acceptance', 'design', 'requirement']);
+    assert.deepEqual([...(r.failures as unknown[])], []);
+    assert.equal(calls.filter((c) => c === 'phase:plan-review').length, 1, 'one single review phase');
+    assert.equal(calls.filter((c) => c.startsWith('agent:')).length, 3, 'three review agents dispatched once');
+    assert.ok(!calls.some((c) => c.startsWith('agent:repair-')), 'no repair agent in a single pass');
   }
 
-  // A single failing axis is repaired then re-reviewed; only the failed axis is re-dispatched.
+  // A failing axis → single pass reports it without re-reviewing or repairing it.
   {
     let designRuns = 0;
     const { result, calls } = await runCapsule(capsule, args, {
       'requirement-list-review': () => ({ verdict: 'pass', issues: [] }),
       'design-review': () => {
         designRuns += 1;
-        return designRuns === 1
-          ? { verdict: 'fail', issues: [{ where: 'design.md', problem: 'p', suggestion: 's' }] }
-          : { verdict: 'pass', issues: [] };
+        return { verdict: 'fail', issues: [{ where: 'design.md', problem: 'p', suggestion: 's' }] };
       },
       'acceptance-review': () => ({ verdict: 'pass', issues: [] }),
       'repair-1': () => ({ status: 'fixed', summary: 'applied' }),
     });
     const r = result as Record<string, unknown>;
     assert.equal(r.status, 'done');
-    assert.equal(r.pass, true);
-    assert.equal(r.roundsUsed, 2);
-    assert.equal(calls.filter((c) => c === 'phase:round-2').length, 1, `round 2 runs (${calls.join(', ')})`);
-    const round2Start = calls.indexOf('phase:round-2');
-    const round2Agents = calls.slice(round2Start, round2Start + 10).filter((c) => c.startsWith('agent:'));
-    assert.deepEqual(round2Agents, ['agent:design-review'], `only the failed axis is re-reviewed (${round2Agents.join(', ')})`);
-    assert.ok(calls.some((c) => c === 'agent:repair-1'), 'repair runs on a failing axis');
+    assert.equal(r.pass, false);
+    assert.equal(designRuns, 1, 'a failing axis is reviewed exactly once (no re-review)');
+    assert.deepEqual([...((r.passed as string[]) ?? [])].sort(), ['acceptance', 'requirement']);
+    const failures = (r.failures as Array<{ reviewer: string; doc: string }>) ?? [];
+    assert.deepEqual([...failures.map((f) => f.reviewer)], ['design']);
+    assert.equal(failures[0]!.doc, 'design.md');
+    assert.equal(calls.filter((c) => c === 'phase:plan-review').length, 1, 'one single review phase');
+    assert.ok(!calls.some((c) => c.startsWith('agent:repair-')), 'no repair agent in a single pass');
   }
 });
 

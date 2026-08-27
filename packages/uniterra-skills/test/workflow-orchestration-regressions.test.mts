@@ -14,7 +14,7 @@
  *  1. REVIEW: a fixer that reports `status:'failed'` must surface as a `failed`
  *     capsule status (never a misleading `done`), while still returning the
  *     reports + fixes it produced.
- *  2. PLAN-REVIEW: an axis that returned `verdict:'pass'` in the SAME round as a
+ *  2. PLAN-REVIEW (single pass): an axis that returned `verdict:'pass'` alongside a
  *     `null` reviewer must never be listed in the returned `failures`.
  *  3. IMPLEMENT: the runner must never throw for an empty/absent `args` shape
  *     (no `tasks`/`batches`) — it degrades to a terminal object.
@@ -171,29 +171,29 @@ test('REVIEW: a clean review is done and skips the fixer (single-pass control)',
 });
 
 // ---------------------------------------------------------------------------
-// 2. PLAN-REVIEW — a passed axis is never reported as a failure.
-//    (Counterexample R-PLAN-1.)
+// 2. PLAN-REVIEW — a single review pass: a passed axis is never reported as a
+//    failure, and a null reviewer fails the run. (Counterexample R-PLAN-1.)
 // ---------------------------------------------------------------------------
 const PLAN = loadCapsule('uniterra-plan', 'plan-review.workflow.json');
 const PLAN_RUN = compileCapsule(PLAN.source);
 
-test('PLAN-REVIEW: an axis that passed in the same round as a null reviewer is never a reported failure', async () => {
-  // Round 1: requirement+design pass, acceptance reviewer dies (null). The run
+test('PLAN-REVIEW: an axis that passed alongside a null reviewer is never a reported failure', async () => {
+  // requirement+design pass, acceptance reviewer dies (null). The single pass
   // fails, but the two passed axes must not appear in `failures`.
   const { result } = await runCapsule(
     PLAN_RUN,
-    { prd_dir: '/p', design_dir: '/d', acceptance_dir: '/a', maxRounds: 2 },
+    { prd_dir: '/p', design_dir: '/d', acceptance_dir: '/a' },
     (name) => {
       if (name === 'requirement-list-review') return { verdict: 'pass', issues: [] };
       if (name === 'design-review') return { verdict: 'pass', issues: [] };
       if (name === 'acceptance-review') return null; // reviewer died
-      return { status: 'fixed', summary: 's' }; // any repair
+      return null;
     },
   );
-  assert.equal(result.status, 'failed', 'a null reviewer fails the round');
+  assert.equal(result.status, 'failed', 'a null reviewer fails the run');
   const failures = result.failures as Array<{ reviewer: string }>;
   const reviewers = [...failures.map((f) => f.reviewer)];
-  // No passed axis may be reported as a failure. Here both passed axes are the only
+  // No passed axis may be reported as a failure. Both passed axes are the only
   // axes, so the failures array must be empty (no verdict-fail axis exists).
   assert.deepEqual(
     reviewers,
@@ -202,19 +202,19 @@ test('PLAN-REVIEW: an axis that passed in the same round as a null reviewer is n
   );
 });
 
-test('PLAN-REVIEW: a verdict-fail axis with issues survives a same-round null and is the only reported failure', async () => {
-  // Round 1: requirement passes, design fails with issues, acceptance dies. The
-  // run fails; the failed axis is reported, the passed axis is not.
+test('PLAN-REVIEW: a verdict-fail axis with issues survives a null reviewer and is the only reported failure', async () => {
+  // requirement passes, design fails with issues, acceptance dies. The run
+  // fails; the failed axis is reported, the passed axis is not.
   const { result } = await runCapsule(
     PLAN_RUN,
-    { prd_dir: '/p', design_dir: '/d', acceptance_dir: '/a', maxRounds: 2 },
+    { prd_dir: '/p', design_dir: '/d', acceptance_dir: '/a' },
     (name) => {
       if (name === 'requirement-list-review') return { verdict: 'pass', issues: [] };
       if (name === 'design-review') {
         return { verdict: 'fail', issues: [{ where: 'design.md', problem: 'p', suggestion: 's' }] };
       }
       if (name === 'acceptance-review') return null;
-      return { status: 'fixed', summary: 's' };
+      return null;
     },
   );
   assert.equal(result.status, 'failed');
@@ -223,7 +223,7 @@ test('PLAN-REVIEW: a verdict-fail axis with issues survives a same-round null an
   assert.deepEqual(reviewers, ['design'], 'only the verdict-fail axis is reported');
 });
 
-test('PLAN-REVIEW: a clean pass run is done with all three axes listed as skipped (positive control)', async () => {
+test('PLAN-REVIEW: a clean pass run is done with all three axes listed as passed (positive control)', async () => {
   const { result } = await runCapsule(
     PLAN_RUN,
     { prd_dir: '/p', design_dir: '/d', acceptance_dir: '/a' },
@@ -231,15 +231,16 @@ test('PLAN-REVIEW: a clean pass run is done with all three axes listed as skippe
       if (name === 'requirement-list-review') return { verdict: 'pass', issues: [] };
       if (name === 'design-review') return { verdict: 'pass', issues: [] };
       if (name === 'acceptance-review') return { verdict: 'pass', issues: [] };
-      return { status: 'fixed', summary: 's' };
+      return null;
     },
   );
   assert.equal(result.status, 'done');
   assert.equal(result.pass, true);
   assert.deepEqual(
-    [...((result.skipped as string[]) ?? [])].sort(),
+    [...((result.passed as string[]) ?? [])].sort(),
     ['acceptance', 'design', 'requirement'],
   );
+  assert.deepEqual([...(result.failures as unknown[])], []);
 });
 
 // ---------------------------------------------------------------------------

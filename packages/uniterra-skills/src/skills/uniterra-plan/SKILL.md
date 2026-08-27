@@ -3,10 +3,10 @@ name: uniterra-plan
 description: >
   Company-standard planning phase on DeepSeek Harness (Jovaltus methodology).
   Turns raw requirements into reviewed planning artifacts: clarify the
-  requirements and architecture interactively with the user, write prd.md /
-  design.md / acceptance.md, then dispatch three parallel review agents
-  (requirement feasibility, design over-engineering, acceptance verifiability)
-  to review them. LOAD when:
+  requirements and architecture interactively with the user, scaffold the plan
+  run directory, write prd.md / design.md / acceptance.md, then dispatch three
+  parallel review agents (requirement feasibility, design over-engineering,
+  acceptance verifiability) in a SINGLE review pass. LOAD when:
   - User asks to plan a feature or task (prd / design / plan / 規劃 / 計畫)
   - User references Jovaltus planning or asks for an execution plan
   Do NOT use for:
@@ -18,7 +18,7 @@ description: >
 
 Pipeline position: **plan → implement → simplify/review**. This skill owns the
 plan phase only: it produces `prd.md`, `design.md`, and `acceptance.md`, then
-reviews them with three parallel agents before handoff.
+reviews them with three parallel agents (a SINGLE review pass) before handoff.
 
 Artifacts live under a **run directory**: `<repo>/.plan/<YYYYMMDD>/<plan-name>/`,
 holding `prd.md`, `design.md`, and `acceptance.md`.
@@ -32,16 +32,27 @@ holding `prd.md`, `design.md`, and `acceptance.md`.
   to complete the requirements list AND the architecture design: what to build,
   module boundaries, data shapes, external dependencies.
 
-### 2. Produce prd.md, design.md, acceptance.md
+### 2. Scaffold the run directory and fill the templates
 
-Write them yourself in the main session (no authoring subagents):
+- Scaffold with the init CLI (no hand-writing of boilerplate). Run it in the repo
+  root (your cwd):
 
-- `prd.md` — the Functional Requirements list (project-level requirements).
-- `design.md` — the architecture design (module boundaries, data shapes, the
-  business-logic surface).
-- `acceptance.md` — the acceptance criteria: one entry per requirement, each naming
-  an objective, verifiable piece of evidence (a test, a command output, an observable
-  behavior).
+  ```
+  node "<skill_base>/scripts/init_plan.mjs" "<plan-name>"
+  ```
+
+  It creates `.plan/<YYYYMMDD>/<plan-name>/` with `prd.md`, `design.md`, and
+  `acceptance.md` templates and prints the run directory. Pass an optional
+  second arg (a timestamp) to override the default date. (The skill base dir is
+  the one listed in `skill_resources`.)
+
+- Fill in the placeholders yourself in the main session (no authoring subagents):
+  - `prd.md` — the Functional Requirements list (project-level requirements).
+  - `design.md` — the architecture design (module boundaries, data shapes, the
+    business-logic surface).
+  - `acceptance.md` — the acceptance criteria: one entry per requirement, each
+    naming an objective, verifiable piece of evidence (a test, a command output,
+    an observable behavior).
 
 ### 3. Confirm the plan broadly matches the user's needs
 
@@ -57,33 +68,34 @@ fits their needs:
   `prd.md` / `design.md` / `acceptance.md` yourself and show the result again. Only
   proceed to the automated review once the user confirms the content is broadly correct.
 
-### 4. Review the documents with the fixed workflow
+### 4. Review the documents with a SINGLE review pass
 
 - Run the persisted `plan-review` workflow by name with the dsh_workflow `run_workflow` tool
   as **ONE call**: `run_workflow('plan-review', { prd_dir, design_dir, acceptance_dir })`
   (in practice all three are the run directory). No JS to copy — the orchestration is the
-  `plan-review` capsule. The review and repair subagents report to the workflow as JSON
-  (their structured output via each agent's `outputSchema`); only their input prompts are
-  text. `maxRounds` defaults to 8.
-- It dispatches three parallel review agents, each fed all three dirs:
+  `plan-review` capsule.
+- It dispatches the three review agents ONCE, in parallel (no repair agent, no review
+  loop). Each is fed all three dirs and returns a `verdict` + `issues` (structured JSON via
+  its `outputSchema`):
   - **requirement-list-review** (`prompts/requirement-list-review.md`) — technical
     feasibility + contradictions between requirements.
   - **design-review** (`prompts/design-review.md`) — over-engineering, minimal
     complexity, minimal invasiveness, necessary vs unnecessary external libraries.
   - **acceptance-review** (`prompts/acceptance-review.md`) — clarity + an objective,
     verifiable piece of evidence per criterion.
-- A failing axis's `issues` are handed to a single **repair agent** that applies them
-  to the documents itself (no manual editing in the main session).
-- After a repair, only the axes that FAILED the previous round are re-dispatched — an
-  axis that already passed is never re-reviewed. So as fixes land, the number of review
-  agents dispatched each round shrinks from 3 toward 0. The loop ends when all three
-  pass (or `maxRounds`, default 8, is hit).
+- The result is `{ status: 'done', pass, passed, failures }` (or `{ status: 'failed' }`
+  if a review agent died). `pass` is `true` only when every axis returned `verdict: 'pass'`.
+- On a failing axis, apply its `issues` to the document yourself (the capsule does not
+  repair). You may then re-run `run_workflow('plan-review', …)` once more — each run is a
+  fresh, independent single review.
 
 ## Files
 
 - `workflows/plan-review.workflow.json` — the persisted `plan-review` capsule (the
-  dsh_workflow orchestration with the three review prompts + repair agent embedded; `args`
-  carries the three directory paths). Invoke it by name: `run_workflow('plan-review', args)`.
+  dsh_workflow orchestration with the three review prompts embedded; `args` carries the
+  three directory paths). Invoke it by name: `run_workflow('plan-review', args)`.
+- `scripts/init_plan.mjs` — the scaffolding CLI. Run it to generate the run directory +
+  the three templates, then fill them in.
 - `scripts/review-workflow.md` — **migrated.** Historical fixed workflow script (embeds the
   three prompts + repair agent). Superseded by the `plan-review` capsule; kept as a
   reference only, not to be copied into a `workflow` tool call.

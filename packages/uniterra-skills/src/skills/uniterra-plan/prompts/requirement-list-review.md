@@ -26,3 +26,7 @@ acceptance criteria (the acceptance-review agent's job).
 Return `verdict: "pass"` only if the requirements are sound. Otherwise return
 `verdict: "fail"` and one `issues` entry per finding: cite the requirement id, the
 problem, and a suggested fix.
+
+Report your verdict by calling the `structured_output` tool exactly once with the
+JSON object above. Do NOT finish with a plain-text JSON string or a markdown code
+block — only the `structured_output` call counts as your result.

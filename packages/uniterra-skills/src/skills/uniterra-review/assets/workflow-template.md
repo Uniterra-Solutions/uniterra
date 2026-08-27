@@ -183,7 +183,10 @@ Return a JSON object { spec_table, reports }:
 - spec_table — the array of formal-spec rows (module, branch, precondition, postcondition,
   invariant).
 - reports — the array of structured error reports (id, level, file, line, invariant, input,
-  expected, actual, test). Empty if the business logic holds.`;
+  expected, actual, test). Empty if the business logic holds.
+
+Report it with the `structured_output` tool exactly once. Do NOT finish with a plain-text JSON
+string or a markdown code block — only the `structured_output` call counts as your result.`;
 
 const FIXER_PROMPT = `You are the isolated FIXER AGENT. You repair the confirmed counterexamples reported by the
 review agent, then report the results directly back to the MAIN AGENT (the orchestrator that
@@ -226,7 +229,9 @@ For each error report:
 Return { status: "fixed" | "failed", fixes: [ { id, diff, result, explanation } ] }. For each
 report id include: diff (the corrected code / unified diff), result (the re-run outcome of the
 counterexample test), and a short explanation. status is "fixed" only if EVERY report's
-counterexample now passes; otherwise "failed". Report this object straight to the main agent.`;
+counterexample now passes; otherwise "failed". Report it with the `structured_output` tool
+exactly once — do NOT finish with a plain-text JSON string or a markdown code block; only the
+`structured_output` call counts as your result.`;
 
 const REVIEW_SCHEMA = {
   type: 'object',

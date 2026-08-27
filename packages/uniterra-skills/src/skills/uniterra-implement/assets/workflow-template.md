@@ -16,7 +16,7 @@ three separate calls, and never wrapped under a field named `arguments`:
   "script": "<the JS below — copy verbatim, do not edit>",
   "args": {
     "goal": "-one-line feature goal-",
-    "tasks": [{ "id": "T1", "name": "-task name-", "promptFile": ".dsh/tasks/T1.md" }]
+    "tasks": [{ "id": "T1", "name": "-task name-", "promptFile": ".dsh/20260828/task-one/task.md" }]
   }
 }
 ```
@@ -27,10 +27,10 @@ parallel calls fails with `missing required property "meta"` / `"script"`; wrapp
 `description` (plus optional `whenToUse`/`phases`). `args` may carry an optional `maxRounds`.
 
 **Keep `args` tiny — never embed the task brief in it.** Each task carries a `promptFile`
-(repo-relative path to a file holding the rendered markdown task brief); the subagent reads that
-file. Writing the brief to a file keeps `run_workflow`'s `args` JSON to a handful of short
-strings, so it is always valid and never corrupts the tool call (the exact failure mode when a
-long brief was embedded inline).
+(repo-relative path to a file holding the rendered markdown task brief); the capsule inlines that
+file into the subagent prompt at dispatch (the subagent does not read it). Writing the brief to a
+file keeps `run_workflow`'s `args` JSON to a handful of short strings, so it is always valid and
+never corrupts the tool call (the exact failure mode when a long brief was embedded inline).
 
 **You choose only the orchestration shape, not the script.** This one script handles both:
 
@@ -46,13 +46,13 @@ partition rules, see `references/parallel-workflow.md` and `references/batched-w
 
 ```js
 const FIXED_RULES = `You are an isolated subagent implementing ONE task of an approved project. You have no
-prior conversation context — everything you need is in your task file + the rules below. Do not
-ask for clarification; make a reasonable, documented decision where the task is ambiguous.
+prior conversation context — your full brief is inlined in the '## Task to implement' block
+below plus the rules here. Do not ask for clarification; make a reasonable, documented decision
+where the task is ambiguous.
 
-- FIRST read your task file with the read tool (the 'task file' path in the Task block). It is
-  your full brief — goal, context files, requirements with their allocated failing tests,
-  conventions, constraints — and the source of truth. Never guess or reconstruct the brief from
-  memory.
+- Your full brief — goal, context files, requirements with their allocated failing tests,
+  conventions, and constraints — is ALREADY in your prompt. Do not re-read the task file unless
+  a referenced file's details are missing; the inlined brief is the source of truth.
 
 - Work at the repo root (your cwd). Leave all changes UNCOMMITTED — a later review reads the diff.
 - Touch only the files named in your task's \`owned_files\`; never modify \`forbidden_files\` or any
@@ -65,7 +65,10 @@ ask for clarification; make a reasonable, documented decision where the task is 
 - Follow the project's conventions (AGENTS.md / CLAUDE.md): run lint / typecheck / build, add
   tests for new behaviour, and make your requirements' failing property tests GREEN.
 - Verify external APIs before using them; never write from memory.
-- Record any deviation from the design doc in \`deviations\`.`;
+- Record any deviation from the design doc in \`deviations\`.
+- Report your result with the \`structured_output\` tool exactly once: the JSON report
+  (changed_files, satisfied_requirements, deviations). Do NOT finish with a plain-text JSON
+  string or a markdown code block — only the \`structured_output\` call counts as your result.`;
 ```
 
 ## Return contract (subagent reports to the workflow as JSON)
@@ -103,10 +106,11 @@ const { tasks, batches } = args;
 // otherwise → one parallel group.
 const groups = batches ?? [tasks];
 
-// Build a SMALL prompt per task: the full brief lives in a file the subagent
-// reads (t.promptFile, a repo-relative path), so args stay tiny. `taskPrompt`
-// throws if a task is missing `promptFile` (a contract violation).
-function taskPrompt(t) {
+// Build a SMALL prompt per task: the full brief is inlined from the file at
+// t.promptFile (a repo-relative path) via host readFile, so args stay tiny and
+// the subagent does NOT read the file itself. `taskPrompt` throws if a task is
+// missing `promptFile` (a contract violation).
+async function taskPrompt(t) {
   if (t == null || typeof t !== 'object') throw new Error('implement task must be an object');
   const id = t.id === undefined ? 'task' : String(t.id);
   if (typeof t.promptFile !== 'string' || t.promptFile.trim().length === 0) {
@@ -116,13 +120,25 @@ function taskPrompt(t) {
         '" is missing a promptFile path: write the task brief to a file and pass its repo-relative path (keep args small)',
     );
   }
+  let brief = '';
+  try {
+    brief = (await wf.readFile(t.promptFile)) || '';
+  } catch {
+    brief = '';
+  }
+  const briefBlock =
+    brief.trim().length > 0
+      ? brief.trim()
+      : '! The task brief could not be loaded automatically — read the file at ' +
+        t.promptFile +
+        ' now with the read tool. It is your full brief.';
   return [
     '## Task to implement',
     '- task id: ' + id,
     '- task name: ' + (t.name === undefined ? id : String(t.name)),
     '- task file: ' + t.promptFile,
     '',
-    'Read the task file NOW with the read tool — it is your full task brief (goal, owned/forbidden files, requirements + allocated failing tests, conventions, constraints). Then follow the fixed rules below.',
+    briefBlock,
   ].join('\n');
 }
 
@@ -131,8 +147,8 @@ for (let b = 0; b < groups.length; b++) {
   if (groups.length > 1) phase('batch-' + (b + 1));
   const done = await parallel(
     groups[b].map(
-      (t) => () =>
-        agent(taskPrompt(t) + '\n\n' + FIXED_RULES, { label: t.id, schema: RETURN_SCHEMA }),
+      (t) => async () =>
+        agent((await taskPrompt(t)) + '\n\n' + FIXED_RULES, { label: t.id, schema: RETURN_SCHEMA }),
     ),
   );
   if (done.some((r) => r === null)) return { status: 'failed', batch: b + 1 };

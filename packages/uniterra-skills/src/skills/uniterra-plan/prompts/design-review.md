@@ -30,3 +30,7 @@ Return `verdict: "pass"` only if the design is appropriately minimal. Otherwise
 return `verdict: "fail"` and one `issues` entry per finding: cite the module or
 decision, the problem (over-engineering, unnecessary complexity, unnecessary
 dependency, …), and a suggested simplification.
+
+Report your verdict by calling the `structured_output` tool exactly once with the
+JSON object above. Do NOT finish with a plain-text JSON string or a markdown code
+block — only the `structured_output` call counts as your result.

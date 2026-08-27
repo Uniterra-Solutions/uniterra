@@ -10,11 +10,10 @@
  * generated inputs instead, per the review-agent methodology).
  *
  * Invariants pinned here:
- *  - PLAN-REVIEW: an axis that returned `verdict:'pass'` is never re-dispatched
- *    in a later round; `done && pass` implies all three axes passed; a repair
- *    agent is dispatched only after a round with a failure that carried issues;
- *    and, adversarially, a run that fails on a `null` reviewer must NOT list
- *    an axis that passed in that same round as a failure.
+ *  - PLAN-REVIEW: a SINGLE review pass dispatches each axis exactly once, never
+ *    dispatches a repair agent, `done && pass` implies all three axes passed,
+ *    and — adversarially — a run that fails on a `null` reviewer never lists an
+ *    axis that passed in that same pass as a failure.
  *  - IMPLEMENT: on failure the reported `batch` is the FIRST batch that
  *    contains a failing (`null`) child and no later batch is dispatched; with
  *    no failures every task is counted; and the runner never throws for any
@@ -103,6 +102,7 @@ function trackingStub(
       );
       return out;
     },
+    readFile: async (): Promise<string> => '# stub brief\n\nGoal: stub\nRequirements: REQ-1 (test: a)',
     log: (): void => undefined,
   };
   return { wf, calls };
@@ -150,201 +150,153 @@ const PLAN_OUTCOME_CHOICES = ['pass', 'fail', 'fail-empty', 'null'] as const;
 type PlanOutcome = (typeof PLAN_OUTCOME_CHOICES)[number];
 
 function genPlanWorld(rng: () => number): {
-  maxRounds: number;
-  seq: Record<string, PlanOutcome[]>;
-  repairs: Record<number, 'fixed' | 'failed' | 'null-repair'>;
+  seq: Record<string, PlanOutcome>;
 } {
-  const maxRounds = 8;
-  const seq: Record<string, PlanOutcome[]> = {};
+  const seq: Record<string, PlanOutcome> = {};
   for (const k of PLAN_KEYS) {
-    const len = 1 + randInt(rng, 0, maxRounds);
-    seq[k] = Array.from({ length: len }, () => pick(rng, PLAN_OUTCOME_CHOICES));
+    seq[k] = pick(rng, PLAN_OUTCOME_CHOICES);
   }
-  const repairs: Record<number, 'fixed' | 'failed' | 'null-repair'> = {};
-  for (let r = 1; r <= maxRounds; r += 1) {
-    repairs[r] = pick(rng, ['fixed', 'failed', 'null-repair'] as const);
-  }
-  return { maxRounds, seq, repairs };
+  return { seq };
 }
 
-function runPlanWorld(world: {
-  maxRounds: number;
-  seq: Record<string, PlanOutcome[]>;
-  repairs: Record<number, 'fixed' | 'failed' | 'null-repair'>;
-}): Promise<RunOutcome> {
-  const counters: Record<string, number> = { requirement: 0, design: 0, acceptance: 0 };
+function runPlanWorld(world: { seq: Record<string, PlanOutcome> }): Promise<RunOutcome> {
   const agentMap = (name: string): unknown => {
     const key = PLAN_LABEL_TO_KEY[name];
-    if (key !== undefined) {
-      const i = Math.min(counters[key] ?? 0, world.seq[key]!.length - 1);
-      counters[key] = (counters[key] ?? 0) + 1;
-      const o = world.seq[key]![i];
-      if (o === 'null') return null;
-      if (o === 'pass') return { verdict: 'pass', issues: [] };
-      if (o === 'fail') {
-        return { verdict: 'fail', issues: [{ where: 'w', problem: 'p', suggestion: 's' }] };
-      }
-      return { verdict: 'fail', issues: [] };
+    if (key === undefined) return null;
+    const o = world.seq[key];
+    if (o === 'null') return null;
+    if (o === 'pass') return { verdict: 'pass', issues: [] };
+    if (o === 'fail') {
+      return { verdict: 'fail', issues: [{ where: 'w', problem: 'p', suggestion: 's' }] };
     }
-    const round = Number(name.replace('repair-', ''));
-    const r = world.repairs[round] ?? 'fixed';
-    if (r === 'null-repair') return null;
-    if (r === 'failed') return { status: 'failed', summary: 's' };
-    return { status: 'fixed', summary: 's' };
+    return { verdict: 'fail', issues: [] };
   };
   return runCapsule(
     PLAN_RUN,
-    { prd_dir: '/p', design_dir: '/d', acceptance_dir: '/a', maxRounds: world.maxRounds },
+    { prd_dir: '/p', design_dir: '/d', acceptance_dir: '/a' },
     agentMap,
   );
 }
 
-/** Reconstruct per-round dispatch + pass rounds from the tracking log. */
+/** Reconstruct the single review pass from the tracking log. */
 function analyzePlan(calls: AgentCall[]): {
-  dispatch: Record<number, string[]>;
-  passRound: Record<string, number>;
-  roundsWithNull: Set<number>;
+  dispatched: string[];
+  passAxes: string[];
+  failAxes: string[];
+  nullAxes: string[];
+  repairDispatched: boolean;
 } {
-  const dispatch: Record<number, string[]> = {};
-  const passRound: Record<string, number> = {};
-  const roundsWithNull = new Set<number>();
+  const dispatched: string[] = [];
+  const passAxes: string[] = [];
+  const failAxes: string[] = [];
+  const nullAxes: string[] = [];
+  let repairDispatched = false;
   for (const c of calls) {
-    if (c.phase !== null && c.phase.startsWith('round-')) {
-      const r = Number(c.phase.slice('round-'.length));
-      const key = PLAN_LABEL_TO_KEY[c.name];
-      if (key !== undefined) {
-        (dispatch[r] ??= []).push(key);
-        if (c.outcome !== null && (c.outcome as { verdict?: string }).verdict === 'pass') {
-          if (!(key in passRound)) passRound[key] = r;
-        }
-      }
+    if (c.name.startsWith('repair-')) {
+      repairDispatched = true;
+      continue;
     }
+    const key = PLAN_LABEL_TO_KEY[c.name];
+    if (key === undefined) continue;
+    dispatched.push(key);
+    if (c.outcome === null) nullAxes.push(key);
+    else if ((c.outcome as { verdict?: string }).verdict === 'pass') passAxes.push(key);
+    else failAxes.push(key);
   }
-  for (const c of calls) {
-    if (c.phase !== null && c.phase.startsWith('round-') && c.outcome === null) {
-      roundsWithNull.add(Number(c.phase.slice('round-'.length)));
-    }
-  }
-  return { dispatch, passRound, roundsWithNull };
+  return { dispatched, passAxes, failAxes, nullAxes, repairDispatched };
 }
 
-test('PLAN-REVIEW: a passed axis is never re-dispatched, and pass/done stays coherent', async () => {
+test('PLAN-REVIEW: each axis is dispatched exactly once, and done/pass implies all passed', async () => {
   for (let seed = 0; seed < 3000; seed += 1) {
     const rng = lcg(seed);
     const world = genPlanWorld(rng);
     const { result, calls } = await runPlanWorld(world);
     const status = result.status;
     assert.ok(
-      status === 'done' || status === 'failed' || status === 'blocked',
-      `seed ${seed}: terminal status in {done, failed, blocked} — got ${String(status)}`,
+      status === 'done' || status === 'failed',
+      `seed ${seed}: terminal status in {done, failed} — got ${String(status)}`,
     );
-    const { dispatch, passRound } = analyzePlan(calls);
+    const { dispatched, passAxes, failAxes, nullAxes } = analyzePlan(calls);
 
-    // An axis that passed at round p must not be dispatched in any round > p.
-    for (const [key, p] of Object.entries(passRound)) {
-      for (const [rStr, axes] of Object.entries(dispatch)) {
-        const r = Number(rStr);
-        if (r > p && axes.includes(key)) {
-          assert.fail(
-            `seed ${seed}: axis ${key} was re-dispatched in round ${r} after passing in round ${p}`,
-          );
-        }
-      }
-    }
-
-    // done && pass ==> all three axes passed (skipped covers every axis).
-    if (status === 'done' && result.pass === true) {
-      const skipped = result.skipped as string[];
-      assert.deepEqual(
-        [...skipped].sort(),
-        [...PLAN_KEYS].sort(),
-        `seed ${seed}: a done/pass run must have passed all three axes`,
+    // Single review pass: every axis is dispatched exactly once.
+    assert.equal(dispatched.length, 3, `seed ${seed}: three review agents dispatched`);
+    for (const k of PLAN_KEYS) {
+      assert.equal(
+        dispatched.filter((d) => d === k).length,
+        1,
+        `seed ${seed}: axis ${k} dispatched exactly once`,
       );
+    }
+    // done && pass ⇒ every axis passed; no failure or null remains.
+    if (status === 'done' && result.pass === true) {
+      assert.deepEqual([...passAxes].sort(), [...PLAN_KEYS].sort(), `seed ${seed}: pass implies all axes passed`);
+      assert.equal(failAxes.length, 0, `seed ${seed}: no failing axes on a pass`);
+      assert.equal(nullAxes.length, 0, `seed ${seed}: no null reviewer on a pass`);
+    }
+    // A passed axis is never reported as a failure.
+    const failureReviewers = ((result.failures as Array<{ reviewer: string }>) ?? []).map((f) => f.reviewer);
+    for (const p of passAxes) {
+      assert.ok(!failureReviewers.includes(p), `seed ${seed}: passed axis ${p} must not be a reported failure`);
+    }
+    // A null reviewer only ever lands on a failed run.
+    if (nullAxes.length > 0) {
+      assert.equal(status, 'failed', `seed ${seed}: a null reviewer fails the run`);
     }
   }
 });
 
-test('PLAN-REVIEW: a repair agent is dispatched only after a round with a failure that carries issues', async () => {
+test('PLAN-REVIEW: a single review pass never dispatches a repair agent', async () => {
   for (let seed = 0; seed < 3000; seed += 1) {
     const rng = lcg(seed);
     const world = genPlanWorld(rng);
     const { calls } = await runPlanWorld(world);
-    // Map each round to whether it produced a fail-with-issues.
-    const failWithIssues = new Set<number>();
-    for (const c of calls) {
-      if (
-        c.phase !== null &&
-        c.phase.startsWith('round-') &&
-        c.outcome !== null &&
-        (c.outcome as { verdict?: string }).verdict === 'fail' &&
-        ((c.outcome as { issues?: unknown[] }).issues?.length ?? 0) > 0
-      ) {
-        failWithIssues.add(Number(c.phase.slice('round-'.length)));
-      }
-    }
-    for (const c of calls) {
-      if (c.phase === null && c.name.startsWith('repair-')) {
-        const round = Number(c.name.replace('repair-', ''));
-        assert.ok(
-          failWithIssues.has(round),
-          `seed ${seed}: repair-${round} dispatched but round ${round} had no failure with issues`,
-        );
-      }
-    }
+    const { repairDispatched } = analyzePlan(calls);
+    assert.ok(
+      !repairDispatched,
+      `seed ${seed}: a single review pass must not dispatch a repair agent`,
+    );
   }
 });
 
-test('PLAN-REVIEW adversarial: a run that fails on a null reviewer must not list an axis that passed in that same round as a failure', async () => {
+test('PLAN-REVIEW adversarial: a null reviewer fails the run but a passed axis is never listed as a failure', async () => {
   let found = false;
   for (let seed = 0; seed < 4000; seed += 1) {
     const rng = lcg(seed);
     const world = genPlanWorld(rng);
     const { result, calls } = await runPlanWorld(world);
     if (result.status !== 'failed') continue;
-    const failures = (result.failures as Array<{ reviewer: string }>) ?? [];
-    const failureReviewers = failures.map((f) => f.reviewer);
+    found = true;
+    const failureReviewers = ((result.failures as Array<{ reviewer: string }>) ?? []).map((f) => f.reviewer);
     for (const c of calls) {
       const key = PLAN_LABEL_TO_KEY[c.name];
-      if (
-        key === undefined ||
-        c.phase === null ||
-        !c.phase.startsWith('round-') ||
-        c.outcome === null ||
-        (c.outcome as { verdict?: string }).verdict !== 'pass'
-      ) {
+      if (key === undefined || c.outcome === null || (c.outcome as { verdict?: string }).verdict !== 'pass') {
         continue;
       }
-      const sameRoundNull = calls.some(
-        (cc) => cc.phase === c.phase && cc.outcome === null,
+      assert.ok(
+        !failureReviewers.includes(key),
+        `seed ${seed}: axis ${key} passed but the run reported it as a failure (failures=${JSON.stringify(result.failures)})`,
       );
-      if (sameRoundNull && failureReviewers.includes(key)) {
-        assert.fail(
-          `seed ${seed}: axis ${key} passed in round ${c.phase} and then a null reviewer in the same round — ` +
-            `the run reported it as a failure (failures=${JSON.stringify(result.failures)})`,
-        );
-      }
     }
-    found = true;
   }
   assert.ok(found, 'the adversarial generator seeded at least one failed run');
 });
 
-test('PLAN-REVIEW minimal counterexample: a null reviewer coexisting with a pass misreports the passed axis', async () => {
-  // Round 1: requirement=pass, design=pass, acceptance=null.
+test('PLAN-REVIEW minimal counterexample: a null reviewer coexisting with a pass does not misreport the passed axis', async () => {
+  // requirement=pass, design=pass, acceptance=null (reviewer died).
   const { result } = await runCapsule(
     PLAN_RUN,
-    { prd_dir: '/p', design_dir: '/d', acceptance_dir: '/a', maxRounds: 2 },
+    { prd_dir: '/p', design_dir: '/d', acceptance_dir: '/a' },
     (name) => {
       if (name === 'requirement-list-review') return { verdict: 'pass', issues: [] };
       if (name === 'design-review') return { verdict: 'pass', issues: [] };
       if (name === 'acceptance-review') return null; // reviewer died
-      return { status: 'fixed', summary: 's' };
+      return null;
     },
   );
   assert.equal(result.status, 'failed');
   const failures = result.failures as Array<{ reviewer: string }>;
-  // The two axes that passed must not be reported as failures. Spread into a
-  // plain (main-realm) array because `result` comes from the vm capsule realm.
+  // The two passed axes must not be reported as failures. Spread into a plain
+  // (main-realm) array because `result` comes from the vm capsule realm.
   assert.deepEqual(
     [...failures.map((f) => f.reviewer)].sort(),
     [],

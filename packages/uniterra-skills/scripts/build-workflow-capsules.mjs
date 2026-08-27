@@ -55,49 +55,49 @@ function prompt(kind, ...subpaths) {
   return readFileSync(file, 'utf8').trim();
 }
 
+/**
+ * Extract one `const <NAME> = \`...\`;` prompt body from a template source,
+ * tolerating ESCAPED backticks (\`) inside the body. A naive lazy
+ * `[\s\S]*?` stops at the first backtick followed by `;` — which happens
+ * mid-body whenever the doc writes an escaped backtick before a semicolon
+ * (e.g. `\`owned_files\`; never modify …`), silently TRUNCATING the prompt.
+ * Mask `\`` with a sentinel before the regex and restore it afterwards so the
+ * body is captured verbatim.
+ */
+function extractPrompt(source, name) {
+  const sentinel = '\u0000BT\u0000';
+  const masked = source.replace(/\\`/gu, sentinel);
+  const m = new RegExp(`const ${name} = \`([\\s\\S]*?)\`;`, 'u').exec(masked);
+  if (m === null) {
+    throw new Error(`build-workflow-capsules: "${name}" constant not found in template`);
+  }
+  return m[1].split(sentinel).join('\\`');
+}
+
 const SCHEMAS = {
   review:
     "{\n  type: 'object',\n  required: ['verdict', 'issues'],\n  properties: {\n    verdict: { type: 'string', enum: ['pass', 'fail'] },\n    issues: { type: 'array', items: { type: 'object', required: ['where', 'problem', 'suggestion'], properties: { where: { type: 'string' }, problem: { type: 'string' }, suggestion: { type: 'string' } } } },\n  },\n}",
-  repair:
-    "{\n  type: 'object',\n  required: ['status'],\n  properties: {\n    status: { type: 'string', enum: ['fixed', 'failed'] },\n    summary: { type: 'string' },\n  },\n}",
 };
 
 /**
- * Build the plan-review capsule source. Mirrors the original three-axis
- * review → repair loop: review all still-failing axes in parallel, hand the
- * failing axes' issues to one repair agent that edits the docs itself, then
- * re-review ONLY the axes that failed (a passed axis is never re-dispatched).
+ * Build the plan-review capsule source. Runs ONE single-pass review: all three
+ * axes (requirement feasibility / design over-engineering / acceptance
+ * verifiability) are dispatched in parallel once, each returning a verdict +
+ * issues. There is no repair agent and no re-review loop — the main agent reads
+ * the returned issues and applies them itself (re-running the review as a fresh,
+ * independent single pass if it wants to confirm).
  *
- * Every agent in the pipeline is write-capable (readOnly: false), including the
- * reviewers: the workflow agents must run tests / write code in the repo to
- * verify their conclusions (a reviewer that cannot write cannot prove a
- * counterexample). The manifest readOnly is false so a write-capable child is
- * admitted — the plugin rejects a write-capable child under a readOnly
- * manifest, so the manifest must stay false for the repair/fix agents to work.
+ * Every review agent is write-capable (readOnly: false): the workflow agents
+ * must run tests / write code in the repo to verify their conclusions (a
+ * reviewer that cannot write cannot prove a counterexample). The manifest
+ * readOnly is false so a write-capable child is admitted — the plugin rejects a
+ * write-capable child under a readOnly manifest, so the manifest must stay
+ * false.
  */
 function planReviewSource() {
   const requirement = prompt('plan-req', 'uniterra-plan', 'prompts', 'requirement-list-review.md');
   const design = prompt('plan-design', 'uniterra-plan', 'prompts', 'design-review.md');
   const acceptance = prompt('plan-accept', 'uniterra-plan', 'prompts', 'acceptance-review.md');
-  const repair = `You are an isolated repair subagent. You apply the review issues to the plan documents
-yourself. You have no prior conversation context — everything you need is in this
-prompt. The issues are injected below as a list of { reviewer, doc, dir, issues }.
-
-Method:
-1. For EACH entry, read the document named by \`doc\` inside \`dir\` (e.g. read
-   \`<dir>/prd.md\`), and apply every issue in its \`issues\` list. Each issue carries
-   a \`where\`, a \`problem\`, and a \`suggestion\`.
-2. Make the MINIMAL edit that resolves each issue, following the suggestion where it
-   is sensible. Preserve the document's existing structure, formatting, and voice.
-3. Do NOT touch a document that has no issues this round, and do NOT rewrite unrelated
-   content or invent new problems.
-
-Constraints:
-- Only apply the listed issues; do not expand scope.
-- Keep changes minimal and consistent with the rest of the document.
-- Leave the edited documents on disk (do not commit).
-
-Return: status ("fixed" | "failed") and a short summary of what was applied.`;
 
   return `{
   const { prd_dir, design_dir, acceptance_dir } = args;
@@ -108,10 +108,7 @@ Return: status ("fixed" | "failed") and a short summary of what was applied.`;
 
   const ACCEPTANCE_PROMPT = \`${tmpl(acceptance)}\`;
 
-  const REPAIR_PROMPT = \`${tmpl(repair)}\`;
-
   const REVIEW_SCHEMA = ${SCHEMAS.review};
-  const REPAIR_SCHEMA = ${SCHEMAS.repair};
 
   function inputs() {
     return [
@@ -128,57 +125,40 @@ Return: status ("fixed" | "failed") and a short summary of what was applied.`;
     { key: 'acceptance', label: 'acceptance-review', prompt: ACCEPTANCE_PROMPT, doc: 'acceptance.md', dir: acceptance_dir },
   ];
 
-  const maxRounds = args.maxRounds ?? 8;
-  const passed = new Set();
-
-  for (let round = 1; round <= maxRounds; round++) {
-    const pending = REVIEWERS.filter(r => !passed.has(r.key));
-    if (pending.length === 0) return { status: 'done', roundsUsed: round, pass: true, skipped: [...passed] };
-
-    const results = await wf.phase('round-' + round, () => wf.parallel(
-      pending.map(r => () => wf.runAgent({
-        name: r.label,
-        prompt: r.prompt + '\\n\\n' + inputs(),
-        readOnly: false,
-        modelHint: 'deep',
-        outputSchema: REVIEW_SCHEMA,
-      })),
-    ));
-    // Record each axis' outcome in ONE pass so an axis that passed this round is
-    // never misreported as a failure when another axis' agent returned null.
-    const failures = [];
-    let anyNull = false;
-    pending.forEach((r, i) => {
-      const res = results[i];
-      if (res === null) {
-        anyNull = true;
-      } else if (res.structured !== undefined && res.structured.verdict === 'pass') {
-        passed.add(r.key);
-      } else {
-        failures.push({ reviewer: r.key, issues: res?.structured?.issues ?? [] });
-      }
-    });
-
-    // A null reviewer terminates the run as failed WITHOUT listing pass axes (or
-    // the null axis itself — its failure is the status, not a verdict-fail row).
-    if (anyNull) return { status: 'failed', roundsUsed: round, failures };
-    if (failures.length === 0) return { status: 'done', roundsUsed: round, pass: true, skipped: [...passed] };
-
-    const toRepair = failures.filter(f => f.issues.length > 0);
-    if (toRepair.length === 0) continue;
-    const repairInput = toRepair.map(f => ({ reviewer: f.reviewer, doc: REVIEWERS.find(r => r.key === f.reviewer).doc, dir: REVIEWERS.find(r => r.key === f.reviewer).dir, issues: f.issues }));
-    const repair = await wf.runAgent({
-      name: 'repair-' + round,
-      prompt: REPAIR_PROMPT + '\\n\\n## Issues to repair\\n' + JSON.stringify(repairInput, null, 2),
+  // SINGLE review — dispatch all three axes once, in parallel. No repair agent,
+  // no re-review loop: the main agent applies the returned issues itself and may
+  // re-run the review as a fresh, independent single pass.
+  const results = await wf.phase('plan-review', () => wf.parallel(
+    REVIEWERS.map(r => () => wf.runAgent({
+      name: r.label,
+      prompt: r.prompt + '\\n\\n' + inputs(),
       readOnly: false,
-      modelHint: 'balanced',
-      outputSchema: REPAIR_SCHEMA,
-    });
-    if (repair === null) return { status: 'blocked', reason: 'repair agent failed', roundsUsed: round };
-    if (repair.structured?.status === 'failed') return { status: 'failed', roundsUsed: round, failures };
-  }
+      modelHint: 'deep',
+      outputSchema: REVIEW_SCHEMA,
+    })),
+  ));
 
-  return { status: 'blocked', reason: 'max rounds reached', roundsUsed: maxRounds, skipped: [...passed] };
+  const passed = [];
+  const failures = [];
+  let anyNull = false;
+  REVIEWERS.forEach((r, i) => {
+    const res = results[i];
+    if (res === null) {
+      anyNull = true;
+      return;
+    }
+    const structured = res.structured;
+    if (structured !== undefined && structured.verdict === 'pass') {
+      passed.push(r.key);
+    } else {
+      failures.push({ reviewer: r.key, doc: r.doc, issues: structured?.issues ?? [] });
+    }
+  });
+
+  // A null reviewer terminates the run as failed WITHOUT listing pass axes (or
+  // the null axis itself — its failure is the status, not a verdict-fail row).
+  if (anyNull) return { status: 'failed', reason: 'a review agent failed', failures };
+  return { status: 'done', pass: failures.length === 0, passed, failures };
 }`;
 }
 
@@ -191,9 +171,9 @@ function implementSource() {
     path.join(srcSkills, 'uniterra-implement', 'assets', 'workflow-template.md'),
     'utf8',
   );
-  // The fixed-rules block is the ```js FIXED_RULES content; extract it verbatim.
-  const m = /const FIXED_RULES = `([\s\S]*?)`;/u.exec(fixedRules);
-  const rules = m === null ? '' : m[1];
+  // The fixed-rules block is the ```js FIXED_RULES content; extract it verbatim
+  // (tolerating escaped backticks mid-body — see extractPrompt).
+  const rules = extractPrompt(fixedRules, 'FIXED_RULES');
 
   return `{
   const { tasks, batches } = args ?? {};
@@ -210,22 +190,33 @@ function implementSource() {
     },
   };
 
-  // Build a SMALL per-task prompt. The task brief lives in a file the subagent
-  // reads (promptFile, a repo-relative path), so run_workflow args stay tiny
-  // and the tool-call JSON is never corrupted by an embedded task brief.
-  function taskPrompt(t) {
+  // Build a SMALL per-task prompt by inlining the task brief from promptFile
+  // (a repo-relative path) via wf.readFile, so run_workflow args stay tiny and
+  // the subagent does NOT read the file itself. Falls back to "read it yourself"
+  // if the inlined load fails (graceful degradation), and throws if a task is
+  // missing promptFile (a contract violation).
+  async function taskPrompt(t) {
     if (t == null || typeof t !== 'object') throw new Error('implement task must be an object');
     const id = t.id === undefined ? 'task' : String(t.id);
     if (typeof t.promptFile !== 'string' || t.promptFile.trim().length === 0) {
       throw new Error('implement task "' + id + '" is missing a promptFile path: write the task brief to a file and pass its repo-relative path (keep args small)');
     }
+    let brief = '';
+    try {
+      brief = (await wf.readFile(t.promptFile)) || '';
+    } catch {
+      brief = '';
+    }
+    const briefBlock = brief.trim().length > 0
+      ? brief.trim()
+      : '! The task brief could not be loaded automatically — read the file at ' + t.promptFile + ' now with the read tool. It is your full brief (goal, owned/forbidden files, requirements + their allocated failing tests, conventions, constraints).';
     return [
       '## Task to implement',
       '- task id: ' + id,
       '- task name: ' + (t.name === undefined ? id : String(t.name)),
       '- task file: ' + t.promptFile,
       '',
-      'Read the task file NOW with the read tool — it is your full task brief (goal, owned/forbidden files, requirements + their allocated failing tests, conventions, constraints). Then follow the fixed rules below.',
+      briefBlock,
     ].join('\\n');
   }
 
@@ -235,9 +226,9 @@ function implementSource() {
   for (let b = 0; b < groups.length; b++) {
     const label = groups.length > 1 ? 'batch-' + (b + 1) : 'implement';
     const done = await wf.phase(label, () => wf.parallel(
-      groups[b].map(t => () => wf.runAgent({
+      groups[b].map(t => async () => wf.runAgent({
         name: String(t?.id ?? 'task'),
-        prompt: taskPrompt(t) + '\\n\\n' + FIXED_RULES,
+        prompt: await taskPrompt(t) + '\\n\\n' + FIXED_RULES,
         readOnly: false,
         modelHint: 'balanced',
         outputSchema: RETURN_SCHEMA,
@@ -262,10 +253,8 @@ function reviewSource() {
     path.join(srcSkills, 'uniterra-review', 'assets', 'workflow-template.md'),
     'utf8',
   );
-  const review = /const REVIEW_PROMPT = `([\s\S]*?)`;/u.exec(template);
-  const fixer = /const FIXER_PROMPT = `([\s\S]*?)`;/u.exec(template);
-  const reviewPrompt = review === null ? '' : review[1];
-  const fixerPrompt = fixer === null ? '' : fixer[1];
+  const reviewPrompt = extractPrompt(template, 'REVIEW_PROMPT');
+  const fixerPrompt = extractPrompt(template, 'FIXER_PROMPT');
 
   return `{
   const { task } = args;
@@ -334,10 +323,8 @@ function simplifySource() {
     path.join(srcSkills, 'uniterra-simplify', 'assets', 'workflow-template.md'),
     'utf8',
   );
-  const review = /const REVIEW_PROMPT = `([\s\S]*?)`;/u.exec(template);
-  const fix = /const FIX_PROMPT = `([\s\S]*?)`;/u.exec(template);
-  const reviewPrompt = review === null ? '' : review[1];
-  const fixPrompt = fix === null ? '' : fix[1];
+  const reviewPrompt = extractPrompt(template, 'REVIEW_PROMPT');
+  const fixPrompt = extractPrompt(template, 'FIX_PROMPT');
 
   return `{
   const { goal, context } = args;
@@ -452,10 +439,10 @@ const capsules = [
     skillDir: 'uniterra-plan',
     name: 'plan-review',
     description:
-      'Review plan documents (requirements / design / acceptance) with three parallel agents, repair the failing axes, and re-review only the axes that failed until all pass.',
-    phases: ['requirement-list-review', 'design-review', 'acceptance-review'],
+      'Review plan documents (requirements / design / acceptance) in a single parallel pass with three review agents; the main agent applies any returned issues (and may re-run the review fresh).',
+    phases: ['plan-review'],
     readOnly: false,
-    patterns: ['fan-out-and-synthesize', 'loop-until-done'],
+    patterns: ['fan-out-and-synthesize'],
     source: sourceOf(planReviewSource()),
     inputSchema: {
       type: 'object',
@@ -464,7 +451,6 @@ const capsules = [
         prd_dir: { type: 'string' },
         design_dir: { type: 'string' },
         acceptance_dir: { type: 'string' },
-        maxRounds: { type: 'integer' },
       },
       required: ['prd_dir', 'design_dir', 'acceptance_dir'],
     },
