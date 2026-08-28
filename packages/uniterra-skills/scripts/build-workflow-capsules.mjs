@@ -242,21 +242,43 @@ function implementSource() {
 }
 
 /**
- * Build the review capsule source. Mirrors the original single-pass
- * property-based review: the review agent models the WHOLE business logic +
- * lifecycle as a formal spec table and proves every invariant with >10k-run PBT
- * (state-machine sequences + input-generating properties), and a fixer repairs
- * each counterexample (only if any were found). The manifest is not read-only
- * because the fixer must change source; the REVIEW agent is individually
- * read-only.
+ * Build the review capsule source. Mirrors the original single-pass,
+ * three-layer property-based review: the review agent models AND proves the
+ * intra-module logic, the module × counterpart interactions, and the system
+ * slices involving the module — everything by PBT (>10k runs) — and a fixer
+ * repairs each counterexample (only if any were found). The review knowledge is
+ * split into responsibility-separated reference files; the capsule composes ONE
+ * self-contained REVIEW_PROMPT from them (the subagent cannot read the skill
+ * dir from the repo under review). The manifest is not read-only because the
+ * fixer must change source; the REVIEW agent is individually read-only.
  */
 function reviewSource() {
-  const template = readFileSync(
-    path.join(srcSkills, 'uniterra-review', 'assets', 'workflow-template.md'),
-    'utf8',
-  );
-  const reviewPrompt = extractPrompt(template, 'REVIEW_PROMPT');
-  const fixerPrompt = extractPrompt(template, 'FIXER_PROMPT');
+  const reviewDir = path.join(srcSkills, 'uniterra-review', 'references');
+  const readRef = (name) => {
+    const content = readFileSync(path.join(reviewDir, name), 'utf8').trim();
+    // The capsule embeds this knowledge: an empty file would silently ship an
+    // empty prompt section. Fail loudly instead.
+    if (content.length === 0) throw new Error(`build-workflow-capsules: references/${name} is empty`);
+    return content;
+  };
+  const reviewCore = readRef('review-agent.md');
+  const modeling = readRef('model-construction.md');
+  const invariants = readRef('invariant-taxonomy.md');
+  const patterns = readRef('test-patterns.md');
+  const checklist = readRef('security-checklist.md');
+  const fixerPrompt = readRef('fix-agent.md');
+
+  const reviewPrompt = [
+    reviewCore,
+    '## Knowledge — model construction (file: references/model-construction.md)',
+    modeling,
+    '## Knowledge — invariant taxonomy (file: references/invariant-taxonomy.md)',
+    invariants,
+    '## Knowledge — test patterns + execution (file: references/test-patterns.md)',
+    patterns,
+    '## Knowledge — security checklist, inlined (file: references/security-checklist.md; mandatory axis)',
+    checklist,
+  ].join('\n\n');
 
   return `{
   const { task } = args;
