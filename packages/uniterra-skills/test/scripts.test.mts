@@ -63,35 +63,68 @@ test('init_plan.mjs honors an explicit timestamp + a filesystem-safe plan-name s
   }
 });
 
-test('init_task.mjs scaffolds .dsh/<YYYYMMDD>/<task>/task.md and keeps a tasks.json manifest', () => {
+test('init_task.mjs scaffolds .dsh/<YYYYMMDD-HHmmss>/<project>/<task>.md and a per-project task.json', () => {
   const cwd = mkdtempSync(path.join(tmpdir(), 'uniterra-init-task-'));
   try {
-    run(cwd, taskScript, ['T1', 'token issuance']);
-    run(cwd, taskScript, ['T2', 'refresh rotation']);
+    run(cwd, taskScript, ['user-auth', 'T1', 'token issuance']);
+    run(cwd, taskScript, ['user-auth', 'T2', 'refresh rotation']);
 
     const runDir = dirs(cwd, '.dsh');
     assert.equal(runDir.length, 1, 'one implement run directory');
-    const ts = runDir[0];
+    const ts = runDir[0]!;
+    assert.match(ts, /^\d{8}-\d{6}$/u, 'timestamp carries date + minutes + seconds');
 
-    const task1 = path.join(cwd, '.dsh', ts!, 'token-issuance', 'task.md');
-    const task2 = path.join(cwd, '.dsh', ts!, 'refresh-rotation', 'task.md');
-    assert.ok(existsSync(task1), 'task-1 doc generated');
-    assert.ok(existsSync(task2), 'task-2 doc generated');
+    const projectDirs = dirs(path.join(cwd, '.dsh'), ts);
+    assert.deepEqual(projectDirs, ['user-auth'], 'one project directory');
+
+    const task1 = path.join(cwd, '.dsh', ts, 'user-auth', 'token-issuance.md');
+    const task2 = path.join(cwd, '.dsh', ts, 'user-auth', 'refresh-rotation.md');
+    assert.ok(existsSync(task1), 'task-1 brief generated');
+    assert.ok(existsSync(task2), 'task-2 brief generated');
+    assert.ok(
+      !existsSync(path.join(cwd, '.dsh', ts, 'tasks.json')),
+      'no run-root tasks.json (one manifest per project)',
+    );
     for (const t of [task1, task2]) {
       const content = readFileSync(t, 'utf8');
       for (const section of ['## Goal', '## Context', '## Requirements', '## Conventions', '## Constraints']) {
-        assert.ok(content.includes(section), `${path.basename(path.dirname(t))} has ${section}`);
+        assert.ok(content.includes(section), `${path.basename(t)} has ${section}`);
       }
     }
 
-    const manifest = JSON.parse(readFileSync(path.join(cwd, '.dsh', ts!, 'tasks.json'), 'utf8')) as {
+    const manifest = JSON.parse(
+      readFileSync(path.join(cwd, '.dsh', ts, 'user-auth', 'task.json'), 'utf8'),
+    ) as {
       tasks: Array<{ id: string; name: string; promptFile: string }>;
     };
     assert.deepEqual(manifest.tasks.map((t) => t.id).sort(), ['T1', 'T2']);
     assert.equal(
       manifest.tasks[0]!.promptFile,
-      path.join('.dsh', ts!, 'token-issuance', 'task.md'),
+      path.join('.dsh', ts, 'user-auth', 'token-issuance.md'),
     );
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('init_task.mjs keeps one task.json per project under a shared timestamp (no cross-project overwrite)', () => {
+  const cwd = mkdtempSync(path.join(tmpdir(), 'uniterra-init-task2-'));
+  try {
+    run(cwd, taskScript, ['user-auth', 'T1', 'token issuance', '20261231-143052']);
+    run(cwd, taskScript, ['payments', 'P1', 'invoice math', '20261231-143052']);
+
+    assert.equal(dirs(cwd, '.dsh').length, 1, 'one timestamp dir');
+    const projects = dirs(path.join(cwd, '.dsh'), '20261231-143052');
+    assert.deepEqual([...projects].sort(), ['payments', 'user-auth']);
+
+    const auth = JSON.parse(
+      readFileSync(path.join(cwd, '.dsh', '20261231-143052', 'user-auth', 'task.json'), 'utf8'),
+    ) as { tasks: Array<{ id: string }> };
+    const payments = JSON.parse(
+      readFileSync(path.join(cwd, '.dsh', '20261231-143052', 'payments', 'task.json'), 'utf8'),
+    ) as { tasks: Array<{ id: string }> };
+    assert.deepEqual(auth.tasks.map((t) => t.id), ['T1']);
+    assert.deepEqual(payments.tasks.map((t) => t.id), ['P1']);
   } finally {
     cleanup(cwd);
   }
