@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.8] — 2026-08-29
+
+### Added
+
+- **Whole-business-model review** (`packages/uniterra-skills`). `uniterra-review` no longer cherry-picks suspicious paths: the review agent models the WHOLE business logic + lifecycle of the modules in scope — every public operation, every state, happy paths included — into a formal spec table (state / transition / composition / lifecycle / data / security invariants) and proves it with model-based PBT (random operation sequences, asserted after every step and at teardown/restart) plus input-generating properties. Pure business-rule functions get oracle-backed properties (inverse/round-trip, reference-implementation differential, algebraic laws, relationally complete contracts, purity laws) while trivial helpers get cheap structural checks; a DISCRIMINATIVE gate forces every property to be one a deliberately wrong implementation would fail. The method maps per software type (backend / desktop-UI / CLI / data-schema / CI) and states its boundaries: measured performance and liveness are acceptance-suite territory (maintainer-defined targets), pixel correctness is QA's domain, deterministic complexity smells stay review findings.
+- **Minute-second implement run dirs + per-project task.json** (`packages/uniterra-skills`). `init_task.mjs` is now `node init_task.mjs <project-name> <task-id> <task-name> [timestamp]` and scaffolds `.dsh/<YYYYMMDD-HHmmss>/<project-name>/<task-name>.md`; the task manifest (`task.json`) lives INSIDE the project directory, so multiple projects under one timestamp never overwrite each other.
+
+### Changed
+
+- Project docs and conventions (README, `docs/`, skill docs) describe the new implement layout and the whole-model review — hidden-state hunt, internal composition invariants, pure-function oracle sources, and the out-of-scope boundaries (perf/liveness → acceptance suites, pixels → QA).
+
 ## [0.14.7] — 2026-08-28
 
 ### Added
