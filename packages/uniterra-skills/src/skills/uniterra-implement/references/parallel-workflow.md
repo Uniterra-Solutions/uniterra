@@ -14,9 +14,10 @@ only choose the orchestration shape by setting `args.tasks` (flat array) instead
    batched scenario instead.
 3. Each task's `forbidden_files` = every OTHER task's `owned_files` (the partition must be
    complete so parallel agents never collide).
-4. Scaffold each task's brief with the init CLI (`node "<skill_base>/scripts/init_task.mjs" <id> <name>`)
-   — it writes the brief into `.dsh/<YYYYMMDD>/<task-name>/task.md` and keeps the run's
-   `tasks.json` manifest — then fill in the placeholders and reference it via `promptFile`.
+4. Scaffold each task's brief with the init CLI
+   (`node "<skill_base>/scripts/init_task.mjs" <project-name> <id> <name>`) — it writes the brief
+   into `.dsh/<YYYYMMDD-HHmmss>/<project-name>/<task-name>.md` and registers it in the project's
+   `task.json` manifest — then fill in the placeholders and reference it via `promptFile`.
    `args` stays tiny.
 
 ## `args` shape
@@ -24,7 +25,9 @@ only choose the orchestration shape by setting `args.tasks` (flat array) instead
 ```json
 {
   "goal": "...",
-  "tasks": [{ "id": "T1", "name": "...", "promptFile": ".dsh/20260828/token-issuance/task.md" }]
+  "tasks": [
+    { "id": "T1", "name": "...", "promptFile": ".dsh/20260827-143052/user-auth/token-issuance.md" }
+  ]
 }
 ```
 

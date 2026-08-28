@@ -14,15 +14,23 @@ of `args.tasks`, and copy the template's script verbatim.
    DIFFERENT batches; tasks that only depend on earlier batches sit in later batches.
 3. `args.batches` is an array of task arrays (not the flat task list) — partition before
    dispatching. Scaffold each task's brief with the init CLI
-   (`node "<skill_base>/scripts/init_task.mjs" <id> <name>`), fill in the placeholders, and
-   reference it via `promptFile` — `args` stays tiny.
+   (`node "<skill_base>/scripts/init_task.mjs" <project-name> <id> <name>`), fill in the
+   placeholders, and reference it via `promptFile` — `args` stays tiny.
 
 ## `args` shape
 
 ```json
 {
   "goal": "...",
-  "batches": [[{ "id": "T1", "name": "...", "promptFile": ".dsh/20260828/auth-issue/task.md" }]]
+  "batches": [
+    [
+      {
+        "id": "T1",
+        "name": "...",
+        "promptFile": ".dsh/20260827-143052/user-auth/token-issuance.md"
+      }
+    ]
+  ]
 }
 ```
 

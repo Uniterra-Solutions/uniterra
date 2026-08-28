@@ -48,16 +48,18 @@ tests that encode the business logic as invariants — never write implementatio
    boilerplate). Run it in the repo root (your cwd):
 
    ```
-   node "<skill_base>/scripts/init_task.mjs" "<task-id>" "<task-name>"
+   node "<skill_base>/scripts/init_task.mjs" "<project-name>" "<task-id>" "<task-name>"
    ```
 
-   It creates `<cwd>/.dsh/<YYYYMMDD>/<task-name>/task.md` (the full brief the capsule inlines
-   into the subagent prompt via `promptFile`) and maintains `.dsh/<YYYYMMDD>/tasks.json` (the
-   `{ tasks: [...] }` argument for the workflow). It prints the `promptFile` path and the
-   ready-to-use per-task JSON. Pass an optional third arg (a timestamp) to override the default
-   date. (The skill base dir is the one listed in `skill_resources`.) Then fill in the brief's
-   placeholders (goal, context files, requirements + their allocated tests, conventions,
-   constraints) and dispatch — you do not need to hand-build the directory or the tasks array.
+   It creates `<cwd>/.dsh/<YYYYMMDD-HHmmss>/<project-name>/<task-name>.md` (the full brief the
+   capsule inlines into the subagent prompt via `promptFile`) and maintains the **per-project**
+   `.dsh/<YYYYMMDD-HHmmss>/<project-name>/task.json` (the `{ tasks: [...] }` argument for the
+   workflow — one manifest per project, so multiple projects sharing a timestamp never overwrite
+   each other). It prints the `promptFile` path and the ready-to-use per-task JSON. Pass an
+   optional fourth arg (a timestamp) to override the default. (The skill base dir is the one
+   listed in `skill_resources`.) Then fill in the brief's placeholders (goal, context files,
+   requirements + their allocated tests, conventions, constraints) and dispatch — you do not need
+   to hand-build the directory or the tasks array.
 
 3. Choose the workflow shape by task overlap — you only pick the shape, never write JS:
    - Independent tasks → set `args.tasks` (flat array) — `references/parallel-workflow.md`.
@@ -100,8 +102,9 @@ tests that encode the business logic as invariants — never write implementatio
 - `workflows/implement.workflow.json` — the persisted `implement` capsule (dsh_workflow
   `format: dsh.workflow`). Its `source` is the fixed orchestration (both parallel and
   batched shapes); do NOT copy it — invoke it by name with `run_workflow('implement', args)`.
-- `scripts/init_task.mjs` — the scaffolding CLI. Run it per task to generate the task doc
-  under `.dsh/<YYYYMMDD>/<task-name>/` and maintain the run's `tasks.json` manifest.
+- `scripts/init_task.mjs` — the scaffolding CLI. Run it per task to generate the task brief
+  `.dsh/<YYYYMMDD-HHmmss>/<project-name>/<task-name>.md` and maintain the per-project
+  `task.json` manifest (one per project, never a run-root manifest).
 - `assets/workflow-template.md` — **migrated.** Historical JS template + the ONE-call
   submission format. Superseded by the `implement` capsule; kept as a reference only, not
   to be copied into a `workflow` tool call.

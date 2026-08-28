@@ -16,7 +16,13 @@ three separate calls, and never wrapped under a field named `arguments`:
   "script": "<the JS below — copy verbatim, do not edit>",
   "args": {
     "goal": "-one-line feature goal-",
-    "tasks": [{ "id": "T1", "name": "-task name-", "promptFile": ".dsh/20260828/task-one/task.md" }]
+    "tasks": [
+      {
+        "id": "T1",
+        "name": "-task name-",
+        "promptFile": ".dsh/20260827-143052/user-auth/token-issuance.md"
+      }
+    ]
   }
 }
 ```

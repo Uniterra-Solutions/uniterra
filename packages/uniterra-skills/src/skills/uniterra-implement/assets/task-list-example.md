@@ -2,17 +2,37 @@
 
 The workflow script receives the task list through `args`. **Each task carries a `promptFile`** —
 a repo-relative path to a file that holds that task's pre-rendered markdown brief. Scaffold it
-with the init CLI (`node "<skill_base>/scripts/init_task.mjs" <id> <name>`), fill in the
-placeholders, then pass only the path. This keeps `args` to a handful of short strings, so the
-`run_workflow` / `workflow` tool call JSON is tiny and always valid — never the big embedded
+with the init CLI (`node "<skill_base>/scripts/init_task.mjs" <project-name> <task-id> <task-name>`),
+fill in the placeholders, then pass only the path. This keeps `args` to a handful of short strings,
+so the `run_workflow` / `workflow` tool call JSON is tiny and always valid — never the big embedded
 brief that corrupts the tool call.
+
+## Layout
+
+One run directory per implementation, keyed by a timestamp with minutes + seconds, with one
+directory per implementation project holding one `.md` file per task and the project's own
+`task.json` manifest:
+
+```
+.dsh/<YYYYMMDD-HHmmss>/<project-name>/<task-name>.md   (one per task)
+.dsh/<YYYYMMDD-HHmmss>/<project-name>/task.json        (this project's task list)
+```
+
+The manifest lives INSIDE the project directory — several projects sharing one timestamp never
+overwrite each other's `task.json`.
 
 ## Shape
 
 ```json
 {
   "goal": "one-line feature goal (shared by every task)",
-  "tasks": [{ "id": "T1", "name": "…", "promptFile": ".dsh/<YYYYMMDD>/<task-name>/task.md" }]
+  "tasks": [
+    {
+      "id": "T1",
+      "name": "…",
+      "promptFile": ".dsh/<YYYYMMDD-HHmmss>/<project-name>/<task-name>.md"
+    }
+  ]
 }
 ```
 
@@ -38,10 +58,12 @@ brief that corrupts the tool call.
 ## Writing the brief file
 
 At decomposition time, scaffold each task's brief with the init CLI — it writes the markdown
-to `.dsh/<YYYYMMDD>/<task-name>/task.md` and maintains the run's `tasks.json` manifest:
+brief to `.dsh/<YYYYMMDD-HHmmss>/<project-name>/<task-name>.md` and registers it in that
+project's `task.json` manifest (same timestamp + project → same `task.json`, so tasks accumulate
+instead of overwriting each other):
 
 ```
-node "<skill_base>/scripts/init_task.mjs" "<task-id>" "<task-name>"
+node "<skill_base>/scripts/init_task.mjs" "<project-name>" "<task-id>" "<task-name>"
 ```
 
 Then fill in the placeholders, e.g.:
@@ -87,16 +109,18 @@ committed.
     {
       "id": "auth-issue",
       "name": "Token issuance endpoint",
-      "promptFile": ".dsh/20260828/token-issuance/task.md"
+      "promptFile": ".dsh/20260827-143052/user-auth/token-issuance.md"
     },
     {
       "id": "auth-refresh",
       "name": "Refresh-token rotation",
-      "promptFile": ".dsh/20260828/refresh-rotation/task.md"
+      "promptFile": ".dsh/20260827-143052/user-auth/refresh-rotation.md"
     }
   ]
 }
 ```
 
-`.dsh/20260828/token-issuance/task.md` holds the rendered brief for that task (see "Writing the
-brief file"). Paths are repo-relative — the subagent's cwd is the repo root.
+`.dsh/20260827-143052/user-auth/token-issuance.md` holds the rendered brief for that task (see
+"Writing the brief file"). Paths are repo-relative — the subagent's cwd is the repo root. The
+same project's `task.json` at `.dsh/20260827-143052/user-auth/task.json` lists both entries, so
+`run_workflow('implement', { tasks })` is assembled by reading that one manifest.
