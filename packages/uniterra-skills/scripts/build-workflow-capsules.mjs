@@ -243,10 +243,12 @@ function implementSource() {
 
 /**
  * Build the review capsule source. Mirrors the original single-pass
- * property-based review: a read-only review agent extracts a formal spec table
- * + >10k-run PBT counterexamples, and a fixer repairs each counterexample (only
- * if any were found). The manifest is not read-only because the fixer must
- * change source; the REVIEW agent is individually read-only.
+ * property-based review: the review agent models the WHOLE business logic +
+ * lifecycle as a formal spec table and proves every invariant with >10k-run PBT
+ * (state-machine sequences + input-generating properties), and a fixer repairs
+ * each counterexample (only if any were found). The manifest is not read-only
+ * because the fixer must change source; the REVIEW agent is individually
+ * read-only.
  */
 function reviewSource() {
   const template = readFileSync(
@@ -267,7 +269,7 @@ function reviewSource() {
     type: 'object',
     required: ['spec_table', 'reports'],
     properties: {
-      spec_table: { type: 'array', items: { type: 'object', required: ['module', 'branch', 'precondition', 'postcondition', 'invariant'], properties: { module: { type: 'string' }, branch: { type: 'string' }, precondition: { type: 'string' }, postcondition: { type: 'string' }, invariant: { type: 'string' } } } },
+      spec_table: { type: 'array', items: { type: 'object', required: ['module', 'state', 'operation', 'precondition', 'postcondition', 'invariant'], properties: { module: { type: 'string' }, state: { type: 'string' }, operation: { type: 'string' }, precondition: { type: 'string' }, postcondition: { type: 'string' }, invariant: { type: 'string' } } } },
       reports: { type: 'array', items: { type: 'object', required: ['id', 'level', 'file', 'line', 'invariant', 'input', 'expected', 'actual', 'test'], properties: { id: { type: 'string' }, level: { type: 'string', enum: ['critical', 'medium', 'low'] }, file: { type: 'string' }, line: { type: 'number' }, invariant: { type: 'string' }, input: { type: 'string' }, expected: { type: 'string' }, actual: { type: 'string' }, test: { type: 'string' } } } },
     },
   };

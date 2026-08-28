@@ -14,9 +14,9 @@ You receive `{ status, clean, reports, fixes }` from the workflow:
    adjust only if warranted).
 3. Explicitly list, per issue:
 
-   - **logic** — WHICH business logic is wrong (file / branch / invariant).
-   - **why** — the root cause: how the conditional branch violates the invariant, or which edge it
-     mishandles.
+   - **logic** — WHICH business logic is wrong (file / operation / state / invariant).
+   - **why** — the root cause: how the operation or transition violates the invariant (or which
+     edge / interleaving / lifecycle phase it mishandles).
    - **impact** — the ACTUAL user-visible impact.
    - **fixed** — whether the fixer resolved it (yes/no; reference the diff/result).
    - **test** — the test (the review agent's property test + the fixer's deterministic regression)
