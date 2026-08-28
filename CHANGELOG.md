@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.9] — 2026-08-29
+
+### Added
+
+- **Three-layer, all-PBT review** (`packages/uniterra-skills`). The `uniterra-review` review agent now models and proves THREE verification layers, every one by property-based tests — (1) **intra-module**: the module's own business logic + lifecycle (state / transition / composition / lifecycle / data invariants via random operation-sequence PBT); (2) **interaction**: the module × each counterpart's contract (emit/accept compatibility, event order, ownership, error propagation) with the counterpart mocked to its contract and its states injected; (3) **integration**: the system slices involving the module with the external world mocked (fs / network / env / clock) — end-to-end no loss / no duplication, leak-free teardown, restart/replay correctness, failures injected at any point. Pure business-rule functions retain oracle-backed properties (inverse / round-trip, reference-implementation differential, algebraic laws, relationally complete contracts, purity laws). "All verification by PBT" is a hard rule; the only exceptions are the security checklist's inherently non-property items (a hardcoded secret, a known-vulnerable dependency).
+- **Review knowledge split into responsibility-separated reference files** (`packages/uniterra-skills`). `uniterra-review` now organizes its knowledge as `references/review-agent.md` (core operating manual: mission, anti-bias, three-layer spine, rules, severity, output), `references/model-construction.md` (module / counterpart / system-slice models), `references/invariant-taxonomy.md` (invariant kinds per layer + data oracles + security), `references/test-patterns.md` (sequence / environment-mock fault-injection / input-generating patterns + purpose-naming + >10k background run + shrink), plus the existing fix / main / security-checklist files; `SKILL.md` documents each file's responsibility. The capsule generator composes the one self-contained `REVIEW_PROMPT` from these files at build time (a missing/empty reference fails the build loudly) and the fixer prompt from `references/fix-agent.md`, so `run_workflow('review', { task })` always ships the full knowledge into the agent context with no runtime path lookup; the historical `assets/workflow-template.md` was trimmed to a migrated pointer doc.
+
+### Changed
+
+- README and module docs describe the three-layer review.
+
 ## [0.14.8] — 2026-08-29
 
 ### Added
