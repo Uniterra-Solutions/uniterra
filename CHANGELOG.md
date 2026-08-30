@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.10] — 2026-08-31
+
 ### Fixed
 
 - **Workflow runs were aborted after 1 h by the engine's whole-run wall timeout** (`@dsh-external/workflow`, vendored patch). `scriptWallTimeoutMs` defaulted to `3_600_000` (1 h), armed as the wall deadline of the WHOLE restricted script — including the time `run(wf, args)` spent awaiting subagents. A long multi-agent fan-out therefore hit "system timeout" while its children were still working: the deadline fired `engine.stop(runId, 'workflow script timed out')`, cancelled every still-running child, and `run_workflow(..., { wait: true })` surfaced a `stopped` run with `workflow script timed out after 3600000ms`. The default is now 8 h (`28_800_000`, in both the schema `z.default` and the `resolveConfig` fallback), so an unconfigured profile gets a wall limit that covers legitimate long runs; the limit stays overridable per profile via the plugin config. Regression net: `packages/uniterra-desktop/test/workflow-wall-timeout-default.test.mjs` (`scriptWallTimeoutMs default is at least 8 hours` + fallback-agreement). Documented in `vendor/dsh-plugins/VENDOR.md`.
