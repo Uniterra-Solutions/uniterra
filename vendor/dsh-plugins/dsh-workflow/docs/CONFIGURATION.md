@@ -16,7 +16,7 @@ All keys are optional. Defaults are resolved by the plugin's Schemastery config 
 | `maxConcurrency` | `8` | Deployment concurrent-child ceiling shared across every project and run in this plugin instance. |
 | `maxResultChars` | `50000` | Durable/rendered result-summary limit; full JSON result remains in `run.json`. |
 | `scriptSyncTimeoutMs` | `10000` | VM synchronous slice limit. |
-| `scriptWallTimeoutMs` | `3600000` | Whole restricted-script wall-clock limit. |
+| `scriptWallTimeoutMs` | `28800000` | Whole restricted-script wall-clock limit (8 h). |
 | `defaultProvider` | `spawn` | Fallback DSH subagent provider. |
 | `synthesisProvider` | `spawn` | DSH subagent transport selected by `wf.synthesize`. |
 | `fastProvider/ModelProvider/Model/MaxTokens` | `spawn` / unset / unset / `4096` | Fast tier: subagent transport plus optional DSH LLM provider/model route. |

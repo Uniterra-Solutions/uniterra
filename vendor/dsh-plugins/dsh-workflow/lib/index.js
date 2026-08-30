@@ -33,7 +33,7 @@ export const Config = z.object({
     maxConcurrency: z.natural().min(1).default(8),
     maxResultChars: z.natural().min(1).default(50_000),
     scriptSyncTimeoutMs: z.natural().min(1).default(10_000),
-    scriptWallTimeoutMs: z.natural().min(1).default(3_600_000),
+    scriptWallTimeoutMs: z.natural().min(1).default(28_800_000),
     defaultProvider: z.string().default('spawn'),
     synthesisProvider: z.string().default('spawn'),
     fastProvider: z.string().default('spawn'),
@@ -73,7 +73,7 @@ function resolveConfig(config) {
         maxConcurrency: config.maxConcurrency ?? 8,
         maxResultChars: config.maxResultChars ?? 50_000,
         scriptSyncTimeoutMs: config.scriptSyncTimeoutMs ?? 10_000,
-        scriptWallTimeoutMs: config.scriptWallTimeoutMs ?? 3_600_000,
+        scriptWallTimeoutMs: config.scriptWallTimeoutMs ?? 28_800_000,
         defaultProvider: config.defaultProvider ?? 'spawn',
         synthesisProvider: config.synthesisProvider ?? 'spawn',
         modelTiers: {
