@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.11] — 2026-09-01
+
+### Changed
+
+- **App-wide working rules reworded to plain positive phrasing** (`packages/uniterra-systemprompt`). The 12 injected rules now state what to do instead of what not to do: rule 1 "use plain text in replies — leave emoji out of every message", rule 6 "keep the change scoped to the task" (unrequested refactors stay out), rule 8 "write exactly the code the user's requirements need", rule 9 "write only what you have verified against real documentation", and rule 12 keeps the background-tool start-then-STOP rule but points the meantime at independent work. The rule test suite was extended to pin the new phrasing with dedicated tests for the scoped-change and external-API-verification rules.
+- **Pipeline skill contracts reworded to positive phrasing** (`packages/uniterra-skills`). The `uniterra-plan` / `uniterra-implement` / `uniterra-review` / `uniterra-simplify` skills replace "Do NOT / never" negative directives with positive statements ("Use uniterra-implement to execute a plan…", "Leave the plan as it is — author tests and tasks, not a new plan document", "Start from the allocated failing test as the acceptance target and extend it", "Keep a pass verdict over a cosmetic-nit report", "Finish with the `structured_output` call — that call is the result"). The four workflow capsules (`plan-review` / `implement` / `review` / `simplify`) were regenerated from the reworded templates.
+- Project docs and conventions (`docs/`, `AGENTS.md`) describe the reworded rules and skill contracts.
+
 ## [0.14.10] — 2026-08-31
 
 ### Fixed
