@@ -20,10 +20,10 @@ property-based test; nothing is verified by hand.
 - Identify the property-based testing library the repo uses (fast-check, Vitest/Jest property
   forms, hypothesis, proptest, quickcheck, etc.) AND the convention for where tests live (`test/`,
   `tests/`, `__tests__/`, a colocated `*.test.ts` beside the source) and how they are named/run.
-- If the repo has NO property-based testing library, do NOT introduce one: pin the invariant with
-  a deterministic regression test (a concrete input and its expected/actual) in the repo's
-  framework, and drive many generated inputs with a small explicit loop over that same framework
-  instead — that explicit loop IS your PBT; the deterministic case is only its base case.
+- If the repo has NO property-based testing library, pin the invariant with a deterministic
+  regression test (a concrete input and its expected/actual) in the repo's framework, and drive
+  many generated inputs with a small explicit loop over that same framework instead — that
+  explicit loop IS your PBT; the deterministic case is only its base case.
 
 ## Write ALL the tests in one pass
 
@@ -43,8 +43,8 @@ try.
 
 ### ENVIRONMENT-MOCK (fault-injection integration) properties (layers 2 + 3)
 
-The module talks to counterparts / an external world — NEVER call the real world from the test.
-Fake it through the injection seam:
+The module talks to counterparts / an external world — the test substitutes the real world through
+the injection seam:
 
 - **Layer 2** — mock the counterpart TO ITS CONTRACT (an in-memory implementation of what the
   counterpart promises: its accepted shapes, its events, its error semantics), then GENERATE
@@ -58,8 +58,8 @@ Fake it through the injection seam:
 
 This is verification by substitution: error propagation, leak-on-failure, retry semantics,
 rehydration after restart, garbage-in survival, and the emitted contract — all without real
-infrastructure. No injection seam? Exercise the smallest integration slice that lets you
-substitute the counterpart or the external world; the mock IS the environment model.
+infrastructure. The mock IS the environment model; where no injection seam exists, exercise the
+smallest integration slice that lets you substitute the counterpart or the external world.
 
 ### INPUT-generating properties (data rows)
 
@@ -78,10 +78,11 @@ type-boundary values; assert the data invariant on every generated case.
   must be able to say what the code must always do. Use the repo's own naming convention — a
   kebab/snake-case file name `<module>-<behaviour>` (e.g. `dedupe-preserves-order`,
   `resolve-always-under-base-dir`, `split-keeps-total-count`, `auth-denies-foreign-resource`) or a
-  BDD `should <behaviour>` / `it('<behaviour>')` title. Never invent a parallel style.
-  - FORBID names that hide the purpose: a finding id (`REVIEW-3`, `fix-2`), a number or generic
-    placeholder (`test1`, `test_bug`, `should_work`, `my_test`), a where-only label
-    (`review-property-test`), or an implementation hint (`fast-check-1`). Rewrite any of these.
+  BDD `should <behaviour>` / `it('<behaviour>')` title. Follow the repo's style throughout.
+  - Name it to HIDE the mechanics and SHOW the guarantee: a finding id (`REVIEW-3`, `fix-2`), a
+    number or generic placeholder (`test1`, `test_bug`, `should_work`, `my_test`), a where-only
+    label (`review-property-test`), or an implementation hint (`fast-check-1`) all obscure the
+    guarantee — rewrite any of these.
   - At-a-glance gate: before running, every test name must let a maintainer state, from the name
     alone, the one property the test must enforce. If it does not, rename it.
   - The SAME invariant keeps the SAME name across its property test AND its later minimal-input
@@ -89,8 +90,8 @@ type-boundary values; assert the data invariant on every generated case.
     one matched pair to a maintainer.
 - Match the repo's conventions (imports, formatting, assertion style, module type) so it passes
   the repo's lint/format.
-- If a property test for an invariant already exists (e.g. from an earlier run), do not duplicate
-  it — re-run it instead.
+- If a property test for an invariant already exists (e.g. from an earlier run), re-run it
+  instead of duplicating it.
 
 ## Run all the tests together, in the background
 

@@ -34,13 +34,14 @@ of `args.tasks`, and copy the template's script verbatim.
 }
 ```
 
-Use exactly one of `tasks` or `batches` — never both. Set `batches` (array of task arrays)
-for the batched shape.
+Set exactly one of `tasks` or `batches`. Set `batches` (array of task arrays) for the batched
+shape.
 
 ## Watch for
 
 - Earlier batches edit files that later batches also touch; later tasks' `context.files[].read`
   hints may be stale — prefer symbol / heading references over line numbers for exactly this
   reason.
-- A `null` in any batch fails the whole run (later batches likely depend on it).
+- A `null` in any batch fails the whole run (later batches likely depend on it); surface it
+  rather than continuing.
 - The subagent **returns JSON** (via `schema`); only its **input prompt** is markdown.

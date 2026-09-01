@@ -23,8 +23,8 @@ description: >
   - User asks to review changes, hunt for bugs, or run the review phase
     (review / 審查 / code review)
   - User asks to verify business logic is invariant-correct
-  Do NOT use for simplification review (uniterra-simplify), planning
-  (uniterra-plan), or implementing (uniterra-implement).
+  Use uniterra-simplify for simplification review, uniterra-plan for planning,
+  and uniterra-implement for implementing.
 ---
 
 # Uniterra Review — three-layer property-based adversarial review
@@ -36,15 +36,15 @@ interpretation.
 
 ## 1. Assemble the review scope
 
-Give the review agent ONLY the scope — deliberately, to avoid bias and to avoid duplicate reading:
+Give the review agent ONLY the scope — deliberately, so the review is unbiased by your
+reading and the agent does the reading itself:
 
-- **Do NOT feed it your own understanding of the code.** Never write a summary, a "what this does",
-  a believed bug, an expected contract, or your interpretation of the intent into the scope. That
-  pollutes the review agent with YOUR reading and biases it before it looks at the code.
-- **Do NOT read the code yourself to re-describe it.** The review agent reads the code itself;
-  your pre-reading only duplicates that work and injects your conclusions. Let the review agent do
-  the reading.
-- Just name the scope: the changed business modules / the diff (+ any focus).
+- **Keep the scope free of your own reading.** Hand it just the scope; leave out any
+  "what this does" summary, a believed bug, an expected contract, or your
+  interpretation of the intent — the review agent derives those from the code itself.
+- **Let the review agent read the code itself.** It reads the code in scope directly;
+  your pre-reading only duplicates that work and injects your conclusions.
+- Name the scope: the changed business modules / the diff (+ any focus).
 
 - **task** — what to review: the scope (default: the uncommitted changes / the diff), e.g.
   "review the changed modules in packages/uniterra-provider (the diff)".
@@ -140,13 +140,15 @@ call passes); only the subagent **input prompts** are text.
 
 ## Rules
 
-- The review agent never modifies source (it only writes the property tests that expose and pin
-  the counterexamples).
-- The fixer agent leaves changes UNCOMMITTED and never deletes or weakens the property tests or
-  the deterministic unit regression tests it adds for each counterexample.
-- The main agent (you) never re-runs the property-based tests — the review agent ran them
-  (> 10,000 runs each) and the fixer re-confirmed its fixes; trust that evidence and just aggregate.
-- Counterexample reports must reference a concrete file + line + failure mode (the property the
+- The review agent writes only the property tests that expose and pin the counterexamples; it
+  leaves source changes to the fixer.
+- The fixer agent leaves changes UNCOMMITTED and preserves the property tests and the
+  deterministic unit regression tests it adds for each counterexample (it adds new ones, and
+  strengthens existing ones, over deleting or weakening any).
+- The main agent (you) trusts the reported counterexamples and fixes as the evidence — the
+  review agent ran them (> 10,000 runs each) and the fixer re-confirmed its fixes; the aggregation
+  is your job, re-running the property-based tests is not.
+- Counterexample reports reference a concrete file + line + failure mode (the property the
   branch violated).
 
 ## Files — knowledge organisation (one responsibility per file)

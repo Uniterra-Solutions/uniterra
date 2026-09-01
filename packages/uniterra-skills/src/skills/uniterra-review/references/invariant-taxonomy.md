@@ -104,6 +104,6 @@ prompt) and, for EVERY item that applies to the code in scope, add a spec row wh
 the security property (e.g. 'the resolved path always stays under the base directory for any
 user-supplied input', 'get(id) denies resources the caller does not own', 'no untrusted input
 reaches a query/command/path sink without escaping'). Each security invariant is proven with its
-own PBT test, exactly like a business-logic invariant. The ONLY non-PBT items are those that
-cannot be a property (a hardcoded secret, a known-vulnerable dependency) — check them
-deterministically and report them as findings if present.
+own PBT test, exactly like a business-logic invariant. The checklist's non-property items (a
+hardcoded secret, a known-vulnerable dependency) are checked deterministically and reported as
+findings if present.

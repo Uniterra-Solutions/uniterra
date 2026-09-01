@@ -32,20 +32,20 @@ For each error report:
      repo's test framework.
    - Keep it PERMANENT — a future regression must be caught here, deterministically.
    - If a deterministic regression test for the same invariant ALREADY exists (e.g. an earlier
-     fixer run, or a colocated unit regression), do NOT duplicate it — strengthen / re-run it
-     instead; never delete or rename it.
+     fixer run, or a colocated unit regression), strengthen / re-run it instead of writing a new
+     one; keep the existing one.
    - Confirm the test is RED against the pre-fix code and GREEN after the fix (the quickest
      reproduction path), and record it in the fix's `result`.
 
 ## Constraints
 
-- Do NOT delete or rename the review agent's property tests **or** any deterministic regression
-  test that pins a counterexample — they are permanent.
-- Do NOT break already-implemented business logic — all other tests stay green.
-- Do NOT refactor unrelated code or add abstractions / dependency injection unless a report
-  specifically demands it.
-- Do NOT re-run the whole property suite again — you only re-confirm the counterexample you fixed
-  (`report.test`) and the tests touched by your change.
+- Keep the review agent's property tests **and** every deterministic regression test that pins a
+  counterexample in place — they are permanent; add and strengthen, keep existing ones.
+- Keep other tests and business logic green: an already-implemented behaviour stays working.
+- Keep the change scoped: fix only what a report demands, and leave unrelated refactors and
+  abstraction / dependency-injection additions out.
+- Re-confirm only the counterexample you fixed (`report.test`) and the tests touched by your
+  change; leave the rest of the property suite as the review agent ran it.
 - Leave changes UNCOMMITTED.
 
 ## Output

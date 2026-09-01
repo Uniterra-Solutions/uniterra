@@ -9,7 +9,7 @@
 A fixed workflow script: it reviews `prd.md`, `design.md`, and `acceptance.md` with
 three parallel agents, then hands the failing axes' issues to a single repair agent
 that applies them to the documents itself. A review axis that already passed is
-NEVER re-dispatched — as fixes progress, the number of review agents dispatched each
+re-dispatched — as fixes progress, the number of review agents dispatched each
 round shrinks from 3 toward 0. Only the three directory paths vary; the prompts are
 fixed (mirrors of `prompts/requirement-list-review.md`, `prompts/design-review.md`,
 and `prompts/acceptance-review.md`).
@@ -48,8 +48,8 @@ Focus — check ONLY these two things:
 2. Mutual contradiction — do any two requirements conflict (mutually exclusive), or is
    any single requirement internally inconsistent?
 
-Do not review the architecture (that is the design-review agent's job) or the
-acceptance criteria (the acceptance-review agent's job).
+The architecture is the design-review agent's job and the acceptance criteria are the
+acceptance-review agent's job; keep this review to the requirements only.
 
 Return verdict: "pass" only if the requirements are sound. Otherwise return
 verdict: "fail" and one issues entry per finding: cite the requirement id, the
@@ -64,10 +64,10 @@ Focus — check ONLY these things:
 2. Minimal complexity — is this the simplest design that still satisfies every requirement?
 3. Minimal invasiveness — does it change existing code in the least invasive way possible?
 4. External libraries — does it introduce necessary libraries that genuinely simplify
-   development, and does it AVOID unnecessary ones?
+   development, and steer clear of unnecessary ones?
 
-Do not review requirement feasibility (the requirement-list-review agent's job) or the
-acceptance criteria (the acceptance-review agent's job).
+Requirement feasibility is the requirement-list-review agent's job and the acceptance
+criteria are the acceptance-review agent's job; keep this review to the design only.
 
 Return verdict: "pass" only if the design is appropriately minimal. Otherwise return
 verdict: "fail" and one issues entry per finding: cite the module or decision, the
@@ -84,8 +84,8 @@ Focus — check ONLY these things:
    piece of evidence (a test, a command output, an observable behavior)? Flag any
    criterion that relies on subjective judgment or has no evidence.
 
-Do not review requirement feasibility (the requirement-list-review agent's job) or the
-design (the design-review agent's job).
+Requirement feasibility is the requirement-list-review agent's job and the design
+is the design-review agent's job; keep this review to the acceptance criteria only.
 
 Return verdict: "pass" only if every criterion is clear and verifiable. Otherwise
 return verdict: "fail" and one issues entry per finding: cite the criterion id, the
@@ -101,11 +101,11 @@ Method:
    a \`where\`, a \`problem\`, and a \`suggestion\`.
 2. Make the MINIMAL edit that resolves each issue, following the suggestion where it
    is sensible. Preserve the document's existing structure, formatting, and voice.
-3. Do NOT touch a document that has no issues this round, and do NOT rewrite unrelated
-   content or invent new problems.
+3. Leave a document with no issues this round unchanged, and keep the rest of the
+   content as-is.
 
 Constraints:
-- Only apply the listed issues; do not expand scope.
+- Apply only the listed issues; keep scope to them.
 - Keep changes minimal and consistent with the rest of the document.
 - Leave the edited documents on disk (do not commit).
 
@@ -182,8 +182,9 @@ const passed = new Set();
 for (let round = 1; round <= maxRounds; round++) {
   phase('round-' + round);
 
-  // Only re-review the axes that have not passed yet. A passed axis is never dispatched again,
-  // so the number of review agents per round shrinks from 3 toward 0 as fixes land.
+  // Only re-review the axes that have not passed yet. An axis that passed is not
+  // dispatched again, so the number of review agents per round shrinks from 3 toward 0
+  // as fixes land.
   const pending = REVIEWERS.filter((r) => !passed.has(r.key));
   if (pending.length === 0) return { status: 'done', rounds: round, pass: true };
 
@@ -208,7 +209,7 @@ for (let round = 1; round <= maxRounds; round++) {
   if (failures.length === 0) return { status: 'done', rounds: round, pass: true };
 
   // Repair only the axes that actually produced issues; an axis whose agent returned null
-  // carries no actionable issues and is simply re-reviewed next round.
+  // carries no actionable issues and is re-reviewed next round.
   const toRepair = failures.filter((f) => f.issues.length > 0);
   if (toRepair.length > 0) {
     const repairInput = toRepair.map((f) => ({
@@ -234,7 +235,7 @@ return { status: 'blocked', reason: 'max rounds reached', rounds: maxRounds };
 - `status: 'done'` and `pass: true` → all three review axes passed; hand off to
   `uniterra-implement`.
 - `status: 'done'` is only returned when `pending.length === 0` or a round had no
-  failures — a passed axis is never re-dispatched.
+  failures — a passed axis is not re-dispatched.
 - `status: 'failed'` → the repair agent could not resolve a round's issues; inspect the
   round's `failures`.
 - `status: 'blocked'` → the round cap was hit with an axis still failing (or an agent

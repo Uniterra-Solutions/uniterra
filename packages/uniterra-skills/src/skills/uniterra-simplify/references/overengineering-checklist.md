@@ -9,10 +9,10 @@ is a simplification opportunity.
 > require the machinery:
 >
 > - If the design explicitly names a layer, interface, config flag, guard, error
->   path, or module boundary, it is NOT over-engineering — never flag it.
+>   path, or module boundary, it is NOT over-engineering — leave it in place.
 > - Engineering needs the design or requirements state (testability,
 >   observability, security, error handling, performance, extensibility) are
->   justified by definition — never propose dropping them.
+>   justified by definition — keep them in place.
 > - A checklist match that contradicts the design is not a simplification
 >   opportunity; every item below reads "…unless the design requires it".
 

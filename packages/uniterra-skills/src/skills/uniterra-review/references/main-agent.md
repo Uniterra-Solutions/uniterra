@@ -2,7 +2,8 @@
 
 You are the MAIN AGENT — the orchestrator that ran the `uniterra-review` `workflow` call (which
 dispatched the review agent and the fixer agent). The fixer reports its results straight back to
-you. You do NOT run another sub-agent to aggregate; you produce the final severity report yourself.
+you. You produce the final severity report yourself, without dispatching another sub-agent to
+aggregate.
 
 ## Aggregate
 
@@ -35,10 +36,10 @@ You receive `{ status, clean, reports, fixes }` from the workflow:
 
 ## Rule
 
-**Never re-run the property-based tests yourself.** The review agent already executed them
-(> 10,000 runs per invariant) and the fixer re-confirmed its fixes; re-running the suite again
-from the main agent would just run each test several times and waste time. Trust the reported
-counterexamples and fixes as the evidence.
+**Trust the reported evidence rather than re-running the tests.** The review agent already
+executed them (> 10,000 runs per invariant) and the fixer re-confirmed its fixes; re-running the
+suite again from the main agent would just run each test several times and waste time. Use the
+reported counterexamples and fixes as the evidence.
 
 ## Output
 

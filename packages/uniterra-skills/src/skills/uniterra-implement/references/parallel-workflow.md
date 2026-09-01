@@ -31,13 +31,12 @@ only choose the orchestration shape by setting `args.tasks` (flat array) instead
 }
 ```
 
-Use exactly one of `tasks` or `batches` — never both. Set `tasks` (flat) for the parallel
-shape.
+Set exactly one of `tasks` or `batches`. Set `tasks` (flat) for the parallel shape.
 
 ## Watch for
 
-- A `null` result means that child failed (or its return did not validate) — it fails the
-  run; do not silently continue.
+- A `null` result means the child failed (or its return did not validate) — it fails the
+  run; surface the failure rather than silently continuing.
 - Same-batch `owned_files` overlap is a decomposition bug — re-check the file sets before
   dispatching.
 - The subagent **returns JSON** (via `schema`); only its **input prompt** is markdown.

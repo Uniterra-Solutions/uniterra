@@ -9,9 +9,8 @@ description: >
   acceptance verifiability) in a SINGLE review pass. LOAD when:
   - User asks to plan a feature or task (prd / design / plan / 規劃 / 計畫)
   - User references Jovaltus planning or asks for an execution plan
-  Do NOT use for:
-  - Executing a plan or implementing (uniterra-implement)
-  - Reviewing or simplifying changes (uniterra-review / uniterra-simplify)
+  Use uniterra-implement to execute a plan and uniterra-review /
+  uniterra-simplify to review or simplify changes.
 ---
 
 # Uniterra Plan — turn requirements into reviewed planning artifacts

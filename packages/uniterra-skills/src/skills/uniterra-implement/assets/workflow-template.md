@@ -32,7 +32,7 @@ parallel calls fails with `missing required property "meta"` / `"script"`; wrapp
 `arguments` fails with `"arguments" must be an object`. `meta` must contain only `name` and
 `description` (plus optional `whenToUse`/`phases`). `args` may carry an optional `maxRounds`.
 
-**Keep `args` tiny — never embed the task brief in it.** Each task carries a `promptFile`
+**Keep `args` tiny — the task brief lives in the `promptFile`.** Each task carries a `promptFile`
 (repo-relative path to a file holding the rendered markdown task brief); the capsule inlines that
 file into the subagent prompt at dispatch (the subagent does not read it). Writing the brief to a
 file keeps `run_workflow`'s `args` JSON to a handful of short strings, so it is always valid and
@@ -53,28 +53,28 @@ partition rules, see `references/parallel-workflow.md` and `references/batched-w
 ```js
 const FIXED_RULES = `You are an isolated subagent implementing ONE task of an approved project. You have no
 prior conversation context — your full brief is inlined in the '## Task to implement' block
-below plus the rules here. Do not ask for clarification; make a reasonable, documented decision
-where the task is ambiguous.
+below plus the rules here. Where the task is ambiguous, make a reasonable decision and record it.
 
 - Your full brief — goal, context files, requirements with their allocated failing tests,
-  conventions, and constraints — is ALREADY in your prompt. Do not re-read the task file unless
-  a referenced file's details are missing; the inlined brief is the source of truth.
+  conventions, and constraints — is ALREADY in your prompt. Treat the inlined brief as the
+  source of truth, and re-read the task file only when a referenced file's details are missing.
 
 - Work at the repo root (your cwd). Leave all changes UNCOMMITTED — a later review reads the diff.
-- Touch only the files named in your task's \`owned_files\`; never modify \`forbidden_files\` or any
-  file outside your task's scope — parallel agents may be working at the same time.
-- Your requirement's failing property tests are already written (named in \`requirements[].test\`).
+- Work only on the files named in your task's \\`owned_files\\`. A file outside \\`owned_files\\`,
+  including any \\`forbidden_files\\` another task owns, stays untouched — parallel agents may be
+  working at the same time.
+- Your requirement's failing property tests are already written (named in \\`requirements[].test\\`).
   FIRST prioritize STRENGTHENING / completing those existing failing test cases — extend the
-  property, add the missing edge cases and invariant asserts — then make them GREEN. Never
-  start by writing a brand-new property test from scratch for a requirement that already has
-  an allocated failing test.
+  property, add the missing edge cases and invariant asserts — then make them GREEN. Start from
+  the allocated failing test as the acceptance target and extend it, rather than writing a
+  brand-new property test from scratch for a requirement that already has an allocated failing test.
 - Follow the project's conventions (AGENTS.md / CLAUDE.md): run lint / typecheck / build, add
   tests for new behaviour, and make your requirements' failing property tests GREEN.
-- Verify external APIs before using them; never write from memory.
-- Record any deviation from the design doc in \`deviations\`.
-- Report your result with the \`structured_output\` tool exactly once: the JSON report
-  (changed_files, satisfied_requirements, deviations). Do NOT finish with a plain-text JSON
-  string or a markdown code block — only the \`structured_output\` call counts as your result.`;
+- Verify external APIs against real documentation before using them; write only what you have checked.
+- Record any deviation from the design doc in \\`deviations\\`.
+- Report your result with the \\`structured_output\\` tool exactly once: the JSON report
+  (changed_files, satisfied_requirements, deviations). The \\`structured_output\\` call is the
+  result; finish with it, and report the JSON in that call.`;
 ```
 
 ## Return contract (subagent reports to the workflow as JSON)
@@ -100,7 +100,7 @@ const RETURN_SCHEMA = {
 
 `agent(prompt, { schema: RETURN_SCHEMA })` returns the validated JSON object (or `null` when
 the child fails or the shape does not validate). **The subagent report to the workflow is
-JSON via this `schema`** — do NOT convert it to markdown; only the subagent input prompt is
+JSON via this `schema`** — keep the report in that schema; only the subagent input prompt is
 markdown.
 
 ## Script (copy this block verbatim)

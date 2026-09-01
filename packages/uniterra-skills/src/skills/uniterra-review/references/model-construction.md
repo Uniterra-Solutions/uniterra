@@ -36,7 +36,8 @@ A lifecycle that is not obvious is exactly where the bugs live:
 ### 1.4 Stateless modules
 
 A pure input→output module with no carried state and no events has no lifecycle to model: its
-layer-1 model is only the DATA invariants of its operations. Do NOT invent a fake lifecycle.
+layer-1 model is only the DATA invariants of its operations. Model a fake lifecycle only when the
+module actually has one.
 
 ## Layer 2 — the counterpart model (interaction)
 
@@ -78,7 +79,7 @@ lifecycle per type):
   = its callers and the services it calls; layer-3 slices = request paths through the system.
 - **Desktop / web UI**: layer-1 = the UI state machine (mount/update/unmount, double-clicks,
   in-flight request races); layer-2 = component ↔ store/API/event-bus contracts; layer-3 = the app
-  flow slices (launch → journey → exit). Geometry and pixels are NOT review's job — that is QA.
+  flow slices (launch → journey → exit). Geometry and pixels are the QA domain, outside this review.
 - **CLI / installer / script**: layer-1 = command/step logic; layer-2 = the CLI ↔ filesystem /
   subprocess / env / user-input contracts; layer-3 = install → build → launch → upgrade/rollback.
 - **Data / config / schema** (configs, manifests, wire formats): invariants = shape validity, no
@@ -90,16 +91,16 @@ lifecycle per type):
 
 State it where it applies; do not fake it:
 
-- **Measured timing/performance and liveness ('eventually …')** are NOT review's job — they need
-  maintainer-defined targets and are verified by the acceptance / perf suites, statistically
-  (e.g. a percentage-of-paths-above-target pass criterion), not by this review.
-- **Real scheduler interleavings** and **anything only visible in a pixel** are QA's domain.
+- **Measured timing/performance and liveness ('eventually …')** are the acceptance / perf
+  suites' domain, with maintainer-defined targets, verified statistically (e.g. a
+  percentage-of-paths-above-target pass criterion) — not this review's job.
+- **Real scheduler interleavings** and **anything only visible in a pixel** are the QA domain.
 - What IS review's job here: deterministic complexity/risk smells (obvious O(n²) / N+1 queries /
   unbounded memory growth / busy-wait loops over the whole path) — reason about them from the
   code and report them without benchmarking.
 
 ## One pass, obey the scope
 
-Read everything in ONE pass before writing any test — never read one module, test it, and move
-on. Inspect ONLY the review scope, but INSIDE it model everything — every operation, every state,
-every counterpart, every external state, not just error branches.
+Read everything in ONE pass before writing any test — reading one module, testing it, then moving
+on is the slower, narrower path. Inspect ONLY the review scope, but INSIDE it model everything —
+every operation, every state, every counterpart, every external state, not just error branches.

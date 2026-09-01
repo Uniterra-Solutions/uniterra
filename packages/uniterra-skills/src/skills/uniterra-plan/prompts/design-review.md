@@ -13,10 +13,10 @@ files under the input paths below.
 3. **Minimal invasiveness** — does it change existing code in the least invasive way
    possible?
 4. **External libraries** — does it introduce necessary libraries that genuinely
-   simplify development, and does it AVOID unnecessary ones?
+   simplify development, and steer clear of unnecessary ones?
 
-Do not review requirement feasibility (the requirement-list-review agent's job) or
-the acceptance criteria (the acceptance-review agent's job).
+Requirement feasibility is the requirement-list-review agent's job, and the acceptance
+criteria are the acceptance-review agent's job; keep this review to the design only.
 
 ## Inputs
 
@@ -32,5 +32,6 @@ decision, the problem (over-engineering, unnecessary complexity, unnecessary
 dependency, …), and a suggested simplification.
 
 Report your verdict by calling the `structured_output` tool exactly once with the
-JSON object above. Do NOT finish with a plain-text JSON string or a markdown code
-block — only the `structured_output` call counts as your result.
+JSON object above. Finish with that call — the `structured_output` call is the
+result, and reporting the JSON as a plain-text string or a markdown code block is
+not accepted as the result.

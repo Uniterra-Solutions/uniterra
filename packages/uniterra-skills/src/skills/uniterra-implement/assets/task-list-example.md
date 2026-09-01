@@ -51,9 +51,9 @@ overwrite each other's `task.json`.
   their `test`, conventions, context files, constraints). The capsule inlines this file into the
   subagent prompt at run time and appends the shared `FIXED_RULES` (see
   `assets/workflow-template.md`) — the subagent does NOT read the file itself.
-- **Do NOT put the brief in `args`.** Never pass a `prompt`/`goal`/`requirements`/`conventions`/
-  `constraints` nested object as an `args` value — writing the brief to a file and passing only
-  `promptFile` is what keeps the tool call JSON small and valid.
+- **The brief lives in the `promptFile`, not in `args`.** Pass `promptFile` only — writing the
+  brief to a file keeps the tool call JSON small and valid, rather than embedding a
+  `prompt`/`goal`/`requirements`/`conventions`/`constraints` nested object as an `args` value.
 
 ## Writing the brief file
 

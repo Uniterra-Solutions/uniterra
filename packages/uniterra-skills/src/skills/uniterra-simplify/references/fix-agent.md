@@ -23,14 +23,13 @@ below.
 
 ## Constraints
 
-- Preserve behaviour EXACTLY — no test may change result.
-- A `risky` recommendation is NOT optional: it is applied, but only after its
-  equivalence is pinned by tests written BEFORE the change. Never skip a risky
-  one merely because it needs verification.
+- Preserve behaviour EXACTLY — a test's result stays the same.
+- A `risky` recommendation is applied, but only after its equivalence is pinned
+  by tests written BEFORE the change; skip it only with a genuine reason.
 - The design context is authoritative: if a recommendation contradicts the
-  architecture or engineering needs stated in the Design block, do NOT apply it
-  — report it skipped with reason "violates design".
-- Do NOT introduce new abstractions or change public APIs.
+  architecture or engineering needs stated in the Design block, report it skipped
+  with reason "violates design".
+- Keep the change scoped: leave existing abstractions and public APIs intact.
 - Leave changes UNCOMMITTED.
 
 ## Output
@@ -40,3 +39,7 @@ including risky ones that passed their equivalence tests), skipped (a list of
 { id, reason } for the ones NOT applied — only a genuine reason: an equivalence
 test failed and the change was reverted, or the code is already in the
 recommended shape), and a short summary.
+
+Report it with the `structured_output` tool exactly once. Finish with that call —
+the `structured_output` call is the result, and reporting the JSON as a plain-text
+string or a markdown code block is not accepted as the result.

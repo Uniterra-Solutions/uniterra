@@ -12,8 +12,8 @@ context — read the files under the input paths below.
    checkable piece of evidence (a test, a command output, an observable behavior)?
    Flag any criterion that relies on subjective judgment or has no evidence.
 
-Do not review requirement feasibility (the requirement-list-review agent's job) or
-the design (the design-review agent's job).
+Requirement feasibility is the requirement-list-review agent's job, and the design
+is the design-review agent's job; keep this review to the acceptance criteria only.
 
 ## Inputs
 
@@ -28,5 +28,6 @@ return `verdict: "fail"` and one `issues` entry per finding: cite the criterion 
 the problem (unclear / no evidence / subjective), and a suggested fix.
 
 Report your verdict by calling the `structured_output` tool exactly once with the
-JSON object above. Do NOT finish with a plain-text JSON string or a markdown code
-block — only the `structured_output` call counts as your result.
+JSON object above. Finish with that call — the `structured_output` call is the
+result, and reporting the JSON as a plain-text string or a markdown code block is
+not accepted as the result.

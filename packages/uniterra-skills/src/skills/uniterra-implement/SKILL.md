@@ -10,20 +10,21 @@ description: >
   property tests green. LOAD when:
   - User asks to execute an approved plan (execute_plan / 執行計畫)
   - User asks to implement a planned or well-specified task/feature
-  Do NOT use for planning (uniterra-plan) or reviewing changes (uniterra-review /
-  uniterra-simplify).
+  Use uniterra-plan for planning and uniterra-review / uniterra-simplify for
+  reviewing changes; this skill executes only approved plans.
 ---
 
 # Uniterra Implement — PBT-first execution against an explicit requirements list
 
 Pipeline position: after `uniterra-plan`, or standalone when the task is well-specified.
 Every implementation starts from an explicit requirements list and the failing property
-tests that encode the business logic as invariants — never write implementation code first.
+tests that encode the business logic as invariants — write the property tests first,
+implementation code after.
 
-> **Do NOT write a plan document.** The plan already exists: read the PRD + design doc
+> **Leave the plan as it is.** The plan already exists: read the PRD + design doc
 > from the plan's run directory (`uniterra-plan`) or take them from the user's request.
 > Your job is to decompose the existing requirements into tasks, generate the task docs,
-> and dispatch subagents — not to author a new plan.
+> and dispatch subagents — author tests and tasks, not a new plan document.
 
 ## Workflow
 
@@ -41,8 +42,8 @@ tests that encode the business logic as invariants — never write implementatio
 1. Write ALL failing property-based tests first in the main session — the red suite
    encoding every invariant from the requirements list. Every test traces to at least
    one requirement. These tests are the single acceptance target for the whole
-   implementation: subagents strengthen and complete them (never rewrite them from
-   scratch) and turn them green.
+   implementation: subagents strengthen and complete them (extend, not replace) and
+   turn them green.
 2. Decompose requirements + design into a **task list** (`assets/task-list-example.md`):
    one entry per task. Scaffold each task's brief with the init CLI (no hand-writing of
    boilerplate). Run it in the repo root (your cwd):
@@ -81,20 +82,20 @@ tests that encode the business logic as invariants — never write implementatio
   valid JSON report); `{ status: 'failed', batch }` when a subagent failed. The subagent
   reports to the workflow as **JSON** (its structured output); only its input prompt is
   markdown.
-- **Strengthen, don't rewrite.** Each subagent works against the failing tests written in
+- **Strengthen, not replace.** Each subagent works against the failing tests written in
   step 2 (its requirement's allocated test). It FIRST prioritizes strengthening / completing
   those failing test cases — extend the property, add the missing edge cases and invariant
   asserts, so the failing PBT genuinely covers the requirement — THEN makes them green.
-  Never start by writing a brand-new property test from scratch for the same requirement:
-  the allocated test is the acceptance target, not a starting point (see the fixed rules
+  Start from the allocated test as the acceptance target and extend it, rather than writing
+  a brand-new property test from scratch for the same requirement (see the fixed rules
   embedded in the `implement` capsule).
 - Afterwards run the FULL test suite in the main session: every failing PBT must be green
-  before handoff. Red tests are the ONLY acceptable signal that work remains — fix inline
-  or dispatch a follow-up agent, never declare done with red tests.
+  before handoff. A green suite is the handoff gate — fix inline or dispatch a follow-up
+  agent, and only then declare done.
 
 ## Rules
 
-- Do NOT commit changes; leave the working tree uncommitted so a later review reads the diff.
+- Leave all changes uncommitted so a later review reads the working-tree diff.
 - Follow project conventions (`AGENTS.md`): lint / typecheck / build, tests for new behaviour.
 
 ## Files

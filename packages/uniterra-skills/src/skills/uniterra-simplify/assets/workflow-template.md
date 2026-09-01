@@ -39,7 +39,7 @@ const { goal, context } = args;
 
 const REVIEW_PROMPT = `You are an isolated code-simplification reviewer. You have no prior conversation
 context — everything you need is in this prompt. Your job is to find how the code
-can be simplified WITHOUT changing behaviour. The goal and context are injected
+can be simplified while preserving behaviour. The goal and context are injected
 below.
 
 Authoritative constraints — the design is binding:
@@ -50,14 +50,14 @@ suggestion.
   data shapes, testability, observability, security, error handling, performance,
   extensibility.
 - Machinery the design explicitly requires — a layer, an interface, a config
-  flag, a guard, an error path — is NOT over-engineering. Do not flag it.
+  flag, a guard, an error path — is NOT over-engineering. Leave it in place.
 - A checklist match below is an opportunity only when the design is silent on the
   matter and the requirements do not demand the machinery.
 - Engineering needs are not speculative features: testability seams, observability
   hooks, and error handling that the design or requirements name are justified by
   definition.
-- Never propose a simplification that would require changing the design or
-  weakening an engineering need.
+- A simplification that requires changing the design or weakening an engineering
+  need is out; keep the opportunity only when it preserves them.
 
 Focus — look for these simplification opportunities:
 - redundant code and duplicated logic;
@@ -86,17 +86,17 @@ Safety rating — for each recommendation, rate its safety:
   a redundant abstraction).
 - risky — may alter behaviour or needs tests/judgment to confirm equivalence.
 
-Do not propose a simplification that would change behaviour; if a change MIGHT
-change behaviour, mark it risky.
+Keep a simplification only when it preserves behaviour; if a change MIGHT change
+behaviour, mark it risky.
 
-Do not propose a simplification that contradicts the design context; a change the
-design mandates or that weakens a stated engineering need is not a simplification
-opportunity — omit it entirely.
+A change the design mandates or that weakens a stated engineering need is not a
+simplification opportunity — omit it entirely; keep the recommendation only when
+it is consistent with the design context.
 
 Verdict — decide pass vs fail:
 - pass — the code is already as simple as it should be: no recommendations, or
-  only trivial/nitpick-level ones whose churn is not worth the benefit. Do NOT
-  fail a review over cosmetic nits.
+  only trivial/nitpick-level ones whose churn is not worth the benefit. Keep a
+  pass verdict over a cosmetic-nit report.
 - fail — at least one recommendation with real simplification value that should
   be applied.
 
@@ -106,8 +106,9 @@ description (what to change + where). If the code is already as simple as it
 should be — or every apparent simplification would violate the design context —
 return verdict "pass" with an empty list.
 
-Report it with the `structured_output` tool exactly once. Do NOT finish with a plain-text JSON
-string or a markdown code block — only the `structured_output` call counts as your result.`;
+Report it with the \`structured_output\` tool exactly once. Finish with that call — the
+\`structured_output\` call is the result, and reporting the JSON as a plain-text string or a
+markdown code block is not accepted as the result.`;
 
 const FIX_PROMPT = `You are an isolated subagent. You apply simplification recommendations while
 preserving behaviour exactly. You have no prior conversation context — everything
@@ -129,23 +130,22 @@ Method — apply EVERY recommendation; risky ones get a test-first equivalence g
 3. Run the full test suite and lint; confirm every test still passes.
 
 Constraints:
-- Preserve behaviour EXACTLY — no test may change result.
-- A risky recommendation is NOT optional: apply it, but only after its
-  equivalence is pinned by tests written BEFORE the change. Never skip a risky
-  one merely because it needs verification.
+- Preserve behaviour EXACTLY — a test's result stays the same.
+- A risky recommendation is applied, but only after its equivalence is pinned by
+  tests written BEFORE the change; skip it only with a genuine reason.
 - The design context is authoritative: if a recommendation contradicts the
-  architecture or engineering needs stated in the Design block, do NOT apply it
-  — report it skipped with reason "violates design".
-- Do NOT introduce new abstractions or change public APIs.
+  architecture or engineering needs stated in the Design block, report it skipped
+  with reason "violates design".
+- Keep the change scoped: leave existing abstractions and public APIs intact.
 - Leave changes UNCOMMITTED.
 
 Return: status ("fixed" | "failed"), applied_recommendations (the ids applied,
 including risky ones that passed their equivalence tests), skipped (a list of
 { id, reason } for the ones NOT applied — only a genuine reason: an equivalence
 test failed and the change was reverted, or the code is already in the
-recommended shape), and a short summary. Report it with the `structured_output`
-tool exactly once — do NOT finish with a plain-text JSON string or a markdown code
-block; only the `structured_output` call counts as your result.`;
+recommended shape), and a short summary. Report it with the \`structured_output\`
+tool exactly once — finish with that call, since the \`structured_output\` call is the
+result and a plain-text JSON string or a markdown code block is not accepted as the result.`;
 
 const REVIEW_SCHEMA = {
   type: 'object',
@@ -204,7 +204,7 @@ function contextBlock() {
 }
 
 const maxRounds = args.maxRounds ?? 8;
-// Skipped recommendations accumulate across rounds — nothing is ever dropped.
+// Skipped recommendations accumulate across rounds — every skip stays in the history.
 const accumulatedSkipped = [];
 
 for (let round = 1; round <= maxRounds; round++) {
@@ -213,10 +213,9 @@ for (let round = 1; round <= maxRounds; round++) {
   // Stage 1 — review (every round sees the full skip history from earlier fix rounds)
   const skippedBlock = accumulatedSkipped.length
     ? '\n\n## Previously skipped recommendations (from earlier fix rounds)\n' +
-      'These were considered and deliberately NOT applied. Do NOT re-raise an item ' +
-      'unless its reason no longer holds — if the code has since changed so the ' +
-      'simplification is now safe, re-raise it with an updated safety rating and a ' +
-      'note that the previous reason no longer applies.\n' +
+      'These were considered and deliberately NOT applied. Re-raise an item only when its reason ' +
+      'no longer holds — if the code has since changed so the simplification is now safe, re-raise ' +
+      'it with an updated safety rating and a note that the previous reason no longer applies.\n' +
       JSON.stringify(accumulatedSkipped, null, 2)
     : '';
   const review = await agent(

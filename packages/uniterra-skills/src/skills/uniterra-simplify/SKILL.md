@@ -10,8 +10,8 @@ description: >
   - User asks to simplify code, cut over-engineering, or reduce complexity
     (simplify / 簡化 / 精簡 / 重構減量)
   - User asks to run the simplify phase after implementation
-  Do NOT use for adversarial correctness review (uniterra-review), planning
-  (uniterra-plan), or implementing (uniterra-implement).
+  Use uniterra-review for adversarial correctness review, uniterra-plan for
+  planning, and uniterra-implement for implementing.
 ---
 
 # Uniterra Simplify — behaviour-preserving simplification
@@ -34,7 +34,7 @@ The `design` block is AUTHORITATIVE: the simplification must never contradict th
 plan's architecture or engineering needs. Design-mandated machinery (layers,
 interfaces, config flags, guards, error paths) and stated engineering needs
 (testability, observability, security, error handling, performance) are not
-over-engineering — never propose removing them.
+over-engineering — keep them in place.
 
 ## 2. Run the simplify workflow
 
@@ -77,12 +77,13 @@ applies. Skipped items are never dropped and are returned with the result.
 
 - Review agents are READ-ONLY.
 - Fix agents leave changes UNCOMMITTED and preserve behaviour exactly.
-- A `risky` recommendation must be pinned by equivalence tests BEFORE it is
-  applied — never skipped merely for being risky.
-- The `design` context is authoritative: never propose a simplification that
-  contradicts the plan's architecture or engineering needs. Design-mandated
-  machinery and stated engineering needs are not simplification opportunities;
-  the checklist applies only where the design is silent.
+- A `risky` recommendation is pinned by equivalence tests BEFORE it is applied —
+  written against the current code, run green, then applied and re-confirmed; it
+  is applied only after that gate, and skipped only with a genuine reason.
+- The `design` context is authoritative: a simplification that contradicts the
+  plan's architecture or engineering needs is omitted. Design-mandated machinery
+  and stated engineering needs are not simplification opportunities; the checklist
+  applies only where the design is silent.
 
 ## Files
 
