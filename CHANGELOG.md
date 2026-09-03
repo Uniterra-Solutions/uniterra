@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.12] — 2026-09-03
+
+### Fixed
+
+- **`run_workflow` was denied without asking the user in Code Mode (the PTC agent preset)** (`@dsh-external/workflow`, vendored patch). Two root causes fixed: (1) the approval gate keyed on the session's approval-policy knob instead of the sandbox-mode knob the `/permission` presets actually switch — a `danger-full-access` session whose policy still said `ask` ran the gate and the run was auto-rejected/raced away; `needsApproval` now resolves the session's sandbox mode (`danger-full-access` → the approval step is skipped entirely; `read-only` / `workspace-write` → the user's approval popup), with the policy-based behaviour kept only as the no-sandbox-seam fallback. (2) the run controller permanently forwarded the launching tool step's signal; in Code Mode that signal IS the `run_code` controller, aborted the moment the model's program settles ("run_code settled"), so a background launch (`wait: false`) had its still-pending approval ask settled as `cancelled` ("workflow approval cancelled" — no user prompt) or an already-running fan-out cancelled ~100 ms after start; the run handle now exposes `detach()`, invoked when a launch is handed to the DSH job system, so the run and its pending approval outlive the tool step — synchronous launches keep the binding so cancelling the parent turn still cancels the workflow. Regression net: `packages/uniterra-desktop/test/workflow-engine-approval-mode-pbt.test.mjs` + `workflow-engine-detach.test.mjs`; ledger and conventions updated (`vendor/dsh-plugins/VENDOR.md`, `docs/modules/vendor-plugins.md`, `docs/conventions.md`).
+
 ## [0.14.11] — 2026-09-01
 
 ### Changed
