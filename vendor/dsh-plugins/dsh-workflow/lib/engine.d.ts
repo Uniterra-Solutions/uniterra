@@ -4,11 +4,26 @@ import { type ToolRestriction } from '@deepseek-ai/dsh-tools';
 import type { ApprovalService } from '@deepseek-ai/dsh-user-approval';
 import { WorkflowRunStore } from './store.js';
 import type { ResolvedWorkflowConfig, WorkflowCapsule, WorkflowEvent, WorkflowModelHint, WorkflowPreflightResult, WorkflowRun, WorkflowManifest, WorkflowRunSnapshot, WorkflowSpawnAgentInput, WorkflowStartInput, WorkflowVerificationAdapter, WorktreeIsolationAdapter, WorkflowDispatchAdapter } from './types.js';
+/**
+ * Structural seam for the DSH sandbox-policy service (`ctx.sandboxPolicy`):
+ * the session sandbox-mode resolution the approval gate keys on. Declared
+ * structurally so the vendored plugin needs no direct peer dependency on the
+ * sandbox-policy package.
+ */
+export interface SandboxPolicySeam {
+    resolve(request: {
+        session?: { id?: string };
+    }): {
+        mode: 'read-only' | 'workspace-write' | 'danger-full-access' | string;
+        workspaceRoot: string;
+    };
+}
 export interface WorkflowEngineDependencies {
     readonly subagents: SubagentRuntime;
     readonly config: ResolvedWorkflowConfig;
     readonly store: WorkflowRunStore;
     readonly approval?: ApprovalService;
+    readonly sandboxPolicy?: SandboxPolicySeam;
     readonly userInteractionAvailable?: boolean;
     readonly verification?: WorkflowVerificationAdapter;
     readonly isolation?: WorktreeIsolationAdapter;

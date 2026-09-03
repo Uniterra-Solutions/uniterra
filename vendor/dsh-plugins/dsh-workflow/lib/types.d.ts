@@ -376,6 +376,13 @@ export interface WorkflowRun {
     readonly runId: string;
     readonly done: Promise<WorkflowRunSnapshot>;
     getSnapshot(): WorkflowRunSnapshot;
+    /**
+     * Called when a launch is handed to the background-job system: removes the
+     * launcher step's signal from the run controller so the run (and its
+     * pending approval ask) survives the tool step closing — Code Mode aborts
+     * the run_code controller when the model's program settles.
+     */
+    detach?: () => void;
 }
 export interface ModelTierRoute {
     /** DSH subagent transport/provider name passed to ctx.subagents.start(). */

@@ -537,7 +537,23 @@ export class DynamicWorkflowEngine {
         this.persist(mutable);
         const done = this.execute(mutable, preflight).finally(() => input.signal?.removeEventListener('abort', forward));
         mutable.completion = done;
-        return { runId, done, getSnapshot: () => structuredClone(mutable.snapshot) };
+        return {
+            runId,
+            done,
+            getSnapshot: () => structuredClone(mutable.snapshot),
+            // A workflow OUTLIVES the tool step that launches it. The service
+            // calls detach() the moment the launch is handed to the background
+            // job system: from then on the run is owned by DSH jobs (which
+            // cancel through engine.stop) and the launcher step's signal no
+            // longer reaches the run controller. Without this, Code Mode
+            // (PTC) aborts the run_code controller when the program settles —
+            // "run_code settled" — killing an in-flight approval ask (the
+            // answerer settles 'cancelled' on an aborted signal: the run is
+            // denied with no user prompt) or an already-started background
+            // run. A synchronously awaited launch keeps the binding so
+            // cancelling the parent turn still cancels the workflow.
+            detach: () => input.signal?.removeEventListener('abort', forward),
+        };
     }
     list() {
         const live = [...this.runs.values()].map(run => structuredClone(run.snapshot));
@@ -677,14 +693,33 @@ export class DynamicWorkflowEngine {
     needsApproval(input) {
         if (input.requireApproval !== undefined)
             return input.requireApproval;
-        // Full-access mode: the DSH session's effective approval policy is
-        // 'never' — approval prompts are disabled and any ApprovalService.request()
-        // is auto-rejected (fail-closed). A workflow must run without its own
-        // approval gate in that mode, otherwise it is DENIED before any child
-        // starts. Honor the session policy instead of only the plugin's static
-        // approvalMode.
+        // The permission-preset rule: the gate is decided by the session's
+        // SANDBOX MODE — the knob the /permission presets (read-only /
+        // workspace-write / danger-full-access) actually switch. The approval
+        // POLICY knob is an independent ask-ability control (delegation copies
+        // the two knobs separately, so they can disagree) and does not define
+        // the modes. Danger-full-access runs a workflow with no approval gate
+        // at all; read-only and workspace-write require the user's approval
+        // (the popup). Without the sandbox policy seam (other deployments),
+        // fall back to the previous session-policy shortcut.
+        const session = input.parent?.session;
+        if (this.deps.sandboxPolicy !== undefined) {
+            const mode = this.deps.sandboxPolicy.resolve({ session }).mode;
+            if (mode === 'danger-full-access')
+                return false;
+            if (mode === 'read-only' || mode === 'workspace-write') {
+                if (this.deps.config.approvalMode === 'always')
+                    return true;
+                return this.deps.config.approvalMode === 'generated-and-local'
+                    && (input.module.execution === 'capability-generated' || input.module.execution === 'trusted-local');
+            }
+        }
+        // Fallback (no sandbox seam): a session policy of 'never' means the
+        // approval service is fail-closed and any request is auto-rejected —
+        // a workflow must run ungated rather than be denied before any child
+        // starts.
         if (this.deps.approval !== undefined
-            && this.deps.approval.effectivePolicy(input.parent?.session) === 'never')
+            && this.deps.approval.effectivePolicy(session) === 'never')
             return false;
         if (this.deps.config.approvalMode === 'always')
             return true;

@@ -262,6 +262,7 @@ export class DynamicWorkflowService extends Service {
             config: this.options.config,
             store: this.store(agent),
             ...(this.options.approval === undefined ? {} : { approval: this.options.approval }),
+            ...(this.options.sandboxPolicy === undefined ? {} : { sandboxPolicy: this.options.sandboxPolicy }),
             userInteractionAvailable: this.options.userQuestions !== undefined,
             ...(this.verification === undefined ? {} : { verification: this.verification }),
             ...(this.isolation === undefined ? {} : { isolation: this.isolation }),

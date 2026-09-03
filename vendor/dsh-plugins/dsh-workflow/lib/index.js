@@ -105,6 +105,13 @@ function publicSnapshot(snapshot) {
 }
 async function runResult(service, agent, run, wait) {
     if (!wait) {
+        // Background launch: the tool step returns before the run (or its
+        // approval ask) settles. The run is now owned by the DSH job system,
+        // so the launcher step's signal must stop governing it — in Code Mode
+        // (PTC) that signal IS the run_code run controller, which is aborted
+        // as soon as the model's program settles and would otherwise cancel
+        // the pending approval ask or the running task fan-out.
+        run.detach?.();
         const jobId = service.attachBackgroundJob(agent, run);
         return { runId: run.runId, status: run.getSnapshot().status, ...(jobId === undefined ? {} : { jobId }) };
     }
@@ -684,10 +691,12 @@ export function apply(ctx, config) {
     const approval = ctx.get('approval');
     const jobs = ctx.get('jobs');
     const userQuestions = ctx.get('userQuestions');
+    const sandboxPolicy = ctx.get('sandboxPolicy');
     ctx.plugin(DynamicWorkflowService, {
         config: resolved,
         subagents: ctx.subagents,
         ...(approval === undefined ? {} : { approval }),
+        ...(sandboxPolicy === undefined ? {} : { sandboxPolicy }),
         ...(jobs === undefined ? {} : { jobs }),
         ...(userQuestions === undefined ? {} : { userQuestions }),
     });
