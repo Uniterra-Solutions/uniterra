@@ -13,6 +13,12 @@
  * FIX: `needsApproval` consults the live session approval policy. When the
  * session policy is `never`, it returns false so the workflow runs ungated.
  *
+ * NOTE: this suite pins the NO-SANDBOX-SEAM fallback (deployments without a
+ * `ctx.sandboxPolicy`). When the seam IS mounted (the uniterra desktop
+ * cannot rely on composition order, so the engine receives it via
+ * `@dsh-external/workflow`'s `apply`), the gate keys on the session's
+ * SANDBOX MODE instead — see `workflow-engine-approval-mode-pbt.test.mjs`.
+ *
  * INVARIANT pinned here:
  *   For every (approvalMode, sessionPolicy, execution) triple:
  *     - sessionPolicy never  ==> needsApproval === false  (full access runs).
