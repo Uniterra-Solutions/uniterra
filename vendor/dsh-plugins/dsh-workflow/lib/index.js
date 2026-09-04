@@ -7,6 +7,7 @@ import { createWorkflowCapsule, validateWorkflowArgs, validateWorkflowManifest }
 import { smokeWorkflowCapsule } from './author.js';
 import { scopedReviewWorkflow, writeReviewPackets } from './scoped-review.js';
 import { DynamicWorkflowService } from './service.js';
+import { sessionEventsOf } from './engine.js';
 export { DynamicWorkflowService } from './service.js';
 export * from './types.js';
 export * from './capsule.js';
@@ -173,7 +174,7 @@ function hasCurrentWorkflowHandoff(agent, grants) {
     const expectedMessageId = grants.get(agent);
     if (expectedMessageId === undefined)
         return false;
-    const events = agent.session.events ?? [];
+    const events = sessionEventsOf(agent);
     for (let index = events.length - 1; index >= 0; index -= 1) {
         const event = events[index];
         if (event.type === 'turn/start' || event.type === 'turn/end')

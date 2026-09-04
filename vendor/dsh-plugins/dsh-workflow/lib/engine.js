@@ -37,6 +37,29 @@ function cwdOf(agent) {
 function textOf(run) {
     return run.output.filter((block) => block.type === 'text').map(block => block.text).join('\n');
 }
+/**
+ * Read a session's event log across the dsh session-API families.
+ * dsh 0.1.1-rc.2 exposed `Session#events`; the 0.1.2-rc.1 session-API
+ * refactor removed it in favour of `snapshotEvents()`. Probing both keeps the
+ * vendored engine loadable and correct on either family.
+ */
+export function sessionEventsOf(agent) {
+    const session = agent?.session;
+    if (session === undefined)
+        return [];
+    if (Array.isArray(session.events))
+        return session.events;
+    return typeof session.snapshotEvents === 'function' ? session.snapshotEvents() : [];
+}
+/** Collection reads the child's log as auxiliary data: a failure must never fail the task. */
+function collect(computation, fallback) {
+    try {
+        return computation();
+    }
+    catch {
+        return fallback;
+    }
+}
 function usageOf(agent) {
     if (agent === undefined)
         return undefined;
@@ -44,7 +67,7 @@ function usageOf(agent) {
     let outputTokens = 0;
     let cacheReadTokens = 0;
     let observed = false;
-    for (const event of agent.session.events) {
+    for (const event of sessionEventsOf(agent)) {
         if (event.type !== 'assistant/message' || event.data.usage === undefined)
             continue;
         observed = true;
@@ -140,7 +163,7 @@ function observedToolEvidence(agent) {
     if (agent === undefined)
         return { readPaths: [], mutationToolCalls: [] };
     const successful = new Set();
-    for (const event of agent.session.events) {
+    for (const event of sessionEventsOf(agent)) {
         if (event.type !== 'tool/result' || event.data.error !== undefined)
             continue;
         for (const block of event.data.message.content)
@@ -150,7 +173,7 @@ function observedToolEvidence(agent) {
     const readPaths = [];
     const mutationToolCalls = [];
     const mutationNames = new Set(['write', 'edit', 'str_replace_editor', 'bash', 'pwsh', 'terminal_create', 'terminal_write', 'cordis_mount', 'cordis_unmount']);
-    for (const event of agent.session.events) {
+    for (const event of sessionEventsOf(agent)) {
         if (event.type !== 'tool/call' || !successful.has(String(event.data.callId)))
             continue;
         if (mutationNames.has(event.data.name))
@@ -174,7 +197,7 @@ function pathObserved(required, observed, cwd) {
 function latestAssistantText(agent, fallback) {
     if (agent === undefined)
         return fallback;
-    for (const event of [...agent.session.events].reverse()) {
+    for (const event of [...sessionEventsOf(agent)].reverse()) {
         if (event.type !== 'assistant/message')
             continue;
         const text = event.data.message?.content?.filter(block => block.type === 'text').map(block => block.text).join('\n') ?? '';
@@ -186,7 +209,7 @@ function latestAssistantText(agent, fallback) {
 function childRecordedCompleted(agent) {
     if (agent === undefined)
         return false;
-    const end = [...agent.session.events].reverse().find(event => event.type === 'turn/end');
+    const end = [...sessionEventsOf(agent)].reverse().find(event => event.type === 'turn/end');
     return end?.type === 'turn/end' && end.data.reason.kind === 'completed';
 }
 function workspacePath(cwd, requested) {
@@ -1212,7 +1235,7 @@ export class DynamicWorkflowEngine {
                 telemetry = await dispatchTelemetry;
             }
             catch { /* optional telemetry cannot fail completed work */ }
-            let measuredUsage = usageOf(childRun.localAgent) ?? telemetry?.usage;
+            let measuredUsage = collect(() => usageOf(childRun.localAgent), undefined) ?? telemetry?.usage;
             let usage = measuredUsage?.totalTokens ?? 0;
             if (total !== undefined) {
                 run.reservedTokens -= allocation;
@@ -1230,7 +1253,7 @@ export class DynamicWorkflowEngine {
             if (status !== 'stopped' && task.input.outputSchema !== undefined) {
                 const rc2MissingCapture = outcome.stopReason === 'error'
                     && outcome.structured === undefined
-                    && childRecordedCompleted(childRun.localAgent);
+                    && collect(() => childRecordedCompleted(childRun.localAgent), false);
                 const first = structuredEvaluation(structured, finalText, task.input.outputSchema);
                 structured = first.errors.length === 0 ? first.value : undefined;
                 let repairErrors = first.errors;
@@ -1274,7 +1297,7 @@ export class DynamicWorkflowEngine {
                         repairSucceeded = repairedOutcome.stopReason === 'completed' && repaired.errors.length === 0;
                         structured = repairSucceeded ? repaired.value : undefined;
                         repairErrors = repairedOutcome.stopReason === 'completed' ? repaired.errors : [`structured repair child stopped with ${repairedOutcome.stopReason}`];
-                        measuredUsage = addUsage(measuredUsage, usageOf(repairRun.localAgent));
+                        measuredUsage = addUsage(measuredUsage, collect(() => usageOf(repairRun.localAgent), undefined));
                         usage = measuredUsage?.totalTokens ?? usage;
                     }
                     catch (error) {
@@ -1347,7 +1370,7 @@ export class DynamicWorkflowEngine {
             if (status === 'completed' && verification !== undefined) {
                 const cwd = cwdOf(parent);
                 for (let attempt = 0; attempt <= 2; attempt += 1) {
-                    const observed = observedToolEvidence(childRun.localAgent);
+                    const observed = collect(() => observedToolEvidence(childRun.localAgent), { readPaths: [], mutationToolCalls: [] });
                     const workspaceAfter = verification.requiresMutation === true || (verification.requiredChangedPaths?.length ?? 0) > 0
                         ? await gitWorkspaceState(cwd, verification.requiredChangedPaths)
                         : undefined;
@@ -1398,10 +1421,10 @@ export class DynamicWorkflowEngine {
                         source: { kind: 'plugin', plugin: '@dsh-external/workflow', form: 'relay' },
                     }));
                     await childRun.localAgent.whenIdle();
-                    draft = { ...draft, finalText: latestAssistantText(childRun.localAgent, draft.finalText) };
+                    draft = { ...draft, finalText: collect(() => latestAssistantText(childRun.localAgent, draft.finalText), draft.finalText) };
                     terminalDraft = draft;
                 }
-                const repairedUsage = usageOf(childRun.localAgent);
+                const repairedUsage = collect(() => usageOf(childRun.localAgent), undefined);
                 if (repairedUsage !== undefined && repairedUsage.totalTokens !== usage) {
                     run.spentTokens += repairedUsage.totalTokens - usage;
                     usage = repairedUsage.totalTokens;
@@ -1454,14 +1477,14 @@ export class DynamicWorkflowEngine {
             };
             if (task.nativeStarted && task.result !== undefined) {
                 const previous = task.result;
-                const measured = usageOf(task.run?.localAgent);
+                const measured = collect(() => usageOf(task.run?.localAgent), undefined);
                 if (measured !== undefined && measured.totalTokens !== accountedUsage) {
                     run.spentTokens += measured.totalTokens - accountedUsage;
                     accountedUsage = measured.totalTokens;
                 }
                 task.result = {
                     ...previous,
-                    finalText: latestAssistantText(task.run?.localAgent, previous.finalText),
+                    finalText: collect(() => latestAssistantText(task.run?.localAgent, previous.finalText), previous.finalText),
                     ...(measured === undefined ? {} : { tokenUsage: measured.totalTokens, usage: measured }),
                 };
             }
@@ -1512,7 +1535,7 @@ export class DynamicWorkflowEngine {
                 ...run.input.module.manifest.phases,
                 ...[...run.tasks.values()].flatMap(item => item.input.phase ?? item.phase ?? []),
             ])];
-        const liveText = latestAssistantText(task.run?.localAgent, task.result?.finalText ?? '');
+        const liveText = collect(() => latestAssistantText(task.run?.localAgent, task.result?.finalText ?? ''), task.result?.finalText ?? '');
         return {
             taskId, name: task.input.name, status: task.status,
             ...(task.input.phase === undefined ? {} : { phase: task.input.phase }),
