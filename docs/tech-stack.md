@@ -9,8 +9,8 @@ All versions are the spec ranges from `package.json` / `pnpm-workspace.yaml`; th
 | Node.js             | ≥ 22 (`.nvmrc`: 22)          | All packages; electron-builder packaging                                        |
 | pnpm                | 11.17.0 (`packageManager`)   | Workspace + profile plugin installs (`allowBuilds` / `minimumReleaseAge` gates) |
 | Electron            | ^37.10.3                     | Desktop shell (main process) hosting the dsh Web UI                             |
-| @deepseek-ai/dsh    | 0.1.1-rc.2 (exact, no caret) | DeepSeek Harness agent runtime — bundled CLI + web app                          |
-| @deepseek-ai/cordis | 4.0.1 (exact)                | dsh plugin/service container                                                    |
+| @deepseek-ai/dsh    | 0.1.2-rc.1 (exact, no caret) | DeepSeek Harness agent runtime — bundled CLI + web app                          |
+| @deepseek-ai/cordis | 4.0.2 (exact)                | dsh plugin/service container                                                    |
 | React               | ^18.2.0                      | Client-side settings UI of `@uniterra-solutions/uniterra-provider`              |
 
 ## Language / Module System
@@ -24,18 +24,18 @@ All versions are the spec ranges from `package.json` / `pnpm-workspace.yaml`; th
 
 | Package                                   | Version | Purpose                                                        |
 | ----------------------------------------- | ------- | -------------------------------------------------------------- |
-| @uniterra-solutions/uniterra-desktop      | 0.14.12 | Electron shell over the bundled dsh CLI; built-in provisioning |
-| @uniterra-solutions/uniterra              | 0.14.12 | Public npm installer CLI (bin `uniterra`)                      |
-| @uniterra-solutions/uniterra-provider     | 0.1.3   | In-house dual-protocol LLM provider plugin                     |
-| @uniterra-solutions/uniterra-skills       | 0.5.0   | Built-in skill registry (9 company skills)                     |
+| @uniterra-solutions/uniterra-desktop      | 0.15.0  | Electron shell over the bundled dsh CLI; built-in provisioning |
+| @uniterra-solutions/uniterra              | 0.15.0  | Public npm installer CLI (bin `uniterra`)                      |
+| @uniterra-solutions/uniterra-provider     | 0.1.4   | In-house dual-protocol LLM provider plugin                     |
+| @uniterra-solutions/uniterra-skills       | 0.5.1   | Built-in skill registry (9 company skills)                     |
 | @uniterra-solutions/uniterra-systemprompt | 0.5.0   | pi-agent extension: app-wide working rules                     |
 | @uniterra-solutions/uniterra-updater      | 0.5.0   | Update decision + action mapping (pure, no Electron)           |
 
 ## dsh Client Peer Packages (uniterra-provider)
 
-All pinned exact at 0.1.1-rc.2 — see `packages/uniterra-provider/package.json` `peerDependencies`:
+All pinned exact at 0.1.2-rc.1 (+ cordis 4.0.2, `@deepseek-ai/dsh-client-runtime` replaced by the platform's typed Remote namespaces / `dsh-api-remotes` client assembly) — see `packages/uniterra-provider/package.json` `peerDependencies`:
 
-`@deepseek-ai/dsh-client-connection`, `@deepseek-ai/dsh-client-locale`, `@deepseek-ai/dsh-client-runtime`, `@deepseek-ai/dsh-client-ui-settings`, `@deepseek-ai/dsh-client-ui-slots` (dev), `@deepseek-ai/dsh-credentials`, `@deepseek-ai/dsh-launch-environment`, `@deepseek-ai/dsh-llm`, `@deepseek-ai/dsh-settings`, `@deepseek-ai/dsh-timeout`, plus `@deepseek-ai/schemastery` ^3.18.1.
+`@deepseek-ai/dsh-client-connection`, `@deepseek-ai/dsh-client-locale`, `@deepseek-ai/dsh-client-ui-settings`, `@deepseek-ai/dsh-client-ui-slots` (dev), `@deepseek-ai/dsh-api-remotes` (dev; client assembly types), `@deepseek-ai/dsh-credentials`, `@deepseek-ai/dsh-launch-environment`, `@deepseek-ai/dsh-llm`, `@deepseek-ai/dsh-settings`, `@deepseek-ai/dsh-timeout`, `@deepseek-ai/dsh-util-values`, plus `@deepseek-ai/schemastery` ^3.18.2.
 
 ## Third-Party Libraries
 
@@ -69,12 +69,12 @@ All pinned exact at 0.1.1-rc.2 — see `packages/uniterra-provider/package.json`
 
 Provisioned into the user's dsh profile at startup — see [modules/vendor-plugins.md](modules/vendor-plugins.md) and `packages/uniterra-desktop/src/builtin.ts`.
 
-| Source                           | Plugins                                                                                                                                                                                                                 |
-| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| npm (pinned exact)               | dshmarket 1.9.0, dsh-notifier 0.6.2, dsh-better-sidebar 0.12.2, dsh-file-upload 0.4.2, dsh-find-plugin 0.3.6, dsh-subagent-model-picker 0.1.1, dsh-tool-git 0.1.3, dsh-browser-playwright 0.1.1, dsh-computer-use 0.1.0 |
-| vendored (`vendor/dsh-plugins/`) | dsh-shortcuts                                                                                                                                                                                                           |
-| optional (`vendor/dsh-plugins/`) | dsh-deep-whale (skin, opt-in)                                                                                                                                                                                           |
-| workspace built-in               | @uniterra-solutions/uniterra-provider                                                                                                                                                                                   |
+| Source                           | Plugins                                                                                                                                                                                                                                          |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| npm (pinned exact)               | dshmarket 1.41.0, dsh-notifier 0.9.0, dsh-better-sidebar 0.18.0, dsh-file-upload 0.4.3, dsh-find-plugin 0.3.7, dsh-subagent-model-picker 0.1.1, dsh-tool-git 0.1.3, dsh-browser-playwright 0.1.1, dsh-computer-use 0.2.0, dsh-git-worktree 0.7.4 |
+| vendored (`vendor/dsh-plugins/`) | dsh-shortcuts                                                                                                                                                                                                                                    |
+| optional (`vendor/dsh-plugins/`) | dsh-deep-whale (skin, opt-in)                                                                                                                                                                                                                    |
+| workspace built-in               | @uniterra-solutions/uniterra-provider                                                                                                                                                                                                            |
 
 ## External Services
 

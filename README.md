@@ -61,13 +61,13 @@ pnpm build:vendored-dsh                                   # build the vendored D
 pnpm --filter @uniterra-solutions/uniterra-desktop dev    # dev mode (does not touch the real ~/.dsh)
 ```
 
-The dsh runtime source is vendored at `vendor/dsh-harness` (pinned `dsh-v0.1.1-rc.2` — npm ships compiled `lib/` only). The dev app resolves its built CLI first, so a source edit there runs on the next dev boot; see `vendor/dsh-harness/VENDOR.md` and `pnpm run build:vendored-dsh` for the loop.
+The dsh runtime source is vendored at `vendor/dsh-harness` (pinned `dsh-v0.1.2-rc.1` — npm ships compiled `lib/` only). The dev app resolves its built CLI first, so a source edit there runs on the next dev boot; see `vendor/dsh-harness/VENDOR.md` and `pnpm run build:vendored-dsh` for the loop.
 
 Test commands and the verification matrix: [docs/testing.md](docs/testing.md) · environment variables: [docs/setup.md](docs/setup.md)
 
 ## Tech Stack
 
-Node ≥ 22 · Electron 37 · @deepseek-ai/dsh 0.1.1-rc.2 (pinned exact) · TypeScript ~5.9 (NodeNext ESM) · pnpm 11 · fast-check (PBT) · esbuild / electron-builder. Full list: [docs/tech-stack.md](docs/tech-stack.md)
+Node ≥ 22 · Electron 37 · @deepseek-ai/dsh 0.1.2-rc.1 (pinned exact) · TypeScript ~5.9 (NodeNext ESM) · pnpm 11 · fast-check (PBT) · esbuild / electron-builder. Full list: [docs/tech-stack.md](docs/tech-stack.md)
 
 ## Conventions
 

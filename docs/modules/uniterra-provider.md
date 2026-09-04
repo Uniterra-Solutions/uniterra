@@ -102,7 +102,7 @@ Other locked behaviors: empty tool output → `'(no output)'`; text-less turns s
 
 ## Dependencies
 
-- Outbound (peers, all exact `@deepseek-ai/*@0.1.1-rc.2` + cordis 4.0.1): dsh-llm, dsh-credentials, dsh-settings, dsh-launch-environment, dsh-timeout, dsh-client-* (client half); schemastery, react.
+- Outbound (peers, all exact `@deepseek-ai/*@0.1.2-rc.1` + cordis 4.0.2): dsh-llm, dsh-credentials, dsh-settings, dsh-launch-environment, dsh-timeout, dsh-util-values, dsh-client-* (client half; the client wire face is the typed Remote namespaces of `ctx.remote`, replacing the old `dsh-client-runtime` / `connection.api` client); schemastery, react.
 - Runtime deps: eventsource-parser, undici (inlined at build).
 - Inbound: `packages/uniterra-desktop` provisions it as a `kind: 'workspace'` built-in (`registerBuiltinPlugin`).
 

@@ -49,7 +49,7 @@ graph TD
 | Container         | Technology                       | Responsibility                                                        |
 | ----------------- | -------------------------------- | --------------------------------------------------------------------- |
 | Electron main     | Electron 37, Node 22             | Boot, supervision, built-in provisioning, update check, crash restart |
-| dsh CLI child     | @deepseek-ai/dsh 0.1.1-rc.2      | Agent runtime: agent loop, skills, plugin loader, web server          |
+| dsh CLI child     | @deepseek-ai/dsh 0.1.2-rc.1      | Agent runtime: agent loop, skills, plugin loader, web server          |
 | BrowserWindow     | Chromium, sandboxed              | dsh Web UI on a loopback origin                                       |
 | Profile           | ~/.dsh/profiles/web              | User's dsh config + plugin bundles + provisioned skills               |
 | uniterra-provider | in-house plugin (esbuild bundle) | LLM adapter: dual-protocol serialize/translate, models.dev lookup     |

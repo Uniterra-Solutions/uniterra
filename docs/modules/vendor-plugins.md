@@ -1,6 +1,6 @@
 # Module: Built-in Plugins (vendor/dsh-plugins + npm built-ins)
 
-**Purpose:** The plugin surface that ships with Uniterra — 9 npm-published community plugins, 2 vendored community plugins pinned at fixed commits (dsh-shortcuts + the @dsh-external/workflow dynamic multi-agent workflow layer), 1 optional vendored plugin (the Deep Whale skin — shipped but NOT forced, enabled per-profile via a `.uniterra.json` toggle), and 1 in-house workspace plugin. Active ones are ensured into the user's dsh `web` profile at startup (`packages/uniterra-desktop/src/builtin.ts`).
+**Purpose:** The plugin surface that ships with Uniterra — 10 npm-published community plugins, 2 vendored community plugins pinned at fixed commits (dsh-shortcuts + the @dsh-external/workflow dynamic multi-agent workflow layer), 1 optional vendored plugin (the Deep Whale skin — shipped but NOT forced, enabled per-profile via a `.uniterra.json` toggle), and 1 in-house workspace plugin. Active ones are ensured into the user's dsh `web` profile at startup (`packages/uniterra-desktop/src/builtin.ts`).
 
 ## Built-in Lists
 
@@ -10,15 +10,16 @@ Pinned exact, installed via `dsh plugin add` — declared with `registerBuiltinP
 
 | Spec                            | Purpose                      |
 | ------------------------------- | ---------------------------- |
-| dshmarket@1.21.2                | Plugin marketplace           |
-| dsh-notifier@0.8.6              | Push notifications           |
-| dsh-better-sidebar@0.15.2       | Sidebar enhancement          |
+| dshmarket@1.41.0                | Plugin marketplace           |
+| dsh-notifier@0.9.0              | Push notifications           |
+| dsh-better-sidebar@0.18.0       | Sidebar enhancement          |
 | dsh-file-upload@0.4.3           | File upload                  |
 | dsh-find-plugin@0.3.7           | Plugin discovery             |
 | dsh-subagent-model-picker@0.1.1 | Per-subagent model selection |
 | dsh-tool-git@0.1.3              | Git tools for agents         |
 | dsh-browser-playwright@0.1.1    | Browser automation           |
-| dsh-computer-use@0.1.0          | Computer use                 |
+| dsh-computer-use@0.2.0          | Computer use                 |
+| dsh-git-worktree@0.7.4          | Git worktree sessions        |
 
 ### Vendored built-in (`kind: 'vendor'`)
 
@@ -62,7 +63,7 @@ Ships pre-built (self-contained host bundle, runtime deps inlined) — copied wi
 2. `removeRetiredBuiltins()` — strip retired built-ins' bundle rows, dependency entries, and `node_modules` copies (idempotent; the only pass that can remove them, since step 4 would otherwise early-return on an already-full profile).
 3. `reconcileOptionalPlugins()` — enforce the optional-toggle before the gate (enabled ⇒ row + fresh copy; disabled ⇒ row + copy removed; missing ⇒ migrate from bundle rows; illegible ⇒ never destructive).
 4. No-op when `hasAllBuiltins` AND no vendored/workspace copy is stale.
-5. Write `pnpm-workspace.yaml` (allowBuilds for native deps: node-pty, sharp, protobufjs, fsevents, tesseract.js; `minimumReleaseAge: 0`).
+5. Write `pnpm-workspace.yaml` (allowBuilds for native deps: node-pty, sharp, protobufjs, fsevents, tesseract.js; `minimumReleaseAge: 0`; `autoInstallPeers: false` — a plugin whose peer ranges target an older dsh pre-release family (e.g. dsh-file-upload@0.4.3's `^0.1.0-rc.6`) cannot co-resolve with the pinned 0.1.2-rc.1 family in one tree, and pnpm 11 reports a false "No matching version found" when auto-installing disjoint pre-release peer families; the dsh family is already provided by the profile's base bundles, so peers resolve at runtime and the pnpm peer warning is expected; note setting keys here are camelCase — pnpm 11's pnpm-workspace.yaml silently ignores kebab-case).
 6. `dsh plugin add` each npm spec (env: `DSH_HOME`, `ELECTRON_RUN_AS_NODE=1`).
 7. Copy each vendored + workspace built-in into `node_modules/<pkg-name>` and append its bundle row to the profile `package.json` `dsh.profile.bundles` (optional entries are NOT copied here — `reconcileOptionalPlugins` owns them).
 8. Expected bundle rows: `@deepseek-ai/dsh-base`, `@deepseek-ai/dsh-web-app`, + every active built-in package name EXCEPT optional (an optional row appears only when its toggle enables it).
@@ -73,7 +74,7 @@ Staleness (re-provision trigger): installed copy's `package.json` `version` ≠ 
 
 Two distinct actions:
 
-- **Bump** (a plugin is NOT customized): `git -C vendor/dsh-plugins/<name> fetch --depth 1 origin`; checkout the new commit; verify it still targets the uniterra-pinned dsh family (0.1.1-rc.2 / cordis 4.0.1); re-run the smoke test; update the pin-ledger row. No in-place edits.
+- **Bump** (a plugin is NOT customized): `git -C vendor/dsh-plugins/<name> fetch --depth 1 origin`; checkout the new commit; verify it still targets the uniterra-pinned dsh family (0.1.2-rc.1 / cordis 4.0.2); re-run the smoke test; update the pin-ledger row. No in-place edits.
 - **Customize** (a plugin we patch): keep the pinned commit, edit the copied source in place, and record the divergence + pending-upstream note in the pin-ledger row (a **LOCAL PATCH** note). The desktop detects the drift by content fingerprint, so the patch propagates into an already-provisioned profile on its next launch — no version bump required. A plugin we customize is vendored FOR that reason; an unmodified plugin must NOT be vendored — keep it a `node_modules`/npm import instead.
 
 Smoke test: sandbox `DSH_HOME`, boot the profile, expect HTTP 200 on the web port with no load error mentioning the plugins.
