@@ -715,8 +715,10 @@ test('RETIRED: an illegible manifest never throws — node_modules cleanup still
 // ---------------------------------------------------------------------------
 
 const READY_URL = 'http://127.0.0.1:3080';
-/** The readiness line dsh prints — the URL is always followed by a terminator. */
-const READY_LINE = `${READY_URL} (LAN: 192.168.1.5)`;
+/** The authenticated readiness line dsh 0.1.2-rc.1 prints (token + LAN suffix). */
+const READY_LINE = `${READY_URL}/?token=smoke-token (LAN: 192.168.1.5)\n`;
+/** The URL awaitReadiness must resolve to — the token is part of the identity. */
+const READY_RESOLVED = `${READY_URL}/?token=smoke-token`;
 
 /** Chunks of `s` cut at generated boundaries (empty cuts = one chunk). */
 function chunkArb(s) {
@@ -756,7 +758,7 @@ test('READY: resolves with the first 127.0.0.1 URL even when split across arbitr
         }
         stream.end();
         const url = await promise;
-        assert.equal(url, READY_URL);
+        assert.equal(url, READY_RESOLVED);
       },
     ),
   );
@@ -811,6 +813,17 @@ test('READY regression: a chunk boundary inside the port digits must not truncat
   assert.equal(await promise, 'http://127.0.0.1:3080');
 });
 
+test('READY regression: a chunk boundary inside the auth token must not truncate the URL', async () => {
+  // The token is the identity: resolving to "…?token=smoke" would hand the
+  // shell an URL that authenticates as nobody (401 on the index).
+  const stream = new PassThrough();
+  const promise = awaitReadiness(stream, 500);
+  stream.write('dsh web: http://127.0.0.1:3080/?token=smoke');
+  stream.write('-token (LAN: 192.168.1.5)\n');
+  stream.end();
+  assert.equal(await promise, 'http://127.0.0.1:3080/?token=smoke-token');
+});
+
 test('READY: the first qualifying URL wins when several appear', async () => {
   const stream = new PassThrough();
   const promise = awaitReadiness(stream, 500);
@@ -835,7 +848,11 @@ test('WORKFLOW CAPSULES: ensureWorkflowCapsules copies bundled capsules, is idem
       await mkdir(dir, { recursive: true });
       await writeFile(join(dir, file), capsuleSrc, 'utf8');
     }
-    assert.equal(ensureWorkflowCapsules(dshHome, skills), true, 'first provision writes the capsules');
+    assert.equal(
+      ensureWorkflowCapsules(dshHome, skills),
+      true,
+      'first provision writes the capsules',
+    );
     assert.equal(await readFile(join(dest, 'plan-review.workflow.json'), 'utf8'), capsuleSrc);
     assert.equal(await readFile(join(dest, 'implement.workflow.json'), 'utf8'), capsuleSrc);
 
@@ -845,8 +862,16 @@ test('WORKFLOW CAPSULES: ensureWorkflowCapsules copies bundled capsules, is idem
     // A changed source updates the target (stale detection by content) — the
     // bundled capsule is the built-in, so a bundle refresh propagates.
     const updated = JSON.stringify({ format: 'dsh.workflow', version: 1, source: 'b' });
-    await writeFile(join(skills, 'uniterra-plan', 'workflows', 'plan-review.workflow.json'), updated, 'utf8');
-    assert.equal(ensureWorkflowCapsules(dshHome, skills), true, 'a changed source rewrites the stale target');
+    await writeFile(
+      join(skills, 'uniterra-plan', 'workflows', 'plan-review.workflow.json'),
+      updated,
+      'utf8',
+    );
+    assert.equal(
+      ensureWorkflowCapsules(dshHome, skills),
+      true,
+      'a changed source rewrites the stale target',
+    );
     assert.equal(await readFile(join(dest, 'plan-review.workflow.json'), 'utf8'), updated);
 
     // A missing skills dir is a no-op.

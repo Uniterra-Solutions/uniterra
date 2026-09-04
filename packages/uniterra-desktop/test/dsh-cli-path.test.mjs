@@ -98,10 +98,10 @@ test('dsh CLI resolution order', async (t) => {
 
   await t.test('PACKAGED (win32): the physical .pnpm store location is preferred', async () => {
     await withRoot((root) => {
-      makeFile(storeCli(root, '@deepseek-ai+dsh@0.1.1-rc.2_xyz'));
-      makeFile(storeCli(root, '@deepseek-ai+dsh-agent@0.1.1-rc.2_xyz')); // must NOT match
+      makeFile(storeCli(root, '@deepseek-ai+dsh@0.1.2-rc.1_xyz'));
+      makeFile(storeCli(root, '@deepseek-ai+dsh-agent@0.1.2-rc.1_xyz')); // must NOT match
       const resolved = resolveDshCliPath({ packaged: true, sourceRoot: root, platform: 'win32' });
-      assert.equal(resolved, storeCli(root, '@deepseek-ai+dsh@0.1.1-rc.2_xyz'));
+      assert.equal(resolved, storeCli(root, '@deepseek-ai+dsh@0.1.2-rc.1_xyz'));
     });
   });
 
