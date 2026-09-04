@@ -16,8 +16,10 @@
 #      always-copy `--source` default that costs a full-tree robocopy),
 #      installs to %LOCALAPPDATA%\Programs\Uniterra, re-points pnpm junctions,
 #      and writes the Start Menu shortcut.
-#   4. Boot smoke: the installed Uniterra.exe starts, dsh reaches readiness, and
-#      http://127.0.0.1:3080 answers HTTP 2xx.
+#   4. Boot smoke: the installed Uniterra.exe starts, dsh reaches readiness,
+#      and the dsh web server answers (HTTP 2xx serving the index, or 401 on
+#      the unauthenticated fence — dsh 0.1.2-rc.1 gates the index behind a
+#      launch-token cookie exchange the app window performs itself).
 $ErrorActionPreference = 'Stop'
 
 function Step([string]$Name) {
@@ -157,8 +159,12 @@ try {
   while ((Get-Date) -lt $Deadline) {
     if ($Process.HasExited) { break }
     try {
-      $Response = Invoke-WebRequest -Uri 'http://127.0.0.1:3080' -TimeoutSec 3 -UseBasicParsing
-      if ($Response.StatusCode -eq 200) { $Ready = $true; break }
+      # -SkipHttpErrorCheck keeps the 401 auth fence from throwing: the dsh
+      # web server answers 401 to an unauthenticated index request, which
+      # still proves it is bound and routing — the app window performs the
+      # token->cookie exchange when it loads the readiness URL.
+      $Response = Invoke-WebRequest -Uri 'http://127.0.0.1:3080' -TimeoutSec 3 -UseBasicParsing -SkipHttpErrorCheck
+      if ($Response.StatusCode -eq 200 -or $Response.StatusCode -eq 401) { $Ready = $true; break }
     } catch {
       # not ready yet — poll again
     }

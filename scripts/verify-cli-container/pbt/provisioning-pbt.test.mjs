@@ -21,8 +21,10 @@
  *    "not provisioned", never an exception.
  *  - STALE_DETECTION: a missing or version-mismatched installed copy of any
  *    built-in is stale (re-provisioned); a matching copy is not.
- *  - BOOT: after provisioning, `dsh --profile web` reports readiness and
- *    the URL answers HTTP 2xx — the software actually starts.
+ *  - BOOT: after provisioning, `dsh --profile web` reports readiness and the
+ *    launch-token URL authenticates a browser session that serves the index
+ *    (HTTP 2xx after the token->cookie exchange) — the software actually
+ *    starts and its Web UI is reachable the way a browser reaches it.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -104,10 +106,7 @@ test('SOURCE_ENTRY: every vendored built-in matches its package name and ships a
       const pkg = readJson(join(pkgDir, 'package.json'));
       assert.equal(pkg.name, pkgName, `vendor dir ${dir} package name`);
       const entryRel = pkg.main ?? 'index.js';
-      assert.ok(
-        existsSync(join(pkgDir, entryRel)),
-        `vendored entry ${dir}/${entryRel} missing`,
-      );
+      assert.ok(existsSync(join(pkgDir, entryRel)), `vendored entry ${dir}/${entryRel} missing`);
     }),
   );
 });
@@ -225,11 +224,7 @@ test('STALE_DETECTION: a missing or version-mismatched copy of any built-in is s
             `${JSON.stringify({ name: entry.package, version })}\n`,
           );
         }
-        const stale = copyBuiltinsStale(
-          profileDir,
-          join(root, 'vendor', 'dsh-plugins'),
-          root,
-        );
+        const stale = copyBuiltinsStale(profileDir, join(root, 'vendor', 'dsh-plugins'), root);
         assert.equal(
           stale,
           damage !== 'version-match',
@@ -283,8 +278,30 @@ test(
     });
     try {
       const url = await awaitReadiness(child.stdout, 120_000);
-      const res = await fetch(url);
-      assert.ok(res.ok, `readiness URL ${url} must answer HTTP 2xx, got ${res.status}`);
+      // dsh 0.1.2-rc.1 gates the index behind a browser session: the
+      // readiness URL carries a launch token, GET /?token=<t> swaps it for the
+      // cookie (303 + Set-Cookie), and only then does / answer 200. A plain
+      // node fetch follows the 303 but undici keeps no cookie jar, so the
+      // redirected / lands on the 401 fence — replay the exchange the
+      // app's BrowserWindow performs automatically.
+      const exchange = await fetch(url, { redirect: 'manual' });
+      assert.equal(
+        exchange.status,
+        303,
+        `readiness URL ${url} must swap the launch token for a session cookie (303), got ${exchange.status}`,
+      );
+      const setCookie = exchange.headers.get('set-cookie');
+      assert.ok(
+        setCookie !== null && setCookie.length > 0,
+        'readiness token exchange must set a session cookie',
+      );
+      const cookie = (setCookie.split(';', 1)[0] ?? '').trim();
+      assert.ok(cookie.length > 0, 'readiness session cookie must carry a name=value pair');
+      const index = await fetch(new URL('/', url), { headers: { cookie } });
+      assert.ok(
+        index.ok,
+        `readiness URL ${url} must serve the index after the token->cookie exchange, got ${index.status}`,
+      );
     } finally {
       await stopDsh(child, 10_000).catch(() => {});
     }
