@@ -1,0 +1,10 @@
+diff --git a/lib/index.js b/lib/index.js
+index 46fd18ca5cbcc4d5436bd31153ea54418f8c0867..79df0179380294648b46962320fad07bcf5de99b 100644
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -1848,3 +1848,5 @@ var SessionStore = class extends Service {
+ };
+ //#endregion
+ export { KNOWN_SESSION_EVENT_TYPES, SESSION_FORMAT_VERSION, Session, SessionForkError, SessionId, SessionLogOffset, SessionPreparation, SessionSeq, SessionStore, SessionStore as default, TOOL_NOT_STARTED, TOOL_OUTCOME_UNKNOWN, adoptSessionEvent, canonicalHeader, decodeSeqRanges, decodeStorageRecord, deriveEventMessage, encodeSeqRanges, foldRequestHeader, foldSurface, headerEquals, interruptedTurnClosers, isAppendSurfaceEvent, isReplacementSurfaceEvent, isSurfaceEligibleType, isSurfaceEvent, packChunkRuns, snapshotSessionEvent };
++
++export { isJsonValue, snapshotJsonValue } from "@deepseek-ai/dsh-util-values"

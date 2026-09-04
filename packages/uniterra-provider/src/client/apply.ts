@@ -4,12 +4,31 @@
  * own. Zero dsh modifications — the section slot is `kind: 'list'`, built for
  * feature-owned pages ("adding a setting never means editing the shell").
  */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client';
+// The browser root context: cordis' Context carries the locale/slots/remote
+// merges of the bundles this plugin's client declares (see package.json
+// dsh.client.inject + the type-only imports below). No client-runtime package
+// exists in the 0.1.2-rc.1 family anymore — `@deepseek-ai/dsh-cordis-client-runner` owns the web runtime.
+import type { Context as ClientContext } from '@deepseek-ai/cordis';
 // Type-only: pulls the ctx.locale Context merge into this program.
 import type {} from '@deepseek-ai/dsh-client-locale/client';
 // Type-only: pulls the shell's SlotMap merge (the 'settings.section' entry).
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client';
+// Type-only: pulls the ctx.remote Context merge and the settings/credentials/llm
+// namespaces (the assembly package), and the slots base contract.
+import type {} from '@deepseek-ai/dsh-api-remotes/client';
+import type {} from '@deepseek-ai/dsh-client-ui-slots';
+// Type-only: the ctx.slots Context merge is owned by the client renderer.
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client';
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client';
+import type {
+  CredentialInfo,
+  LlmDiscoveredModel,
+  LlmModelDiscoveryRequest,
+  RemoteResult,
+  SettingsDescribeValue,
+  SettingsNamespaceView,
+  SettingsPathOpView,
+} from '@deepseek-ai/dsh-api-remotes/client';
 import { UniterraSection } from './UniterraSection.tsx';
 import type { UniterraKey } from './locale.ts';
 import { en, zh } from './locale.ts';
@@ -172,8 +191,17 @@ const SECTION_CSS = `
 .uniterra-params-unmatched { color: var(--dsw-alias-label-dimmed); font-size: 12px; padding: 4px 0; }
 `;
 
-/** Required services (cordis fiber inject): the section slot, copy, and the wire face. */
-export const inject = ['slots', 'locale', 'connection'];
+/** Required services (cordis fiber inject): the section slot, copy, the wire
+ * face, and the platform's Remote namespaces this section addresses. */
+export const inject = [
+  'slots',
+  'locale',
+  'connection',
+  'remote',
+  'remote.settings',
+  'remote.credentials',
+  'remote.llm',
+];
 
 /**
  * Register the Uniterra settings section.
@@ -213,6 +241,35 @@ export function apply(ctx: ClientContext): void {
       { ok: true; value: ModelsDevParamsResponse } | { ok: false; error: { message: string } }
     >;
 
+  // The settings/credentials/llm wire faces: the platform's typed Remote
+  // namespaces (ctx.remote) replace the old connection.api client. `t` is NOT
+  // part of the inject face — the shell binds it from the registration's
+  // `locale` declaration (PropsLocale).
+  const api = {
+    settings: {
+      describe: (): Promise<RemoteResult<SettingsDescribeValue>> => ctx.remote.settings.describe(),
+      mutate: (
+        ns: string,
+        ops: SettingsPathOpView[],
+        expectedRevision: number | undefined,
+      ): Promise<RemoteResult<SettingsNamespaceView>> =>
+        ctx.remote.settings.mutate(ns, ops, expectedRevision),
+    },
+    credentials: {
+      describe: (refs: string[]): Promise<RemoteResult<Record<string, CredentialInfo>>> =>
+        ctx.remote.credentials.describe(refs),
+      set: (ref: string, value: string): Promise<RemoteResult<void>> =>
+        ctx.remote.credentials.set(ref, value),
+    },
+    llm: {
+      discoverModels: (
+        settingsNs: string,
+        request: LlmModelDiscoveryRequest,
+      ): Promise<RemoteResult<LlmDiscoveredModel[]>> =>
+        ctx.remote.llm.discoverModels(settingsNs, request),
+    },
+  };
+
   ctx.slots.inject('settings.section', () =>
     ctx.slots.register(
       {
@@ -220,7 +277,8 @@ export function apply(ctx: ClientContext): void {
         id: 'uniterra',
         order: 15,
         label: () => t('nav'),
-        inject: () => ({ api: connection.api, t, fetchModelParams }),
+        locale: NS,
+        inject: () => ({ api, fetchModelParams }),
       },
       UniterraSection,
     ),

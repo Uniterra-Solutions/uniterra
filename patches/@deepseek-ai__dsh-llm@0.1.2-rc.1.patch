@@ -1,0 +1,12 @@
+diff --git a/lib/index.js b/lib/index.js
+index 827dd906f5dc9b6b3d2dee436fdee8775245fa1c..f756243f2480261fa43d7c1dd8cb2deb6092485d 100644
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -1756,3 +1756,7 @@ function adapterFailureChunk(error, signal) {
+ }
+ //#endregion
+ export { APP_IDENTITY, BlockAssembler, CONTEXT_SUMMARY_MAX_CHARS, CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESPONSE_CODE, HarnessError, INVALID_CREDENTIAL_CODE, LlmAdapter, LlmError, LlmRuntime, LlmRuntime as default, MessageId, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId, RetryPolicySchema, ToolCallId, assertUsableApiKey, attributionHeaders, boundContextSummary, callConfigEquals, contentHasImage, createAssistantMessage, createMessage, createToolResultMessage, createUserMessage, errorChain, freezeMessage, isAgentLoopRequest, isContextWindowExceededError, isHarnessError, isQuotaExceededError, markAgentLoopRequest, normalizeApiKey, offloadRequestImagesWithPolicy, offloadedImagePrefixCount, offloadedImageText, projectImagesForTextModel, requestImageHandleText, resolveImageAttachmentAccess, resolveRetryPolicy, textOnlyImageText, userAgent };
++
++export { ToolCallId as CallId }
++
++export { assertNever, deepFreeze } from "@deepseek-ai/dsh-util-values"

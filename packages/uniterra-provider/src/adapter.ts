@@ -413,7 +413,10 @@ export class UniterraAdapter extends LlmAdapter {
    * Interrogate one gateway endpoint for the models it advertises, serving the
    * settings-namespace discovery the plugin registered.
    */
-  async discoverModels(request: LlmModelDiscoveryRequest): Promise<readonly LlmDiscoveredModel[]> {
+  async discoverModels(
+    request: LlmModelDiscoveryRequest,
+    signal?: AbortSignal,
+  ): Promise<readonly LlmDiscoveredModel[]> {
     const connection = this.config.options();
     const base =
       request.baseURL !== undefined && request.baseURL.length > 0
@@ -432,10 +435,10 @@ export class UniterraAdapter extends LlmAdapter {
           accept: 'application/json',
           ...attributionHeaders(),
         },
-        ...(request.signal === undefined ? {} : { signal: request.signal }),
+        ...(signal === undefined ? {} : { signal }),
       });
     } catch (error: unknown) {
-      if (request.signal?.aborted) throw error;
+      if (signal?.aborted) throw error;
       throw new LlmError(`${PKG}: model discovery request to ${base} failed`, 'TRANSPORT', {
         cause: error,
       });

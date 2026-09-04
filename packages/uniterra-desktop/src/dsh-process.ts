@@ -45,16 +45,24 @@ export function awaitReadiness(stdout: Readable, timeoutMs = 60_000): Promise<st
 
     const onData = (chunk: Buffer): void => {
       buffer += chunk.toString();
-      // The port must be COMPLETE before we resolve — a chunk boundary inside
-      // the port digits (e.g. "...:3" then "080") must not yield a truncated
-      // URL. dsh prints `dsh web: http://127.0.0.1:<port> (LAN: ...)`, so the
-      // port is always followed by a non-digit terminator. `(?=[^0-9])` — note
-      // NOT `(?=.)`, which in JS excludes newlines — requires the terminator
-      // to have actually arrived, so the end-of-buffer case keeps waiting.
-      const match = /http:\/\/127\.0\.0\.1:\d+(?=[^0-9])/.exec(buffer);
-      if (match !== null) {
-        cleanup();
-        resolve(match[0]);
+      // The readiness line is ONE complete console line: `dsh web:
+      // http://127.0.0.1:<port>/?token=<token> (LAN: ...)`. New-line
+      // termination is what makes the URL (and its auth token) complete — the
+      // port must not be resolved before its digits fully arrived, and with
+      // the 0.1.2-rc.1 family the URL carries a browser-session token after
+      // the port, so resolving mid-token would hand the shell an URL that
+      // authenticates as nobody. Any URL on an OTHER line (a boot log echo)
+      // is ignored — only the `dsh web:` line announces readiness.
+      let newline: number;
+      while ((newline = buffer.indexOf('\n')) !== -1) {
+        const line = buffer.slice(0, newline);
+        buffer = buffer.slice(newline + 1);
+        const match = /(http:\/\/127\.0\.0\.1:\d+\S*)/.exec(line);
+        if (match !== null && match[1] !== undefined) {
+          cleanup();
+          resolve(match[1]);
+          return;
+        }
       }
     };
 

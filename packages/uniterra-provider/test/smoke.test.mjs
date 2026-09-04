@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { Context, Service } from '@deepseek-ai/cordis';
 import LlmRuntime, { resolveRetryPolicy } from '@deepseek-ai/dsh-llm';
-import SettingsProvider, { settingsNamespace } from '@deepseek-ai/dsh-settings';
+import SettingsProvider from '@deepseek-ai/dsh-settings';
 import * as plugin from '../lib/index.js';
 
 /** In-memory settings provider: the smallest real SettingsProvider subclass. */
@@ -180,13 +180,12 @@ async function* chatSse(payloads) {
   await ctx.plugin(FakeCredentials, { uniterra: 'block-c-key' });
   await mountPlugin(ctx);
 
-  await assert.rejects(
-    ctx.settings.update(settingsNamespace('llm-uniterra'), { baseURL: 'not-a-url' }),
-    (error) => error.message.includes('baseURL must be an absolute http(s) URL'),
+  await assert.rejects(ctx.settings.update('llm-uniterra', { baseURL: 'not-a-url' }), (error) =>
+    error.message.includes('baseURL must be an absolute http(s) URL'),
   );
 
   // A serviceable section commits and the very next discovery uses it.
-  await ctx.settings.update(settingsNamespace('llm-uniterra'), {
+  await ctx.settings.update('llm-uniterra', {
     baseURL: 'http://settings-gw:9000/v1',
     api: 'responses',
   });
@@ -483,8 +482,8 @@ async function* chatSse(payloads) {
     }
     get rpc() {
       return {
-        handle: (channel, handler, options) => {
-          registered.push({ channel, handler, options });
+        handle: (channel, handler) => {
+          registered.push({ channel, handler });
           return () => Promise.resolve();
         },
       };
@@ -494,7 +493,6 @@ async function* chatSse(payloads) {
 
   assert.equal(registered.length, 1);
   assert.equal(registered[0].channel, '/llm-uniterra');
-  assert.equal(registered[0].options.authority, 'loopback');
 
   const answer = await registered[0].handler('nope', {}, new AbortController().signal);
   assert.equal(answer.ok, false);
@@ -613,7 +611,11 @@ async function* chatSse(payloads) {
       apiKeyRef: 'uniterra',
       api: 'chat-completions',
       models: [
-        { id: 'pinned-model', reasoningEfforts: ['low', 'high', 'max'], defaultReasoningEffort: 'max' },
+        {
+          id: 'pinned-model',
+          reasoningEfforts: ['low', 'high', 'max'],
+          defaultReasoningEffort: 'max',
+        },
       ],
       modelExcludePatterns: [],
       defaultContextWindow: 128_000,

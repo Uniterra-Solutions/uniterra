@@ -15,12 +15,17 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type {
-  DiscoveredModelView,
-  IApiClient,
+  CredentialInfo,
+  LlmDiscoveredModel,
+  LlmModelDiscoveryRequest,
+} from '@deepseek-ai/dsh-api-remotes/client';
+import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client';
+import type {
+  SettingsDescribeValue,
   SettingsNamespaceView,
   SettingsPathOpView,
-} from '@deepseek-ai/dsh-client-connection/client';
-import type { UniterraKey } from './locale.ts';
+} from '@deepseek-ai/dsh-api-remotes/client';
+import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';
 import type { ModelsDevParamsRequest, ModelsDevParamsResponse } from './params-types.ts';
 
 /**
@@ -133,10 +138,35 @@ function IconTrash(): ReactNode {
   );
 }
 
-/** Inject face: the wire face, the bound translate, and the models.dev params call. */
-export interface UniterraSectionProps {
-  api: Pick<IApiClient, 'settings' | 'credentials' | 'llm'>;
-  t: (key: UniterraKey) => string;
+/** The settings/credentials/llm wire faces the section addresses. The remote
+ * call envelope is the platform's RemoteResult (ok/error), replacing the old
+ * connection.api client-shaped result. */
+export interface UniterraSettingsApi {
+  settings: {
+    describe(): Promise<RemoteResult<SettingsDescribeValue>>;
+    mutate(
+      ns: string,
+      ops: SettingsPathOpView[],
+      expectedRevision: number | undefined,
+    ): Promise<RemoteResult<SettingsNamespaceView>>;
+  };
+  credentials: {
+    describe(refs: string[]): Promise<RemoteResult<Record<string, CredentialInfo>>>;
+    set(ref: string, value: string): Promise<RemoteResult<void>>;
+  };
+  llm: {
+    discoverModels(
+      settingsNs: string,
+      request: LlmModelDiscoveryRequest,
+    ): Promise<RemoteResult<LlmDiscoveredModel[]>>;
+  };
+}
+
+/** Inject face: the wire faces and the models.dev params call. The locale t seat
+ * is NOT part of this face — the shell binds it from the registration's locale
+ * declaration (PropsLocale). */
+export interface UniterraSectionInjected {
+  api: UniterraSettingsApi;
   /** Host-side models.dev catalog lookup (browser sends ids + proxy only). */
   fetchModelParams: (
     request: ModelsDevParamsRequest,
@@ -144,6 +174,12 @@ export interface UniterraSectionProps {
     { ok: true; value: ModelsDevParamsResponse } | { ok: false; error: { message: string } }
   >;
 }
+
+/** Full section component props: the shell's runtime share (owner close), the
+ * locale t seat, and the injected business face. */
+export type UniterraSectionProps = PropsRuntime<'settings.section'> &
+  PropsLocale<'settings.uniterra'> &
+  InjectFace<UniterraSectionInjected>;
 
 const NS = 'llm-uniterra';
 /** Credential reference the host half resolves per request (see apply.ts). */
@@ -218,7 +254,7 @@ export function UniterraSection(props: UniterraSectionProps): ReactNode {
   const [editing, setEditing] = useState<ReadonlyMap<string, string>>(new Map());
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | undefined>(undefined);
-  const [candidates, setCandidates] = useState<readonly DiscoveredModelView[] | undefined>(
+  const [candidates, setCandidates] = useState<readonly LlmDiscoveredModel[] | undefined>(
     undefined,
   );
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
@@ -243,14 +279,14 @@ export function UniterraSection(props: UniterraSectionProps): ReactNode {
     setStatus('loading');
     setErrorText(undefined);
     try {
-      const described = await api.settings.describe({});
-      if (!described.result.ok) {
-        setErrorText(described.result.error.message);
+      const described = await api.settings.describe();
+      if (!described.ok) {
+        setErrorText(described.error.message);
         setStatus('error');
         return;
       }
-      setWritable(described.result.value.writable);
-      const section = described.result.value.namespaces.find(
+      setWritable(described.value.writable);
+      const section = described.value.namespaces.find(
         (entry: SettingsNamespaceView) => entry.ns === NS,
       );
       if (section === undefined) {
@@ -268,9 +304,9 @@ export function UniterraSection(props: UniterraSectionProps): ReactNode {
       if (typeof proxy.url === 'string' && proxy.url.length > 0) setProxyUrl(proxy.url);
       setExpanded(new Set());
       setEditing(new Map());
-      const credential = await api.credentials.describe({ refs: [KEY_REF] });
-      if (credential.result.ok) {
-        const view = credential.result.value.credentials[KEY_REF];
+      const credential = await api.credentials.describe([KEY_REF]);
+      if (credential.ok) {
+        const view = credential.value[KEY_REF];
         setKeyConfigured(view?.configured);
         setKeyLocked(view?.writable === false);
       }
@@ -368,17 +404,17 @@ export function UniterraSection(props: UniterraSectionProps): ReactNode {
           };
         }),
       });
-      const mutated = await api.settings.mutate({ ns: NS, ops, expectedRevision: revision });
-      if (!mutated.result.ok) {
-        setErrorText(mutated.result.error.message);
+      const mutated = await api.settings.mutate(NS, ops, revision);
+      if (!mutated.ok) {
+        setErrorText(mutated.error.message);
         return;
       }
-      setRevision(mutated.result.value.revision);
+      setRevision(mutated.value.revision);
       const key = keyDraft.trim();
       if (key.length > 0) {
-        const stored = await api.credentials.set({ ref: KEY_REF, value: key });
-        if (!stored.result.ok) {
-          setErrorText(stored.result.error.message);
+        const stored = await api.credentials.set(KEY_REF, key);
+        if (!stored.ok) {
+          setErrorText(stored.error.message);
           return;
         }
         setKeyDraft('');
@@ -397,17 +433,16 @@ export function UniterraSection(props: UniterraSectionProps): ReactNode {
     setCandidates(undefined);
     try {
       const key = keyDraft.trim();
-      const response = await api.llm.discoverModels({
-        settingsNs: NS,
+      const response = await api.llm.discoverModels(NS, {
         provider: 'uniterra',
         ...(baseURL.trim().length > 0 ? { baseURL: baseURL.trim() } : {}),
         ...(key.length > 0 ? { apiKey: key } : {}),
       });
-      if (!response.result.ok) {
-        setErrorText(response.result.error.message);
+      if (!response.ok) {
+        setErrorText(response.error.message);
         return;
       }
-      const found = response.result.value.models;
+      const found = response.value;
       // Sorted by id regardless of what the host answered, so the picker and
       // the rows it produces read the same way on every fetch.
       found.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));

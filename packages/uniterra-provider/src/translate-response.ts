@@ -21,7 +21,7 @@
  * @module @uniterra-solutions/uniterra-provider/translate-response
  */
 
-import { CallId, EMPTY_RESPONSE_CODE, LlmError } from '@deepseek-ai/dsh-llm';
+import { ToolCallId, EMPTY_RESPONSE_CODE, LlmError } from '@deepseek-ai/dsh-llm';
 import type { ContentBlock, FinishReason, StreamChunk, TokenUsage } from '@deepseek-ai/dsh-llm';
 import type { ResponsesEvent, ResponsesStreamedItem } from './types.ts';
 
@@ -174,7 +174,7 @@ export async function* translate(events: AsyncIterable<string>): AsyncGenerator<
         case 'tool-call':
           return {
             type: 'tool-call' as const,
-            id: CallId(block.callId ?? ''),
+            id: ToolCallId(block.callId ?? ''),
             name: block.name ?? '',
             arguments: block.text,
           };
@@ -279,7 +279,7 @@ export async function* translate(events: AsyncIterable<string>): AsyncGenerator<
         yield {
           type: 'tool-call-delta',
           index: block.index,
-          id: CallId(callId),
+          id: ToolCallId(callId),
           ...(block.name !== undefined ? { name: block.name } : {}),
           argumentsDelta: event.delta,
         };

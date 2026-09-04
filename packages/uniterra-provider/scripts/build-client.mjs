@@ -6,9 +6,9 @@
  * ClientModuleRegistry's `/plugins/<id>/client.js` serving and the browser
  * module loader.
  */
-import { build } from 'esbuild'
+import { build } from 'esbuild';
 
-const ID = '@uniterra-solutions/uniterra-provider'
+const ID = '@uniterra-solutions/uniterra-provider';
 
 /** Loader module-table specifiers: everything the bundle requires instead of inlining. */
 const CLIENT_EXTERNALS = [
@@ -17,13 +17,10 @@ const CLIENT_EXTERNALS = [
   'react-dom',
   'react-dom/client',
   '@deepseek-ai/cordis',
+  '@deepseek-ai/dsh-client-store',
   '@deepseek-ai/dsh-client-ui-slots',
-  '@deepseek-ai/dsh-client-web-react',
   '@deepseek-ai/dsh-client-ui-primitives',
-  '@deepseek-ai/dsh-client-ui-attachment',
-  '@deepseek-ai/dsh-client-schema-form',
-  '@deepseek-ai/dsh-client-runtime/client',
-]
+];
 
 await build({
   entryPoints: ['src/client/index.ts'],
@@ -48,6 +45,6 @@ await build({
     ].join('\n'),
   },
   footer: { js: 'return module.exports; } });' },
-})
+});
 
-console.log(`${ID}: wrote lib/client.js`)
+console.log(`${ID}: wrote lib/client.js`);

@@ -83,15 +83,21 @@ function isRetired(entry: BuiltinPlugin): entry is RetiredBuiltin {
 // Registry declarations — the full built-in set, one entry per plugin.
 // ---------------------------------------------------------------------------
 
-registerBuiltinPlugin({ kind: 'npm', spec: 'dshmarket@1.21.2' });
-registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-notifier@0.8.6' });
-registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-better-sidebar@0.15.2' });
+registerBuiltinPlugin({ kind: 'npm', spec: 'dshmarket@1.41.0' });
+registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-notifier@0.9.0' });
+registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-better-sidebar@0.18.0' });
 registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-file-upload@0.4.3' });
 registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-find-plugin@0.3.7' });
 registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-subagent-model-picker@0.1.1' });
 registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-tool-git@0.1.3' });
 registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-browser-playwright@0.1.1' });
-registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-computer-use@0.1.0' });
+registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-computer-use@0.2.0' });
+// Git worktree session targets (wloops/dsh-git-worktree v0.7.4): isolated
+// sessions per worktree with review checkpoints, human-confirmed delivery, and
+// safe recovery. npm-published, peers target the pinned dsh 0.1.2-rc.1 family
+// exactly (@deepseek-ai/cordis ^4.0.2, dsh-agent/dsh-tools/dsh-session/… ^0.1.2-rc.1),
+// so it rides the same `dsh plugin add` path as the other npm built-ins.
+registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-git-worktree@0.7.4' });
 
 // The skin is the `dsh-deep-whale` standalone distribution (`maid-atelier`
 // package) — self-inserting, host is a no-op, art embedded. The earlier
@@ -118,7 +124,7 @@ registerBuiltinPlugin({ kind: 'vendor', dir: 'dsh-shortcuts', package: 'dsh-shor
 // args)) instead of the model copying a large JS block into the native workflow
 // tool — the copy-failure failure mode. Vendored at the v0.1.3 tag (see
 // vendor/dsh-plugins/VENDOR.md); its peer ranges (^0.1.0-rc.5) are reported
-// unsatisfied (warn) against the pinned dsh 0.1.1-rc.2 pre-release family, so
+// unsatisfied (warn) against the pinned dsh 0.1.2-rc.1 pre-release family, so
 // it ships as a copy-based built-in (no pnpm install) and loads via
 // ctx.subagents + ctx.tools. The four pipeline capsules are provisioned from
 // the skills package into the profile's workflow dir by ensureWorkflowCapsules.
@@ -172,7 +178,18 @@ registerBuiltinPlugin({
  * `dsh plugin add` (a plain dependency, not a profile layer). */
 const PROFILE_RUNTIME_DEPS: readonly string[] = ['quickjs-emscripten@0.32.0'];
 
-/** The pnpm settings every profile needs for plugin installs. */
+/**
+ * The pnpm settings every profile needs for plugin installs. Settings keys are
+ * camelCase (pnpm 11's pnpm-workspace.yaml accepts only those; kebab-case
+ * names are silently ignored). autoInstallPeers is OFF: a plugin whose peer
+ * ranges target an older dsh pre-release family (e.g. dsh-file-upload@0.4.3's
+ * ^0.1.0-rc.6) cannot co-resolve with the pinned 0.1.2-rc.1 family in one
+ * tree — pnpm 11 reports "No matching version found" for a satisfiable range
+ * when auto-installing disjoint pre-release families. The dsh family is
+ * already present from the profile's base bundles, so peers resolve at
+ * runtime; the pnpm warning ("Issues with peer dependencies found") is the
+ * expected signal for a stale plugin.
+ */
 const PROFILE_PNPM_WORKSPACE = [
   'allowBuilds:',
   '  node-pty: true',
@@ -181,6 +198,7 @@ const PROFILE_PNPM_WORKSPACE = [
   '  fsevents: true',
   '  tesseract.js: true',
   'minimumReleaseAge: 0',
+  'autoInstallPeers: false',
   '',
 ].join('\n');
 

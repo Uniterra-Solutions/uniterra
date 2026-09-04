@@ -2,7 +2,7 @@
   "format": "dsh.workflow",
   "version": 1,
   "workflowApiVersion": 1,
-  "minDshVersion": "0.1.1-rc.2",
+  "minDshVersion": "0.1.2-rc.1",
   "manifest": {
     "name": "plan-review",
     "description": "Review plan documents (requirements / design / acceptance) in a single parallel pass with three review agents; the main agent applies any returned issues (and may re-run the review fresh).",
@@ -44,7 +44,7 @@
   },
   "provenance": {
     "createdAt": "2026-08-27T00:00:00.000Z",
-    "dshVersion": "0.1.1-rc.2",
+    "dshVersion": "0.1.2-rc.1",
     "pluginVersion": "0.1.3"
   }
 }

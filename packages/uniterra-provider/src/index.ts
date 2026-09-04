@@ -25,11 +25,8 @@ import {
 import type { RetryPolicyConfig } from '@deepseek-ai/dsh-llm';
 import { credentialRef } from '@deepseek-ai/dsh-credentials';
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment';
-import {
-  deepEqualJson,
-  installSettingsSection,
-  settingsNamespace,
-} from '@deepseek-ai/dsh-settings';
+import { deepEqualJson } from '@deepseek-ai/dsh-util-values';
+import type {} from '@deepseek-ai/dsh-settings';
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout';
 import {
   DEFAULT_CONTEXT_WINDOW,
@@ -64,7 +61,7 @@ export type * from './types.ts';
 export const name = 'llm-uniterra';
 export const inject = ['llm'];
 
-const NS = settingsNamespace('llm-uniterra');
+const NS = 'llm-uniterra';
 /** Fixed credential reference for the gateway API key. */
 const API_KEY_REF = 'uniterra';
 /** Environment variable naming this provider's endpoint, honored only from trusted layers. */
@@ -357,7 +354,7 @@ export function apply(ctx: Context, config: Config): void {
     registration.replace([PROVIDER]);
     registeredPolicy = policy;
   };
-  ctx.llm.registerModelDiscovery(NS, (request) => adapter.discoverModels(request));
+  ctx.llm.registerModelDiscovery(NS, (request, signal) => adapter.discoverModels(request, signal));
 
   // Host-side endpoint for the「更新模型信息」action.
   ctx.inject(['connection'], (cctx) => {
@@ -390,19 +387,30 @@ export function apply(ctx: Context, config: Config): void {
                 },
               }));
           },
-          { authority: 'loopback' },
         ),
       'llm-uniterra: models-dev RPC channel',
     );
   });
 
-  installSettingsSection(ctx, NS, Config, config, {
-    validate: (value) => {
-      resolveAdapterOptions(value, launchEnvironmentOf(ctx));
-    },
-    setSource: (source) => {
-      current = source;
-    },
-    onChange: ensureRegistrationFacts,
-  });
+  // The live settings section: register the llm-uniterra namespace under the
+  // composition config (defaults -> config base -> user section) and read the
+  // resolved value per request. The settings seam is OPTIONAL (like
+  // credentials): without a provider the plugin runs on its composition config
+  // alone. Accessed through ctx.get (not the proxy property) so an absent seam
+  // resolves to undefined instead of tripping cordis' strict inject gate. The
+  // scope's validate refuses writes the adapter could not act on; the watch
+  // re-registers the adapter when the retry policy changes.
+  const settings = ctx.get('settings');
+  if (settings !== undefined) {
+    const scope = settings.register(NS, Config, {
+      base: config,
+      validate: (value) => {
+        resolveAdapterOptions(value, launchEnvironmentOf(ctx));
+      },
+    });
+    current = (): Config => scope.get();
+    scope.watch((): void => {
+      ensureRegistrationFacts();
+    });
+  }
 }

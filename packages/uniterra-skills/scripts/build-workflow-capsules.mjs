@@ -34,7 +34,7 @@ const srcSkills = path.join(here, '..', 'src', 'skills');
 const explicitTarget = process.argv[2];
 const target = explicitTarget === undefined ? srcSkills : explicitTarget;
 
-const DSH_VERSION = '0.1.1-rc.2'; // the uniterra-pinned dsh family (see VENDOR.md)
+const DSH_VERSION = '0.1.2-rc.1'; // the uniterra-pinned dsh family (see VENDOR.md)
 const PLUGIN_VERSION = '0.1.3'; // the pinned dsh_workflow tag (v0.1.3)
 // Deterministic provenance timestamp so re-running the builder is byte-idempotent
 // (a `new Date()` here would make `pnpm run build` dirty the committed capsules
@@ -258,7 +258,8 @@ function reviewSource() {
     const content = readFileSync(path.join(reviewDir, name), 'utf8').trim();
     // The capsule embeds this knowledge: an empty file would silently ship an
     // empty prompt section. Fail loudly instead.
-    if (content.length === 0) throw new Error(`build-workflow-capsules: references/${name} is empty`);
+    if (content.length === 0)
+      throw new Error(`build-workflow-capsules: references/${name} is empty`);
     return content;
   };
   const reviewCore = readRef('review-agent.md');
