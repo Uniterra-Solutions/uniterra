@@ -67,12 +67,17 @@ test('init_task.mjs scaffolds .dsh/<YYYYMMDD-HHmmss>/<project>/<task>.md and a p
   const cwd = mkdtempSync(path.join(tmpdir(), 'uniterra-init-task-'));
   try {
     run(cwd, taskScript, ['user-auth', 'T1', 'token issuance']);
-    run(cwd, taskScript, ['user-auth', 'T2', 'refresh rotation']);
 
+    // The auto timestamp has second granularity, so two back-to-back
+    // invocations can straddle a wall-clock second boundary and land in two
+    // different run dirs. Group the second task into the run dir the first
+    // call created by passing the concrete timestamp back — the deterministic
+    // shape of the multi-task run the CLI's example documents.
     const runDir = dirs(cwd, '.dsh');
     assert.equal(runDir.length, 1, 'one implement run directory');
     const ts = runDir[0]!;
     assert.match(ts, /^\d{8}-\d{6}$/u, 'timestamp carries date + minutes + seconds');
+    run(cwd, taskScript, ['user-auth', 'T2', 'refresh rotation', ts]);
 
     const projectDirs = dirs(path.join(cwd, '.dsh'), ts);
     assert.deepEqual(projectDirs, ['user-auth'], 'one project directory');
