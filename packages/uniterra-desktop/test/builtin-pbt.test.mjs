@@ -88,7 +88,8 @@ test('REGISTRY: one representative entry per kind flows into the expected bundle
 });
 
 test('REGISTRY: retired names never enter the expected bundles', () => {
-  assert.equal(RETIRED.length, 5, 'the five retired built-ins stay declared');
+  assert.equal(RETIRED.length, 6, 'the six retired built-ins stay declared');
+  assert.ok(RETIRED.includes('dsh-notifier'), 'dsh-notifier stays declared retired');
   const expected = expectedBuiltinBundles();
   for (const name of RETIRED) {
     assert.ok(!expected.includes(name), `retired ${name} is not an expected bundle`);
@@ -691,6 +692,57 @@ test('RETIRED: removeRetiredBuiltins removes exactly the retired rows, deps, and
       }
     }),
   );
+});
+
+test('RETIRED regression: the dsh-notifier retirement heals the bundled row, deps, and copy, and leaves unrelated rows and user-installed extras alone', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'uniterra-notifier-'));
+  try {
+    const profile = join(dir, 'profiles', 'web');
+    await mkdir(profile, { recursive: true });
+    const userPlugin = 'user-installed-plugin';
+    const keepNames = ['dsh-better-sidebar', userPlugin];
+    for (const name of ['dsh-notifier', ...keepNames]) {
+      const dest = join(profile, 'node_modules', ...name.split('/'));
+      await mkdir(dest, { recursive: true });
+      await writeFile(join(dest, 'package.json'), JSON.stringify({ name }) + '\n');
+    }
+    await writeFile(
+      join(profile, 'package.json'),
+      JSON.stringify({
+        dependencies: {
+          'dsh-notifier': '0.9.0',
+          'dsh-better-sidebar': '0.18.0',
+          [userPlugin]: '1.0.0',
+        },
+        dsh: { profile: { bundles: ['dsh-notifier', 'dsh-better-sidebar', userPlugin] } },
+      }) + '\n',
+    );
+
+    const removed = removeRetiredBuiltins(profile);
+    assert.equal(removed, true, 'removal reported');
+    const manifest = JSON.parse(await readFile(join(profile, 'package.json'), 'utf8'));
+    assert.ok(
+      !manifest.dsh.profile.bundles.includes('dsh-notifier'),
+      'dsh-notifier bundle row removed',
+    );
+    assert.ok(!('dsh-notifier' in manifest.dependencies), 'dsh-notifier dependency removed');
+    assert.equal(
+      existsSync(join(profile, 'node_modules', 'dsh-notifier')),
+      false,
+      'dsh-notifier installed copy removed',
+    );
+    for (const name of keepNames) {
+      assert.ok(manifest.dsh.profile.bundles.includes(name), name + ' row untouched');
+      assert.ok(name in manifest.dependencies, name + ' dependency untouched');
+      assert.equal(
+        existsSync(join(profile, 'node_modules', ...name.split('/'))),
+        true,
+        name + ' installed copy untouched',
+      );
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test('RETIRED: an illegible manifest never throws — node_modules cleanup still runs', async () => {

@@ -84,7 +84,6 @@ function isRetired(entry: BuiltinPlugin): entry is RetiredBuiltin {
 // ---------------------------------------------------------------------------
 
 registerBuiltinPlugin({ kind: 'npm', spec: 'dshmarket@1.41.0' });
-registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-notifier@0.9.0' });
 registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-better-sidebar@0.18.0' });
 registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-file-upload@0.4.3' });
 registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-find-plugin@0.3.7' });
@@ -169,6 +168,12 @@ registerBuiltinPlugin({
   retired: true,
   package: '@cardo/cardo-provider',
   comment: 'Pre-rename workspace built-in: now shipped as @uniterra-solutions/uniterra-provider.',
+});
+registerBuiltinPlugin({
+  retired: true,
+  package: 'dsh-notifier',
+  comment:
+    'Standalone desktop notifier: its notifications overlap with dsh-better-sidebar Tasks and other dsh notification plugins; no longer bundled (user-installed copies preserved).',
 });
 
 /** Non-bundle npm dependencies a copy-based built-in needs at runtime but that
