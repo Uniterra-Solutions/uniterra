@@ -57,8 +57,11 @@ git clone https://github.com/Uniterra-Solutions/uniterra.git
 cd uniterra
 pnpm install --frozen-lockfile
 pnpm build && pnpm lint && pnpm typecheck
+pnpm build:vendored-dsh                                   # build the vendored DeepSeek Harness source (one-time; dev then runs dsh from this source)
 pnpm --filter @uniterra-solutions/uniterra-desktop dev    # dev mode (does not touch the real ~/.dsh)
 ```
+
+The dsh runtime source is vendored at `vendor/dsh-harness` (pinned `dsh-v0.1.1-rc.2` — npm ships compiled `lib/` only). The dev app resolves its built CLI first, so a source edit there runs on the next dev boot; see `vendor/dsh-harness/VENDOR.md` and `pnpm run build:vendored-dsh` for the loop.
 
 Test commands and the verification matrix: [docs/testing.md](docs/testing.md) · environment variables: [docs/setup.md](docs/setup.md)
 
