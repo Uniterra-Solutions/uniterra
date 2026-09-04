@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.1] — 2026-09-04
+
+### Fixed
+
+- **Sessions could not be opened or created after the `0.1.2-rc.1` migration** (`packages/uniterra-desktop`, `src/preset-compat.ts`). dsh `0.1.2-rc.1` renamed the shipped `code` agent preset (Code Mode, the PTC-style TypeScript-program presentation) to `ptc`, but an upgraded profile still names the legacy id in two places: `$DSH_HOME/settings.yaml` (`agent-presets: default: code`) and every pre-upgrade session log header (`agentPreset: "code"` in the version-0 header line). dsh resolves presets by id, so every session create/resume failed with `agent-presets: preset "code" not found (available: standard, ptc, minimal, cordis)` and the web UI surfaced it as unresolvable sessions ("session not found" / resume failed) while the session logs remained on disk. The desktop now provisions a user preset named `code` (a byte copy of the shipped `ptc` composition + metadata) into `$DSH_HOME/.agent-presets/code` at boot via `ensureAgentPresetCompatibility(dshHome, sourceRoot)`; the legacy id therefore resolves to its PTC-mode successor without rewriting settings or log headers, an existing user-authored preset is never overwritten, provisioning is idempotent and fail-soft, and the row is removable once upstream ships a rename migration itself. Regression net: `packages/uniterra-desktop/test/preset-compat-pbt.test.mjs` (write-plan / never-clobber / byte-identity + idempotence / fail-soft / roster invariants) and `packages/uniterra-desktop/test/preset-compat-regressions.test.mjs` (the 0.1.1-rc.2 → 0.1.2-rc.1 upgrade scenario: `default: code` settings row plus a `code`-header session; user-preset protection). Docs and `AGENTS.md` updated.
+
 ## [0.15.0] — 2026-09-04
 
 ### Added
