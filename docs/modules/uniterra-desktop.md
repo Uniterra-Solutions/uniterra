@@ -28,6 +28,8 @@ Source: `packages/uniterra-desktop/src/` (`main.ts`, `dsh-process.ts`, `dsh-cli-
 
 `src/builtin.ts` — see [vendor-plugins.md](vendor-plugins.md) for the exact built-in lists and provisioning semantics; exports: `registerBuiltinPlugin` (declarative registry of `NpmBuiltin` / `CopyBuiltin` / `RetiredBuiltin` entries), `builtinPlugins`, `npmBuiltinSpecs`, `copyBuiltins`, `retiredBuiltinNames`, `builtinPackageName`, `expectedBuiltinBundles`, `hasAllBuiltins`, `copyBuiltinsStale` (unified vendored/workspace staleness), `removeRetiredBuiltins`, `ensureBuiltinPlugins`, `builtinSkillsDir` (exported but unused — `main.ts` uses its own `skillsDir()`).
 
+`src/preset-compat.ts` — agent-preset compatibility row: dsh 0.1.2-rc.1 renamed the shipped `code` preset (Code Mode) to `ptc`, while upgraded profiles still store `code` (settings `agent-presets.default` and every pre-upgrade session header) — without a row behind that id, session create/resume fails with `agent-presets: preset "code" not found` and the web UI is unusable. `ensureAgentPresetCompatibility(dshHome, sourceRoot)` provisions a user preset `code` (byte copy of the shipped `ptc` composition) into `$DSH_HOME/.agent-presets/`; it never overwrites an existing file (a user-authored preset is preserved) and is idempotent.
+
 ## Boot Flow
 
 `boot()` in `main.ts:313-372`, in order:
@@ -36,11 +38,12 @@ Source: `packages/uniterra-desktop/src/` (`main.ts`, `dsh-process.ts`, `dsh-cli-
 2. Profile resolution: `dev = !app.isPackaged`; dev mirrors `~/.dsh` → `userData/dsh-test-home` (config only, `node_modules` skipped); packaged omits `DSH_HOME` → real `~/.dsh`.
 3. Built-ins: `ensureBuiltinPlugins(effectiveHome, 'web', dshCliPath(), process.execPath, vendorPluginsRoot(), bundledSrcRoot())`.
 4. Skills: `skillsDir()` resolves `packages/uniterra-skills/src/skills` under the source root (dev AND packaged — the embedded source tree), passed as `DSH_BUNDLED_SKILL_DIR` (rank-600 provider) if it exists.
-5. Update check scheduled after `UNITERRA_UPDATE_DELAY_MS` (default 5000 ms).
-6. `startDsh({ profile: 'web', dshBundledSkillDir })`.
-7. Crash-restart wiring: on runtime death with window alive, backoff restart `min(1000·2^restarts, 15_000)`.
-8. `createWindow(handle.url)` — `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`.
-9. Lifecycle: `window-all-closed` → quit (even macOS — no dock daemon); `before-quit` → `stopDsh` + `app.exit(0)`; `activate` → recreate window from `runtime.url`.
+5. Agent-preset compat: `ensureAgentPresetCompatibility(effectiveHome, bundledSrcRoot())` (see `src/preset-compat.ts`); workflow capsules (`ensureWorkflowCapsules`) share the same slot.
+6. Update check scheduled after `UNITERRA_UPDATE_DELAY_MS` (default 5000 ms).
+7. `startDsh({ profile: 'web', dshBundledSkillDir })`.
+8. Crash-restart wiring: on runtime death with window alive, backoff restart `min(1000·2^restarts, 15_000)`.
+9. `createWindow(handle.url)` — `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`.
+10. Lifecycle: `window-all-closed` → quit (even macOS — no dock daemon); `before-quit` → `stopDsh` + `app.exit(0)`; `activate` → recreate window from `runtime.url`.
 
 Boot failure surfacing: any `boot()` rejection (initial boot or crash-restart) is routed through `reportStartupFailure` — it appends the error (including the dsh child's captured stderr, which `startDsh` folds into the message) to `userData/startup-error.log`, and on the FIRST boot also raises a native `dialog.showErrorBox` before `app.quit()`. Restart failures log only (no dialog spam).
 
