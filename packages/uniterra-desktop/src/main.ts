@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { startDsh, stopDsh, type DshRuntimeHandle } from './dsh-process.js';
 import { resolveDshCliPath } from './dsh-cli-path.js';
 import { ensureBuiltinPlugins, ensureWorkflowCapsules } from './builtin.js';
+import { ensureAgentPresetCompatibility } from './preset-compat.js';
 import {
   resolveUniterraUpdateStatus,
   resolveUpdateAction,
@@ -386,6 +387,12 @@ async function boot(): Promise<void> {
   // Provision the persisted pipeline workflow capsules into the profile's
   // dsh_workflow personal dir so the skills can run_workflow('<name>', args) them.
   ensureWorkflowCapsules(effectiveHome, skills);
+
+  // Provision the legacy agent-preset compat row: dsh 0.1.2-rc.1 renamed the
+  // shipped `code` preset (Code Mode) to `ptc`, but stored settings and every
+  // pre-upgrade session header still name `code` — without a preset behind
+  // that id, session create/resume fails and the web UI is unusable.
+  ensureAgentPresetCompatibility(effectiveHome, bundledSrcRoot());
 
   initUpdateChecker();
   const handle = await startDsh({
