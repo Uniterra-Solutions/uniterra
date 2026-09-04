@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.2] — 2026-09-05
+
+### Fixed
+
+- **`run_workflow` crashed and marked every finished child agent failed after the `0.1.2-rc.1` host update** (`@dsh-external/workflow`, vendored patch). dsh `0.1.2-rc.1` removed the public `Session#events` accessor (the session-API refactor replaced it with `snapshotEvents()` / `ownEvents()` / `eventAt()`), so the engine's result-collection helpers (`usageOf`, `observedToolEvidence`, `latestAssistantText`, `childRecordedCompleted`) threw `TypeError: agent.session.events is not iterable` immediately after a child settled: `driveTask`'s catch then recorded `agent-completed { outcome: 'failed' }` for work that had already landed in the workspace, batches stopped advancing, and a run hung in `running` or was cancelled on host teardown ("jobs service disposed"). The engine now reads the child log through `sessionEventsOf()` (the legacy `events` array when present, else `snapshotEvents()`, else `[]`) and every collection call site is wrapped in `collect()` with auxiliary-data fallbacks, so a log-shape surprise can never fail a completed task; the plugin's handoff detection uses the same adapter. Regression net: `packages/uniterra-desktop/test/workflow-engine-session-events.test.mjs` (new-family `snapshotEvents` session, legacy `events` session, and an event-less session — each completes and is collected). Ledger updated (`vendor/dsh-plugins/VENDOR.md`, `docs/modules/vendor-plugins.md`).
+
 ## [0.15.1] — 2026-09-04
 
 ### Fixed
