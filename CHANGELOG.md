@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] — 2026-09-04
+
+### Added
+
+- **Git worktree session targets as a built-in** (`dsh-git-worktree@0.7.4`, npm — `wloops/dsh-git-worktree`). Isolated sessions per Git worktree with review checkpoints, human-confirmed delivery, and safe recovery. Its peers target the pinned dsh `0.1.2-rc.1` family exactly, so it rides the same `dsh plugin add` npm path as the other built-ins.
+
+### Changed
+
+- **Bundled DeepSeek Harness bumped to the `0.1.2-rc.1` family** (the current `latest`/npm release): the vendored source tree was re-pinned to the `dsh-v0.1.2-rc.1` tag (`a66e4702…`, 2026-09-03) and rebuilt (`vendor/dsh-harness`, ledger + divergences re-applied), the desktop's `@deepseek-ai/dsh` pin moved to `0.1.2-rc.1`, and the workspace lockfile refreshed. Breaking changes absorbed: `@deepseek-ai/dsh-client-runtime` was removed (the web client runtime is `@deepseek-ai/dsh-cordis-client-runner`, composed by the shell), the client wire face moved from `connection.api` (IApiClient) to the typed Remote namespaces on `ctx.remote` (`dsh-api-remotes` assembly — `remote.settings` / `remote.credentials` / `remote.llm`), the settings-section slot gained the `locale` registration field and the owner `close` prop, `ctx.settings.register` replaced the removed `installSettingsSection` helper, cordis bumped to 4.0.2 (strict `inject` guards — optional seams now resolve through `ctx.get`), and `@deepseek-ai/dsh-llm`'s `CallId` was renamed `ToolCallId` — a rename the community plugin ecosystem (including `dsh-git-worktree@0.7.4`, published for this family) has not caught up with, so every plugin still imports `CallId` and the whole plugin layer fails to load on the new family. A TEMPORARY compatibility alias (`export { ToolCallId as CallId }`) ships in both the vendored source (`vendor/dsh-harness` brand.ts — divergence ledger) and as a pnpm patch on the npm family (`patches/@deepseek-ai__dsh-llm@0.1.2-rc.1.patch`), to be removed when the plugins republish against the renamed surface. `uniterra-provider` and the vendored `@dsh-external/workflow` / `dsh-shortcuts` / `dsh-deep-whale` copies were migrated and re-verified (`dsh-shortcuts`'s `dsh.client.inject` + peers now omit the removed runtime package; `dsh-deep-whale` re-pinned to the v0.1.1 tag declaring `dshCompatibility: 0.1.2rc1`; the profile's pnpm settings now disable `autoInstallPeers` — disjoint pre-release families cannot co-resolve in one tree, and only peers can be auto-installed into a conflict).
+- **Built-in plugin versions refreshed** to the current `0.1.2-rc.1`-family releases: `dshmarket` 1.21.2 → 1.41.0, `dsh-notifier` 0.8.6 → 0.9.0, `dsh-better-sidebar` 0.15.2 → 0.18.0, `dsh-computer-use` 0.1.0 → 0.2.0. The others (`dsh-file-upload`, `dsh-find-plugin`, `dsh-subagent-model-picker`, `dsh-tool-git`, `dsh-browser-playwright`) are already at their latest.
+- Pipeline workflow capsules (`minDshVersion` / `dshVersion`) regenerated for the new family; docs, pin ledgers (`vendor/dsh-harness/VENDOR.md`, `vendor/dsh-plugins/VENDOR.md`), README, `docs/`, and `AGENTS.md` updated.
+- App version bumped to `0.15.0` (root / CLI / desktop), provider `0.1.4`, skills `0.5.1`.
+
 ## [0.14.12] — 2026-09-03
 
 ### Fixed
