@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] — 2026-09-05
+
+### Changed
+
+- **dsh-notifier retired as a bundled built-in** (`packages/uniterra-desktop`, `src/builtin.ts`, per `docs/proposals/2026-09-02/retire-dsh-notifier/PROPOSAL.md`). The plugin no longer ships in the default built-in set: the registry declares it `retired: true`, `removeRetiredBuiltins()` heals its bundle row, dependency entry, and `node_modules` copy out of already-provisioned profiles, and the expected-bundle set no longer includes it — users can still install it manually via `dsh plugin add`. Regression net: `packages/uniterra-desktop/test/builtin-pbt.test.mjs` (registry + retired-heal cases).
+
+### Fixed
+
+- **Four dsh-shortcuts client seams were broken after the `0.1.2-rc.1` host update** (`vendor/dsh-plugins/dsh-shortcuts`, local patch). (1) `⌘N` and the palette New Session row called `workspaces.startSession`, which does not exist on the pinned `IWorkspaces` (create/rename/delete/insertBefore/archiveSession/insertSessionBefore only) — the action threw and created nothing; it now creates through `sessions.create({ workspaceId? })` (target = current session's workspace, else the most recently active one) and opens the new id via `sessions.open`, mirroring `ui-workspace.startSession`. (2) Copy-last-message read the `conversation` session projection, which the pinned family does not provide (keys: modelSelection/title/todos/permissions/plan/goal/tokenUsage/contextPressure/contextBreakdown/sessionStats/imageLimits/sessionListMetadata) — a permanent no-op; it now reads `binding.eventSource` (last `assistant/message` text blocks, falling back to the last `chunkrow/text-chunks` run while streaming). (3) Focus-composer probed `textarea`, but the pinned composer is the contentEditable div with `role="textbox"` (ComposerContentEditable, the only such element in the client) — nothing was focused; it now focuses `[role="textbox"]`. (4) Theme toggle hardcoded the light/dark pair, so a registered non-built-in theme (skin, e.g. the deep-whale maid-dark theme) was dropped to the base `light`; it now toggles only the built-in pair and leaves a skin theme active. Regression net: `packages/uniterra-desktop/test/dsh-shortcuts-plugin-contract.test.mjs` (plugin-side surface table), `dsh-shortcuts-dsh-api.test.mjs` (oracle over `vendor/dsh-harness` sources), `dsh-shortcuts-behavior.test.mjs` (behavior + PBT), and `scripts/verify-dsh-shortcuts-smoke/run.sh` (real dsh web boot). Ledger and docs updated (`vendor/dsh-plugins/VENDOR.md`, `docs/modules/vendor-plugins.md`, `docs/testing.md`, `docs/conventions.md`, `AGENTS.md`).
+
 ## [0.15.2] — 2026-09-05
 
 ### Fixed
