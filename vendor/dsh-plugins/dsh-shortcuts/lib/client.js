@@ -136,6 +136,34 @@ window.__ModuleLoader__.load({
 			} catch (err) { /* 剪贴板不可用 */ }
 		}
 
+		// 从会话事件窗口提取最后一条助手可见文本：优先最后一条已组装的
+		// assistant/message（content 的 text 块），只有流式历史时回退到最近的
+		// chunkrow/text-chunks 行。窗口是 pinned binding.eventSource 的会话载体
+		// —— 该家族没有 conversation 投影。
+		function lastAssistantTextFromWindow(entries) {
+			if (!Array.isArray(entries)) return '';
+			for (let i = entries.length - 1; i >= 0; i--) {
+				const ev = entries[i] && entries[i].event;
+				if (!ev || typeof ev.type !== 'string') continue;
+				if (ev.type === 'assistant/message') {
+					const content = ev.data && ev.data.message && Array.isArray(ev.data.message.content)
+						? ev.data.message.content
+						: [];
+					const text = content
+						.filter((b) => b && b.type === 'text' && typeof b.text === 'string')
+						.map((b) => b.text)
+						.join('\n');
+					if (text) return text;
+				}
+				if (ev.type === 'chunkrow/text-chunks') {
+					const texts = ev.data && Array.isArray(ev.data.texts) ? ev.data.texts : [];
+					const joined = texts.filter((t) => typeof t === 'string').join('');
+					if (joined) return joined;
+				}
+			}
+			return '';
+		}
+
 		// ============ 会话/模型服务工具 ============
 		function sessionsBinding(id) {
 			const sessionsSvc = pluginCtx && pluginCtx.get('sessions');
@@ -153,6 +181,63 @@ window.__ModuleLoader__.load({
 			return null;
 		}
 
+		// 最近工作区：会话活动最新（无活动时按 createdAt），与 ui-workspace 的
+		// recentWorkspace 语义一致 —— 新会话在未指定工作区时的回退目标。
+		function recentWorkspaceIdOf(workspaces, sessionsById) {
+			let selected;
+			let selectedTime = Number.NEGATIVE_INFINITY;
+			for (const workspace of workspaces) {
+				let latest = Number.NEGATIVE_INFINITY;
+				for (const sessionId of (workspace.sessionIds || [])) {
+					const session = sessionsById[sessionId];
+					if (session !== undefined) latest = Math.max(latest, session.updatedAt || 0);
+				}
+				if (latest === Number.NEGATIVE_INFINITY) latest = Date.parse(workspace.createdAt);
+				if (selected === undefined || latest > selectedTime) {
+					selected = workspace.workspaceId;
+					selectedTime = latest;
+				}
+			}
+			return selected;
+		}
+
+		function workspacesListSnapshot() {
+			const svc = pluginCtx && pluginCtx.get('workspaces');
+			if (!svc || !svc.list || typeof svc.list.getSnapshot !== 'function') return null;
+			try { return svc.list.getSnapshot(); } catch (err) { /* 工作区未就绪 */ }
+			return null;
+		}
+
+		// 新建会话：创建通道在 pinned ISessions.create（workspaces 面没有
+		// startSession），目标工作区沿用当前会话所属、否则最近使用的；创建完成后
+		// open 使新会话成为当前会话（语义与 ui-workspace.startSession 一致）。
+		function createSession() {
+			const sessionsSvc = pluginCtx && pluginCtx.get('sessions');
+			if (!sessionsSvc || typeof sessionsSvc.create !== 'function') return;
+			let opts = {};
+			try {
+				const sessionsSnap = sessionsSvc.list && typeof sessionsSvc.list.getSnapshot === 'function'
+					? sessionsSvc.list.getSnapshot()
+					: null;
+				const wsSnap = workspacesListSnapshot();
+				const items = wsSnap && Array.isArray(wsSnap.items) ? wsSnap.items : [];
+				const byId = sessionsSnap && sessionsSnap.byId ? sessionsSnap.byId : {};
+				const currentWs = currentSessionId === undefined || currentSessionId === null
+					? undefined
+					: items.find((it) => it && Array.isArray(it.sessionIds) && it.sessionIds.includes(currentSessionId));
+				const target = (currentWs && currentWs.workspaceId) || recentWorkspaceIdOf(items, byId);
+				if (target !== undefined) opts = { workspaceId: target };
+			} catch (err) { /* 工作区解析失败时宿主落在默认目录 */ }
+			const p = sessionsSvc.create(opts);
+			if (p && typeof p.then === 'function') {
+				p.then((id) => {
+					try {
+						if (id !== undefined && typeof sessionsSvc.open === 'function') sessionsSvc.open(id);
+					} catch (err) { /* 忽略 */ }
+				}, (err) => { console.error('dsh-shortcuts: 新建会话失败', err); });
+			}
+		}
+
 		function flatModelList(groups) {
 			const flat = [];
 			if (Array.isArray(groups)) {
@@ -168,10 +253,7 @@ window.__ModuleLoader__.load({
 		// defaultCombo 为 null 的功能初始未绑定 —— 用户在设置页录制组合键即「自定义添加」。
 		const FEATURES = [
 			// ---- 会话 ----
-			{ id: 'newSession', group: '会话', label: '新建会话', description: '开始一个新会话（沿用当前或最近的工作区）', defaultCombo: lead + '+N', run: () => {
-				const svc = pluginCtx && pluginCtx.get('workspaces');
-				if (svc) svc.startSession();
-			} },
+			{ id: 'newSession', group: '会话', label: '新建会话', description: '开始一个新会话（沿用当前或最近的工作区）', defaultCombo: lead + '+N', run: () => createSession() },
 			{ id: 'quickSwitcher', group: '会话', label: '会话快速切换', description: '打开会话搜索面板，回车直达任意会话', defaultCombo: lead + '+K', run: () => setPaletteOpen(!paletteOpen) },
 			{ id: 'archiveSession', group: '会话', label: '归档当前会话', description: '把当前会话归档（从列表隐藏，会话日志保留）', defaultCombo: lead + '+Shift+A', run: () => {
 				const svc = pluginCtx && pluginCtx.get('workspaces');
@@ -181,8 +263,10 @@ window.__ModuleLoader__.load({
 				}
 			} },
 			{ id: 'focusComposer', group: '会话', label: '聚焦消息输入框', description: '将光标移回输入框，立即开始输入', defaultCombo: lead + '+Shift+K', run: () => {
-				const ta = document.querySelector('textarea');
-				if (ta) ta.focus();
+				// pinned composer seat：contentEditable div + role="textbox"
+				// （ComposerContentEditable 是唯一带该 role 的元素，无 textarea）
+				const seat = document.querySelector('[role="textbox"]');
+				if (seat) seat.focus();
 			} },
 			{ id: 'stopTask', group: '会话', label: '停止当前任务', description: '中断正在运行的 agent 回合（等价于点击停止按钮）', defaultCombo: lead + '+.', run: () => {
 				if (!currentSessionId) return;
@@ -212,10 +296,15 @@ window.__ModuleLoader__.load({
 			} },
 			{ id: 'toggleTheme', group: '视图', label: '切换明暗主题', description: '在浅色与深色主题之间切换', defaultCombo: lead + '+Shift+L', run: () => {
 				const svc = pluginCtx && pluginCtx.get('theme');
-				if (svc) {
-					const snap = svc.getTheme();
-					svc.setTheme(snap.active.colorScheme === 'dark' ? 'light' : 'dark');
-				}
+				if (!svc || typeof svc.getTheme !== 'function' || typeof svc.setTheme !== 'function') return;
+				let snap;
+				try { snap = svc.getTheme(); } catch (err) { return; }
+				const active = snap && snap.active;
+				if (!active || typeof active.colorScheme !== 'string') return;
+				// 只在内建 light/dark 对之间切换。第三方主题（皮肤）自持 scheme 与
+				// token 覆盖，切到硬编码的基础主题会剥掉皮肤；找不到同族对侧时保持不动。
+				if (active.id !== 'light' && active.id !== 'dark') return;
+				try { svc.setTheme(active.colorScheme === 'dark' ? 'light' : 'dark'); } catch (err) { /* 主题已被注销 */ }
 			} },
 			{ id: 'toggleFullscreen', group: '视图', label: '切换全屏', description: '浏览器全屏 / 退出全屏', defaultCombo: null, run: () => {
 				try {
@@ -243,18 +332,11 @@ window.__ModuleLoader__.load({
 			// ---- 剪贴板 ----
 			{ id: 'copyLastMessage', group: '剪贴板', label: '复制最后一条助手消息', description: '把会话中最后一条助手回复的文本复制到剪贴板', defaultCombo: null, run: () => {
 				const binding = sessionsBinding(currentSessionId);
-				const session = binding && binding.session;
-				if (!session || !session.projections) return;
-				let conv;
-				try { conv = session.projections.faceOf('conversation') ? session.projections.faceOf('conversation').getSnapshot() : undefined; } catch (err) { return; }
-				const nodes = conv && Array.isArray(conv.nodes) ? conv.nodes : [];
-				for (let i = nodes.length - 1; i >= 0; i--) {
-					const n = nodes[i];
-					if (n && n.kind === 'assistant' && Array.isArray(n.blocks)) {
-						const text = n.blocks.filter((b) => b && b.kind === 'text' && b.text).map((b) => b.text).join('\n');
-						if (text) { copyText(text); break; }
-					}
-				}
+				if (!binding || !binding.eventSource || typeof binding.eventSource.getSnapshot !== 'function') return;
+				let win;
+				try { win = binding.eventSource.getSnapshot(); } catch (err) { return; }
+				const text = lastAssistantTextFromWindow(win && win.entries);
+				if (text) copyText(text);
 			} },
 			{ id: 'copySessionTitle', group: '剪贴板', label: '复制当前会话标题', description: '把当前会话的标题复制到剪贴板', defaultCombo: null, run: () => {
 				if (!currentSessionId) return;
@@ -922,11 +1004,10 @@ window.__ModuleLoader__.load({
 			const active = Math.min(Math.max(index, 0), total - 1);
 
 			const sessionsSvc = pluginCtx && pluginCtx.get('sessions');
-			const workspacesSvc = pluginCtx && pluginCtx.get('workspaces');
 
 			const choose = (i) => {
 				if (i === 0) {
-					if (workspacesSvc) workspacesSvc.startSession();
+					createSession();
 					setPaletteOpen(false);
 					return;
 				}
