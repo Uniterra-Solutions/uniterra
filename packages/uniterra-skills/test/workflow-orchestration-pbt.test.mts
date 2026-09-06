@@ -1,6 +1,6 @@
 /**
- * Property-based adversarial review of the four dsh_workflow pipeline capsules
- * (plan-review / implement / review / simplify).
+ * Property-based adversarial review of the three dsh_workflow pipeline capsules
+ * (implement / review / simplify).
  *
  * This locks the ORCHESTRATION invariants under GENERATED agent-result shapes,
  * `args`, and dispatch counts — going beyond the deterministic shapes already
@@ -10,10 +10,6 @@
  * generated inputs instead, per the review-agent methodology).
  *
  * Invariants pinned here:
- *  - PLAN-REVIEW: a SINGLE review pass dispatches each axis exactly once, never
- *    dispatches a repair agent, `done && pass` implies all three axes passed,
- *    and — adversarially — a run that fails on a `null` reviewer never lists an
- *    axis that passed in that same pass as a failure.
  *  - IMPLEMENT: on failure the reported `batch` is the FIRST batch that
  *    contains a failing (`null`) child and no later batch is dispatched; with
  *    no failures every task is counted; and the runner never throws for any
@@ -21,7 +17,7 @@
  *  - REVIEW: `clean` is true iff no reports, the fixer is dispatched iff
  *    reports exist, and — adversarially — a fixer that reports `status:
  *    'failed'` must surface as a `failed` capsule status (matching the
- *    plan-review / simplify siblings), not be swallowed as `done`.
+ *    simplify sibling), not be swallowed as `done`.
  *  - SIMPLIFY: a `verdict:'pass'` (or empty recommendation list) ends the loop
  *    early with no fix round; `skipped` entries are deduped by id across
  *    rounds, never dropped, and record the latest round that skipped them.
@@ -46,7 +42,9 @@ function loadCapsule(skill: string, file: string): Capsule {
 function compileCapsule(source: string): (wf: unknown, args: unknown) => Promise<unknown> {
   const context: Record<string, unknown> = {};
   vm.createContext(context);
-  new vm.Script(`"use strict";\n${source}\n;globalThis.__run = run;`, { filename: 'capsule.js' }).runInContext(context);
+  new vm.Script(`"use strict";\n${source}\n;globalThis.__run = run;`, {
+    filename: 'capsule.js',
+  }).runInContext(context);
   return context.__run as (wf: unknown, args: unknown) => Promise<unknown>;
 }
 
@@ -62,9 +60,10 @@ interface RunOutcome {
 }
 
 /** Track which phase is active so agent calls can be attributed to a round. */
-function trackingStub(
-  agentMap: (name: string, input: Record<string, unknown>) => unknown,
-): { wf: Record<string, unknown>; calls: AgentCall[] } {
+function trackingStub(agentMap: (name: string, input: Record<string, unknown>) => unknown): {
+  wf: Record<string, unknown>;
+  calls: AgentCall[];
+} {
   const calls: AgentCall[] = [];
   let currentPhase: string | null = null;
   const wf = {
@@ -97,12 +96,11 @@ function trackingStub(
           out[index] = await thunks[index]!();
         }
       };
-      await Promise.all(
-        Array.from({ length: Math.min(concurrency, thunks.length) }, () => lane()),
-      );
+      await Promise.all(Array.from({ length: Math.min(concurrency, thunks.length) }, () => lane()));
       return out;
     },
-    readFile: async (): Promise<string> => '# stub brief\n\nGoal: stub\nRequirements: REQ-1 (test: a)',
+    readFile: async (): Promise<string> =>
+      '# stub brief\n\nGoal: stub\nRequirements: REQ-1 (test: a)',
     log: (): void => undefined,
   };
   return { wf, calls };
@@ -135,176 +133,6 @@ function pick<T>(rng: () => number, arr: ReadonlyArray<T>): T {
   return arr[randInt(rng, 0, arr.length - 1)]!;
 }
 
-// ---------------------------------------------------------------------------
-// PLAN-REVIEW orchestration invariants
-// ---------------------------------------------------------------------------
-const PLAN_REVIEW = loadCapsule('uniterra-plan', 'plan-review.workflow.json');
-const PLAN_RUN = compileCapsule(PLAN_REVIEW.source);
-const PLAN_LABEL_TO_KEY: Record<string, string> = {
-  'requirement-list-review': 'requirement',
-  'design-review': 'design',
-  'acceptance-review': 'acceptance',
-};
-const PLAN_KEYS = ['requirement', 'design', 'acceptance'];
-const PLAN_OUTCOME_CHOICES = ['pass', 'fail', 'fail-empty', 'null'] as const;
-type PlanOutcome = (typeof PLAN_OUTCOME_CHOICES)[number];
-
-function genPlanWorld(rng: () => number): {
-  seq: Record<string, PlanOutcome>;
-} {
-  const seq: Record<string, PlanOutcome> = {};
-  for (const k of PLAN_KEYS) {
-    seq[k] = pick(rng, PLAN_OUTCOME_CHOICES);
-  }
-  return { seq };
-}
-
-function runPlanWorld(world: { seq: Record<string, PlanOutcome> }): Promise<RunOutcome> {
-  const agentMap = (name: string): unknown => {
-    const key = PLAN_LABEL_TO_KEY[name];
-    if (key === undefined) return null;
-    const o = world.seq[key];
-    if (o === 'null') return null;
-    if (o === 'pass') return { verdict: 'pass', issues: [] };
-    if (o === 'fail') {
-      return { verdict: 'fail', issues: [{ where: 'w', problem: 'p', suggestion: 's' }] };
-    }
-    return { verdict: 'fail', issues: [] };
-  };
-  return runCapsule(
-    PLAN_RUN,
-    { prd_dir: '/p', design_dir: '/d', acceptance_dir: '/a' },
-    agentMap,
-  );
-}
-
-/** Reconstruct the single review pass from the tracking log. */
-function analyzePlan(calls: AgentCall[]): {
-  dispatched: string[];
-  passAxes: string[];
-  failAxes: string[];
-  nullAxes: string[];
-  repairDispatched: boolean;
-} {
-  const dispatched: string[] = [];
-  const passAxes: string[] = [];
-  const failAxes: string[] = [];
-  const nullAxes: string[] = [];
-  let repairDispatched = false;
-  for (const c of calls) {
-    if (c.name.startsWith('repair-')) {
-      repairDispatched = true;
-      continue;
-    }
-    const key = PLAN_LABEL_TO_KEY[c.name];
-    if (key === undefined) continue;
-    dispatched.push(key);
-    if (c.outcome === null) nullAxes.push(key);
-    else if ((c.outcome as { verdict?: string }).verdict === 'pass') passAxes.push(key);
-    else failAxes.push(key);
-  }
-  return { dispatched, passAxes, failAxes, nullAxes, repairDispatched };
-}
-
-test('PLAN-REVIEW: each axis is dispatched exactly once, and done/pass implies all passed', async () => {
-  for (let seed = 0; seed < 3000; seed += 1) {
-    const rng = lcg(seed);
-    const world = genPlanWorld(rng);
-    const { result, calls } = await runPlanWorld(world);
-    const status = result.status;
-    assert.ok(
-      status === 'done' || status === 'failed',
-      `seed ${seed}: terminal status in {done, failed} — got ${String(status)}`,
-    );
-    const { dispatched, passAxes, failAxes, nullAxes } = analyzePlan(calls);
-
-    // Single review pass: every axis is dispatched exactly once.
-    assert.equal(dispatched.length, 3, `seed ${seed}: three review agents dispatched`);
-    for (const k of PLAN_KEYS) {
-      assert.equal(
-        dispatched.filter((d) => d === k).length,
-        1,
-        `seed ${seed}: axis ${k} dispatched exactly once`,
-      );
-    }
-    // done && pass ⇒ every axis passed; no failure or null remains.
-    if (status === 'done' && result.pass === true) {
-      assert.deepEqual([...passAxes].sort(), [...PLAN_KEYS].sort(), `seed ${seed}: pass implies all axes passed`);
-      assert.equal(failAxes.length, 0, `seed ${seed}: no failing axes on a pass`);
-      assert.equal(nullAxes.length, 0, `seed ${seed}: no null reviewer on a pass`);
-    }
-    // A passed axis is never reported as a failure.
-    const failureReviewers = ((result.failures as Array<{ reviewer: string }>) ?? []).map((f) => f.reviewer);
-    for (const p of passAxes) {
-      assert.ok(!failureReviewers.includes(p), `seed ${seed}: passed axis ${p} must not be a reported failure`);
-    }
-    // A null reviewer only ever lands on a failed run.
-    if (nullAxes.length > 0) {
-      assert.equal(status, 'failed', `seed ${seed}: a null reviewer fails the run`);
-    }
-  }
-});
-
-test('PLAN-REVIEW: a single review pass never dispatches a repair agent', async () => {
-  for (let seed = 0; seed < 3000; seed += 1) {
-    const rng = lcg(seed);
-    const world = genPlanWorld(rng);
-    const { calls } = await runPlanWorld(world);
-    const { repairDispatched } = analyzePlan(calls);
-    assert.ok(
-      !repairDispatched,
-      `seed ${seed}: a single review pass must not dispatch a repair agent`,
-    );
-  }
-});
-
-test('PLAN-REVIEW adversarial: a null reviewer fails the run but a passed axis is never listed as a failure', async () => {
-  let found = false;
-  for (let seed = 0; seed < 4000; seed += 1) {
-    const rng = lcg(seed);
-    const world = genPlanWorld(rng);
-    const { result, calls } = await runPlanWorld(world);
-    if (result.status !== 'failed') continue;
-    found = true;
-    const failureReviewers = ((result.failures as Array<{ reviewer: string }>) ?? []).map((f) => f.reviewer);
-    for (const c of calls) {
-      const key = PLAN_LABEL_TO_KEY[c.name];
-      if (key === undefined || c.outcome === null || (c.outcome as { verdict?: string }).verdict !== 'pass') {
-        continue;
-      }
-      assert.ok(
-        !failureReviewers.includes(key),
-        `seed ${seed}: axis ${key} passed but the run reported it as a failure (failures=${JSON.stringify(result.failures)})`,
-      );
-    }
-  }
-  assert.ok(found, 'the adversarial generator seeded at least one failed run');
-});
-
-test('PLAN-REVIEW minimal counterexample: a null reviewer coexisting with a pass does not misreport the passed axis', async () => {
-  // requirement=pass, design=pass, acceptance=null (reviewer died).
-  const { result } = await runCapsule(
-    PLAN_RUN,
-    { prd_dir: '/p', design_dir: '/d', acceptance_dir: '/a' },
-    (name) => {
-      if (name === 'requirement-list-review') return { verdict: 'pass', issues: [] };
-      if (name === 'design-review') return { verdict: 'pass', issues: [] };
-      if (name === 'acceptance-review') return null; // reviewer died
-      return null;
-    },
-  );
-  assert.equal(result.status, 'failed');
-  const failures = result.failures as Array<{ reviewer: string }>;
-  // The two passed axes must not be reported as failures. Spread into a plain
-  // (main-realm) array because `result` comes from the vm capsule realm.
-  assert.deepEqual(
-    [...failures.map((f) => f.reviewer)].sort(),
-    [],
-    'a passed axis must not be reported as a failure',
-  );
-});
-
-// ---------------------------------------------------------------------------
 // IMPLEMENT orchestration invariants
 // ---------------------------------------------------------------------------
 const IMPLEMENT = loadCapsule('uniterra-implement', 'implement.workflow.json');
@@ -347,13 +175,20 @@ test('IMPLEMENT: on failure the reported batch is the first batch with a null ch
       assert.equal(result.agents, all.length, `seed ${seed}: agents equals total task count`);
     } else {
       assert.equal(result.status, 'failed', `seed ${seed}: a failing child fails the run`);
-      assert.equal(result.batch, firstFailing + 1, `seed ${seed}: reported batch is the first failing batch`);
+      assert.equal(
+        result.batch,
+        firstFailing + 1,
+        `seed ${seed}: reported batch is the first failing batch`,
+      );
       // No batch after the failing one is dispatched.
       const phases = calls.map((c) => c.phase).filter((p) => p !== null);
       for (const p of phases) {
         if (p?.startsWith('batch-')) {
           const n = Number(p.slice('batch-'.length));
-          assert.ok(n <= firstFailing + 1, `seed ${seed}: batch ${n} must not run after failing batch ${firstFailing + 1}`);
+          assert.ok(
+            n <= firstFailing + 1,
+            `seed ${seed}: batch ${n} must not run after failing batch ${firstFailing + 1}`,
+          );
         }
       }
     }
@@ -369,7 +204,12 @@ test('IMPLEMENT robustness: the runner never throws for contract-valid or empty 
     {},
     { tasks: [{ id: 'T1', name: 'T1', promptFile: '.dsh/tasks/T1.md' }] },
     { tasks: [], batches: [] },
-    { batches: [[{ id: 'A', name: 'A', promptFile: '.dsh/tasks/A.md' }], [{ id: 'B', name: 'B', promptFile: '.dsh/tasks/B.md' }]] },
+    {
+      batches: [
+        [{ id: 'A', name: 'A', promptFile: '.dsh/tasks/A.md' }],
+        [{ id: 'B', name: 'B', promptFile: '.dsh/tasks/B.md' }],
+      ],
+    },
   ];
   for (const args of shapes) {
     await assert.doesNotReject(
@@ -384,7 +224,11 @@ test('IMPLEMENT robustness: the runner never throws for contract-valid or empty 
   // A task entry WITHOUT promptFile is a contract violation → visible error, not a
   // silent no-op (this is the fail-fast that replaced the old `{done, agents:0}`).
   await assert.rejects(
-    () => runCapsule(IMPLEMENT_RUN, { tasks: [{ id: 'X', name: 'X' }] }, () => ({ changed_files: [], satisfied_requirements: [] })),
+    () =>
+      runCapsule(IMPLEMENT_RUN, { tasks: [{ id: 'X', name: 'X' }] }, () => ({
+        changed_files: [],
+        satisfied_requirements: [],
+      })),
     /promptFile/,
     'a task without promptFile fails loudly',
   );
@@ -401,12 +245,28 @@ test('REVIEW: clean iff no reports, and the fixer runs only when reports exist',
     const rng = lcg(seed);
     const withReports = rng() < 0.5;
     const reports = withReports
-      ? [{ id: 'r1', level: 'critical', file: 'a.js', line: 1, invariant: 'i', input: 'x', expected: 'y', actual: 'z', test: 't' }]
+      ? [
+          {
+            id: 'r1',
+            level: 'critical',
+            file: 'a.js',
+            line: 1,
+            invariant: 'i',
+            input: 'x',
+            expected: 'y',
+            actual: 'z',
+            test: 't',
+          },
+        ]
       : [];
     const fixStatus = pick(rng, ['fixed', 'failed'] as const);
     const agentMap = (name: string): unknown => {
       if (name === 'review') return { spec_table: [], reports };
-      return { status: fixStatus, fixes: [{ id: 'r1', diff: 'd', result: 'green', explanation: 'e' }], summary: 's' };
+      return {
+        status: fixStatus,
+        fixes: [{ id: 'r1', diff: 'd', result: 'green', explanation: 'e' }],
+        summary: 's',
+      };
     };
     const { result, calls } = await runCapsule(REVIEW_RUN, { task: 'scope' }, agentMap);
     const clean = reports.length === 0;
@@ -432,21 +292,29 @@ test('REVIEW: clean iff no reports, and the fixer runs only when reports exist',
 });
 
 test('REVIEW adversarial: a fixer that reports status "failed" must surface as a failed capsule status', async () => {
-  // Sibling capsules (plan-review, simplify) propagate the repair/fix agent's
+  // Siblings (simplify) propagate the fix agent's
   // `status:'failed'`; the review capsule must too, not swallow it as `done`.
-  const { result } = await runCapsule(
-    REVIEW_RUN,
-    { task: 'scope' },
-    (name) => {
-      if (name === 'review') {
-        return {
-          spec_table: [],
-          reports: [{ id: 'r1', level: 'critical', file: 'a.js', line: 1, invariant: 'i', input: 'x', expected: 'y', actual: 'z', test: 't' }],
-        };
-      }
-      return { status: 'failed', fixes: [], summary: 'not applied' };
-    },
-  );
+  const { result } = await runCapsule(REVIEW_RUN, { task: 'scope' }, (name) => {
+    if (name === 'review') {
+      return {
+        spec_table: [],
+        reports: [
+          {
+            id: 'r1',
+            level: 'critical',
+            file: 'a.js',
+            line: 1,
+            invariant: 'i',
+            input: 'x',
+            expected: 'y',
+            actual: 'z',
+            test: 't',
+          },
+        ],
+      };
+    }
+    return { status: 'failed', fixes: [], summary: 'not applied' };
+  });
   assert.equal(
     result.status,
     'failed',
@@ -505,7 +373,10 @@ test('SIMPLIFY: skipped recommendations are deduped by id, never dropped, and re
       if (name.startsWith('review-')) {
         const round = Number(name.replace('review-', ''));
         if (round > maxRounds) return { verdict: 'pass', recommendations: [] };
-        return { verdict: 'fail', recommendations: [{ id: 'x', safetiness: 'safe', description: 'd' }] };
+        return {
+          verdict: 'fail',
+          recommendations: [{ id: 'x', safetiness: 'safe', description: 'd' }],
+        };
       }
       fixRound = Number(name.replace('fix-', ''));
       return {
@@ -533,7 +404,11 @@ test('SIMPLIFY: skipped recommendations are deduped by id, never dropped, and re
         .map((plan, idx) => (plan.some((p) => p.id === s.id) ? idx + 1 : -1))
         .filter((n) => n > 0);
       const expectedRound = latest.length > 0 ? latest[latest.length - 1] : -1;
-      assert.equal(s.round, expectedRound, `seed ${seed}: skipped id ${s.id} recorded with its own round`);
+      assert.equal(
+        s.round,
+        expectedRound,
+        `seed ${seed}: skipped id ${s.id} recorded with its own round`,
+      );
     }
   }
 });

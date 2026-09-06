@@ -1,7 +1,7 @@
 /**
  * Deterministic unit regression tests for the CONFIRMED counterexamples found
  * by the property-based adversarial review of the four dsh_workflow pipeline
- * capsules (plan-review / implement / review / simplify).
+ * capsules (implement / review / simplify).
  *
  * `workflow-orchestration-pbt.test.mts` drives these same invariants over many
  * SEEDED generated inputs. This file pins each counterexample with a single
@@ -14,9 +14,7 @@
  *  1. REVIEW: a fixer that reports `status:'failed'` must surface as a `failed`
  *     capsule status (never a misleading `done`), while still returning the
  *     reports + fixes it produced.
- *  2. PLAN-REVIEW (single pass): an axis that returned `verdict:'pass'` alongside a
- *     `null` reviewer must never be listed in the returned `failures`.
- *  3. IMPLEMENT: the runner must never throw for an empty/absent `args` shape
+ *  2. IMPLEMENT: the runner must never throw for an empty/absent `args` shape
  *     (no `tasks`/`batches`) — it degrades to a terminal object.
  */
 import test from 'node:test';
@@ -51,9 +49,10 @@ interface AgentCall {
   readonly outcome: unknown;
 }
 
-function trackingStub(
-  agentMap: (name: string, input: Record<string, unknown>) => unknown,
-): { wf: Record<string, unknown>; calls: AgentCall[] } {
+function trackingStub(agentMap: (name: string, input: Record<string, unknown>) => unknown): {
+  wf: Record<string, unknown>;
+  calls: AgentCall[];
+} {
   const calls: AgentCall[] = [];
   let currentPhase: string | null = null;
   const wf = {
@@ -86,9 +85,7 @@ function trackingStub(
           out[index] = await thunks[index]!();
         }
       };
-      await Promise.all(
-        Array.from({ length: Math.min(concurrency, thunks.length) }, () => lane()),
-      );
+      await Promise.all(Array.from({ length: Math.min(concurrency, thunks.length) }, () => lane()));
       return out;
     },
     log: (): void => undefined,
@@ -127,15 +124,11 @@ const ONE_REPORT = [
 ];
 
 test('REVIEW: a fixer reporting status failed surfaces as a failed capsule status and loses no evidence', async () => {
-  const { result } = await runCapsule(
-    REVIEW_RUN,
-    { task: 'scope' },
-    (name) => {
-      if (name === 'review') return { spec_table: [], reports: ONE_REPORT };
-      // The single counterexample input: the fixer could not apply every fix.
-      return { status: 'failed', fixes: [], summary: 'not applied' };
-    },
-  );
+  const { result } = await runCapsule(REVIEW_RUN, { task: 'scope' }, (name) => {
+    if (name === 'review') return { spec_table: [], reports: ONE_REPORT };
+    // The single counterexample input: the fixer could not apply every fix.
+    return { status: 'failed', fixes: [], summary: 'not applied' };
+  });
   assert.equal(result.status, 'failed', 'a failed fixer must not be reported as a done review');
   assert.equal(result.clean, false, 'a failed fixer is not a clean review');
   // Evidence is still carried so the main agent can aggregate the unfixed reports.
@@ -144,103 +137,24 @@ test('REVIEW: a fixer reporting status failed surfaces as a failed capsule statu
 });
 
 test('REVIEW: a fixer reporting status fixed is a completed review (positive control)', async () => {
-  const { result } = await runCapsule(
-    REVIEW_RUN,
-    { task: 'scope' },
-    (name) => {
-      if (name === 'review') return { spec_table: [], reports: ONE_REPORT };
-      return { status: 'fixed', fixes: [{ id: 'r1', diff: 'd', result: 'green', explanation: 'e' }] };
-    },
-  );
+  const { result } = await runCapsule(REVIEW_RUN, { task: 'scope' }, (name) => {
+    if (name === 'review') return { spec_table: [], reports: ONE_REPORT };
+    return { status: 'fixed', fixes: [{ id: 'r1', diff: 'd', result: 'green', explanation: 'e' }] };
+  });
   assert.equal(result.status, 'done', 'a succeeded fixer completes the single-pass review');
   assert.equal(result.clean, false);
   assert.equal((result.fixes as unknown[]).length, 1);
 });
 
 test('REVIEW: a clean review is done and skips the fixer (single-pass control)', async () => {
-  const { result, calls } = await runCapsule(
-    REVIEW_RUN,
-    { task: 'scope' },
-    (name) => (name === 'review' ? { spec_table: [], reports: [] } : { status: 'fixed', fixes: [] }),
+  const { result, calls } = await runCapsule(REVIEW_RUN, { task: 'scope' }, (name) =>
+    name === 'review' ? { spec_table: [], reports: [] } : { status: 'fixed', fixes: [] },
   );
   assert.equal(result.status, 'done');
   assert.equal(result.clean, true);
   assert.equal((result.reports as unknown[]).length, 0);
   assert.equal((result.fixes as unknown[]).length, 0);
   assert.ok(!calls.some((c) => c.name === 'fix'), 'no fixer dispatched on a clean review');
-});
-
-// ---------------------------------------------------------------------------
-// 2. PLAN-REVIEW — a single review pass: a passed axis is never reported as a
-//    failure, and a null reviewer fails the run. (Counterexample R-PLAN-1.)
-// ---------------------------------------------------------------------------
-const PLAN = loadCapsule('uniterra-plan', 'plan-review.workflow.json');
-const PLAN_RUN = compileCapsule(PLAN.source);
-
-test('PLAN-REVIEW: an axis that passed alongside a null reviewer is never a reported failure', async () => {
-  // requirement+design pass, acceptance reviewer dies (null). The single pass
-  // fails, but the two passed axes must not appear in `failures`.
-  const { result } = await runCapsule(
-    PLAN_RUN,
-    { prd_dir: '/p', design_dir: '/d', acceptance_dir: '/a' },
-    (name) => {
-      if (name === 'requirement-list-review') return { verdict: 'pass', issues: [] };
-      if (name === 'design-review') return { verdict: 'pass', issues: [] };
-      if (name === 'acceptance-review') return null; // reviewer died
-      return null;
-    },
-  );
-  assert.equal(result.status, 'failed', 'a null reviewer fails the run');
-  const failures = result.failures as Array<{ reviewer: string }>;
-  const reviewers = [...failures.map((f) => f.reviewer)];
-  // No passed axis may be reported as a failure. Both passed axes are the only
-  // axes, so the failures array must be empty (no verdict-fail axis exists).
-  assert.deepEqual(
-    reviewers,
-    [],
-    'a passed axis must never be listed as a failure (reviewers=' + JSON.stringify(reviewers) + ')',
-  );
-});
-
-test('PLAN-REVIEW: a verdict-fail axis with issues survives a null reviewer and is the only reported failure', async () => {
-  // requirement passes, design fails with issues, acceptance dies. The run
-  // fails; the failed axis is reported, the passed axis is not.
-  const { result } = await runCapsule(
-    PLAN_RUN,
-    { prd_dir: '/p', design_dir: '/d', acceptance_dir: '/a' },
-    (name) => {
-      if (name === 'requirement-list-review') return { verdict: 'pass', issues: [] };
-      if (name === 'design-review') {
-        return { verdict: 'fail', issues: [{ where: 'design.md', problem: 'p', suggestion: 's' }] };
-      }
-      if (name === 'acceptance-review') return null;
-      return null;
-    },
-  );
-  assert.equal(result.status, 'failed');
-  // Spread into a main-realm array (the capsule result lives in the vm realm).
-  const reviewers = [...((result.failures as Array<{ reviewer: string }>).map((f) => f.reviewer))];
-  assert.deepEqual(reviewers, ['design'], 'only the verdict-fail axis is reported');
-});
-
-test('PLAN-REVIEW: a clean pass run is done with all three axes listed as passed (positive control)', async () => {
-  const { result } = await runCapsule(
-    PLAN_RUN,
-    { prd_dir: '/p', design_dir: '/d', acceptance_dir: '/a' },
-    (name) => {
-      if (name === 'requirement-list-review') return { verdict: 'pass', issues: [] };
-      if (name === 'design-review') return { verdict: 'pass', issues: [] };
-      if (name === 'acceptance-review') return { verdict: 'pass', issues: [] };
-      return null;
-    },
-  );
-  assert.equal(result.status, 'done');
-  assert.equal(result.pass, true);
-  assert.deepEqual(
-    [...((result.passed as string[]) ?? [])].sort(),
-    ['acceptance', 'design', 'requirement'],
-  );
-  assert.deepEqual([...(result.failures as unknown[])], []);
 });
 
 // ---------------------------------------------------------------------------
@@ -267,13 +181,21 @@ test('IMPLEMENT: the runner never throws when neither tasks nor batches are give
 test('IMPLEMENT: a concrete task is dispatched and reported (positive control)', async () => {
   const { result, calls } = await runCapsule(
     IMPLEMENT_RUN,
-    { tasks: [{ id: 'T1', name: 'T1', promptFile: '.dsh/tasks/T1.md' }, { id: 'T2', name: 'T2', promptFile: '.dsh/tasks/T2.md' }] },
+    {
+      tasks: [
+        { id: 'T1', name: 'T1', promptFile: '.dsh/tasks/T1.md' },
+        { id: 'T2', name: 'T2', promptFile: '.dsh/tasks/T2.md' },
+      ],
+    },
     (name) => ({ changed_files: [], satisfied_requirements: [name] }),
   );
   assert.equal(result.status, 'done');
   assert.equal(result.agents, 2);
   assert.deepEqual(
-    calls.filter((c) => c.name.startsWith('T')).map((c) => c.name).sort(),
+    calls
+      .filter((c) => c.name.startsWith('T'))
+      .map((c) => c.name)
+      .sort(),
     ['T1', 'T2'],
   );
 });

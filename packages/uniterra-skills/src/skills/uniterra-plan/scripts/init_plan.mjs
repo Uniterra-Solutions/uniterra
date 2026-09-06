@@ -7,7 +7,7 @@
  *
  * Creates <cwd>/.plan/<timestamp>/<plan-name>/ with prd.md, design.md and
  * acceptance.md templates, then prints the created directory. The agent fills
- * in the placeholders (then runs the single-pass plan-review).
+ * in the placeholders.
  *
  * Run in the repo root (your cwd), e.g.:
  *   node "<skill_base>/scripts/init_plan.mjs" "user auth"

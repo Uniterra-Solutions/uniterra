@@ -1,5 +1,5 @@
 /**
- * Build the four dsh_workflow capsules that replace the dynamic workflow
+ * Build the three dsh_workflow capsules that replace the dynamic workflow
  * scripts the bundled pipeline skills used to ask the model to copy into the
  * native `workflow` tool.
  *
@@ -30,7 +30,7 @@ const srcSkills = path.join(here, '..', 'src', 'skills');
 // The canonical capsules live next to each skill under `src/skills/<skill>/workflows/`
 // (they are copied to `dist/skills/<skill>/workflows/` by copy-skills.mjs, and the
 // desktop provisions them from there into the profile's workflow dir). Passing an
-// explicit target emits all four into one flat directory (used by the test harness).
+// explicit target emits all three into one flat directory (used by the test harness).
 const explicitTarget = process.argv[2];
 const target = explicitTarget === undefined ? srcSkills : explicitTarget;
 
@@ -47,12 +47,6 @@ const CAPSULE_CREATED_AT = '2026-08-27T00:00:00.000Z';
  * prompt text must survive as literal text inside the capsule source. */
 function tmpl(text) {
   return text.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
-}
-
-/** Read the fixed prompt text for one reviewer from its canonical markdown asset. */
-function prompt(kind, ...subpaths) {
-  const file = path.join(srcSkills, ...subpaths);
-  return readFileSync(file, 'utf8').trim();
 }
 
 /**
@@ -72,94 +66,6 @@ function extractPrompt(source, name) {
     throw new Error(`build-workflow-capsules: "${name}" constant not found in template`);
   }
   return m[1].split(sentinel).join('\\`');
-}
-
-const SCHEMAS = {
-  review:
-    "{\n  type: 'object',\n  required: ['verdict', 'issues'],\n  properties: {\n    verdict: { type: 'string', enum: ['pass', 'fail'] },\n    issues: { type: 'array', items: { type: 'object', required: ['where', 'problem', 'suggestion'], properties: { where: { type: 'string' }, problem: { type: 'string' }, suggestion: { type: 'string' } } } },\n  },\n}",
-};
-
-/**
- * Build the plan-review capsule source. Runs ONE single-pass review: all three
- * axes (requirement feasibility / design over-engineering / acceptance
- * verifiability) are dispatched in parallel once, each returning a verdict +
- * issues. There is no repair agent and no re-review loop — the main agent reads
- * the returned issues and applies them itself (re-running the review as a fresh,
- * independent single pass if it wants to confirm).
- *
- * Every review agent is write-capable (readOnly: false): the workflow agents
- * must run tests / write code in the repo to verify their conclusions (a
- * reviewer that cannot write cannot prove a counterexample). The manifest
- * readOnly is false so a write-capable child is admitted — the plugin rejects a
- * write-capable child under a readOnly manifest, so the manifest must stay
- * false.
- */
-function planReviewSource() {
-  const requirement = prompt('plan-req', 'uniterra-plan', 'prompts', 'requirement-list-review.md');
-  const design = prompt('plan-design', 'uniterra-plan', 'prompts', 'design-review.md');
-  const acceptance = prompt('plan-accept', 'uniterra-plan', 'prompts', 'acceptance-review.md');
-
-  return `{
-  const { prd_dir, design_dir, acceptance_dir } = args;
-
-  const REQUIREMENT_PROMPT = \`${tmpl(requirement)}\`;
-
-  const DESIGN_PROMPT = \`${tmpl(design)}\`;
-
-  const ACCEPTANCE_PROMPT = \`${tmpl(acceptance)}\`;
-
-  const REVIEW_SCHEMA = ${SCHEMAS.review};
-
-  function inputs() {
-    return [
-      '## Inputs',
-      \`- prd_dir: \${prd_dir}\`,
-      \`- design_dir: \${design_dir}\`,
-      \`- acceptance_dir: \${acceptance_dir}\`,
-    ].join('\\n');
-  }
-
-  const REVIEWERS = [
-    { key: 'requirement', label: 'requirement-list-review', prompt: REQUIREMENT_PROMPT, doc: 'prd.md', dir: prd_dir },
-    { key: 'design', label: 'design-review', prompt: DESIGN_PROMPT, doc: 'design.md', dir: design_dir },
-    { key: 'acceptance', label: 'acceptance-review', prompt: ACCEPTANCE_PROMPT, doc: 'acceptance.md', dir: acceptance_dir },
-  ];
-
-  // SINGLE review — dispatch all three axes once, in parallel. No repair agent,
-  // no re-review loop: the main agent applies the returned issues itself and may
-  // re-run the review as a fresh, independent single pass.
-  const results = await wf.phase('plan-review', () => wf.parallel(
-    REVIEWERS.map(r => () => wf.runAgent({
-      name: r.label,
-      prompt: r.prompt + '\\n\\n' + inputs(),
-      readOnly: false,
-      modelHint: 'deep',
-      outputSchema: REVIEW_SCHEMA,
-    })),
-  ));
-
-  const passed = [];
-  const failures = [];
-  let anyNull = false;
-  REVIEWERS.forEach((r, i) => {
-    const res = results[i];
-    if (res === null) {
-      anyNull = true;
-      return;
-    }
-    const structured = res.structured;
-    if (structured !== undefined && structured.verdict === 'pass') {
-      passed.push(r.key);
-    } else {
-      failures.push({ reviewer: r.key, doc: r.doc, issues: structured?.issues ?? [] });
-    }
-  });
-
-  // A null reviewer terminates the run as failed WITHOUT listing pass axes (or
-  // the null axis itself — its failure is the status, not a verdict-fail row).
-  if (anyNull) return { status: 'failed', reason: 'a review agent failed', failures };
-  return { status: 'done', pass: failures.length === 0, passed, failures };
-}`;
 }
 
 /** Build the implement capsule source. Mirrors the original fan-out: all tasks
@@ -330,7 +236,7 @@ function reviewSource() {
     if (fix === null) return { status: 'blocked', reason: 'fix agent failed', reports };
     fixes = fix.structured?.fixes ?? [];
     // A fixer that could not repair every counterexample is an incomplete review,
-    // not a completed one — surface 'failed' (parity with plan-review / simplify),
+    // not a completed one — surface 'failed' (parity with simplify),
     // never a misleading 'done'.
     if (fix.structured?.status === 'failed') return { status: 'failed', clean: false, reports, fixes };
   }
@@ -459,27 +365,6 @@ function sourceOf(body) {
 }
 
 const capsules = [
-  {
-    file: 'plan-review',
-    skillDir: 'uniterra-plan',
-    name: 'plan-review',
-    description:
-      'Review plan documents (requirements / design / acceptance) in a single parallel pass with three review agents; the main agent applies any returned issues (and may re-run the review fresh).',
-    phases: ['plan-review'],
-    readOnly: false,
-    patterns: ['fan-out-and-synthesize'],
-    source: sourceOf(planReviewSource()),
-    inputSchema: {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        prd_dir: { type: 'string' },
-        design_dir: { type: 'string' },
-        acceptance_dir: { type: 'string' },
-      },
-      required: ['prd_dir', 'design_dir', 'acceptance_dir'],
-    },
-  },
   {
     file: 'implement',
     skillDir: 'uniterra-implement',
