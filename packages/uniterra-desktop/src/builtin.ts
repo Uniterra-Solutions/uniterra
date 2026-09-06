@@ -119,13 +119,13 @@ registerBuiltinPlugin({ kind: 'vendor', dir: 'dsh-shortcuts', package: 'dsh-shor
 // The dynamic workflow layer (@dsh-external/workflow): a KodaX-parity
 // multi-agent workflow engine that persists workflows as `.workflow.json`
 // capsules and exposes workflow_list / run_workflow / workflow_manage, so the
-// bundled pipeline skills invoke a workflow by NAME (run_workflow('plan-review',
+// bundled pipeline skills invoke a workflow by NAME (run_workflow('implement',
 // args)) instead of the model copying a large JS block into the native workflow
 // tool — the copy-failure failure mode. Vendored at the v0.1.3 tag (see
 // vendor/dsh-plugins/VENDOR.md); its peer ranges (^0.1.0-rc.5) are reported
 // unsatisfied (warn) against the pinned dsh 0.1.2-rc.1 pre-release family, so
 // it ships as a copy-based built-in (no pnpm install) and loads via
-// ctx.subagents + ctx.tools. The four pipeline capsules are provisioned from
+// ctx.subagents + ctx.tools. The three pipeline capsules are provisioned from
 // the skills package into the profile's workflow dir by ensureWorkflowCapsules.
 registerBuiltinPlugin({
   kind: 'vendor',
@@ -682,8 +682,8 @@ export function builtinSkillsDir(
 }
 
 /**
- * Provision the four persisted pipeline workflow capsules (plan-review /
- * implement / review / simplify) into the profile's dsh_workflow personal
+ * Provision the three persisted pipeline workflow capsules (implement / review /
+ * simplify) into the profile's dsh_workflow personal
  * directory (`$DSH_HOME/workflows`, the `personalDirectory` the
  * @dsh-external/workflow plugin scans). The capsules ride the bundled skills
  * package (`<skillsDir>/<skill>/workflows/*.workflow.json`); the desktop copies
