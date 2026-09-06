@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.1] — 2026-09-06
+
+### Changed
+
+- **The `uniterra-plan` skill no longer runs an automatic plan-document review** (`packages/uniterra-skills`, `src/skills/uniterra-plan/`). The planning phase now stops at the user-confirmed `prd.md` / `design.md` / `acceptance.md`: the three review-agent prompts (`prompts/requirement-list-review.md` / `design-review.md` / `acceptance-review.md`), the historical `scripts/review-workflow.md`, and the persisted `plan-review` workflow capsule (`workflows/plan-review.workflow.json`) were removed; `build-workflow-capsules.mjs` and its capsule contract / orchestration tests now cover only the three remaining pipeline workflows (`implement` / `review` / `simplify`). The skill steps, `AGENTS.md`, `README.md`, and the project docs were updated accordingly — review or simplify the implemented changes later with `uniterra-review` / `uniterra-simplify` instead.
+
 ## [0.16.0] — 2026-09-05
 
 ### Changed
