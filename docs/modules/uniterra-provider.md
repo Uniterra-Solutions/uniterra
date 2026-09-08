@@ -45,18 +45,18 @@ Source: `packages/uniterra-provider/src/`; tests `test/*.mjs`; build `scripts/bu
 
 ## Config
 
-| Field                  | Type / default                                                   | Notes                                                                                                                                                                      |
-| ---------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `baseURL`              | `string` (fallback `$UNITERRA_BASE_URL` → default)               | Gateway base incl. `/v1`                                                                                                                                                   |
-| `api`                  | `'chat-completions' \| 'responses'` (default `chat-completions`) | Default protocol for un-pinned models                                                                                                                                      |
-| `models`               | `UniterraCatalogModel[]`                                         | Advisory catalog; per-row `id`, `name`, `description`, `contextWindow`, `maxTokens`, `api` (**per-model protocol override**), `reasoningEfforts`, `defaultReasoningEffort` |
-| `modelExcludePatterns` | `string[]` (default `['embed','rerank','ranker']`)               | Substrings excluded from discovery                                                                                                                                         |
-| `defaultContextWindow` | `number` (default 128000)                                        | Fallback when the model has no exact value                                                                                                                                 |
-| `maxTokens`            | `number`?                                                        | Default per-request output cap                                                                                                                                             |
-| `streamIdleTimeoutMs`  | `number` (default 300000)                                        | Idle watchdog budget                                                                                                                                                       |
-| `proxy`                | `{ enabled, url }`                                               | Forward proxy for the models.dev download                                                                                                                                  |
-| `providerHints`        | `{ defaults, models }`                                           | models.dev match-shaping hints                                                                                                                                             |
-| `retryPolicy`          | schema                                                           | Provider-owned request retry policy                                                                                                                                        |
+| Field                  | Type / default                                                   | Notes                                                                                                                                                                                                                                            |
+| ---------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `baseURL`              | `string` (fallback `$UNITERRA_BASE_URL` → default)               | Gateway base incl. `/v1`                                                                                                                                                                                                                         |
+| `api`                  | `'chat-completions' \| 'responses'` (default `chat-completions`) | Default protocol for un-pinned models                                                                                                                                                                                                            |
+| `models`               | `UniterraCatalogModel[]`                                         | Advisory catalog; per-row `id`, `name`, `description`, `contextWindow`, `maxTokens`, `api` (**per-model protocol override**), `reasoningEfforts`, `defaultReasoningEffort`, `inputModalities` (**`('text' \| 'image')[]`, omitted = text-only**) |
+| `modelExcludePatterns` | `string[]` (default `['embed','rerank','ranker']`)               | Substrings excluded from discovery                                                                                                                                                                                                               |
+| `defaultContextWindow` | `number` (default 128000)                                        | Fallback when the model has no exact value                                                                                                                                                                                                       |
+| `maxTokens`            | `number`?                                                        | Default per-request output cap                                                                                                                                                                                                                   |
+| `streamIdleTimeoutMs`  | `number` (default 300000)                                        | Idle watchdog budget                                                                                                                                                                                                                             |
+| `proxy`                | `{ enabled, url }`                                               | Forward proxy for the models.dev download                                                                                                                                                                                                        |
+| `providerHints`        | `{ defaults, models }`                                           | models.dev match-shaping hints                                                                                                                                                                                                                   |
+| `retryPolicy`          | schema                                                           | Provider-owned request retry policy                                                                                                                                                                                                              |
 
 Protocol resolution: `protocolOf = models.find(id)?.api ?? connection.api` (`adapter.ts:342-345`).
 
@@ -64,22 +64,23 @@ Protocol resolution: `protocolOf = models.find(id)?.api ?? connection.api` (`ada
 
 1. Resolve facts per request: `config.options()`, API key via credentials seam (ref `uniterra`), abort-signal union, idle watchdog.
 2. Pick protocol by model (`protocolOf`).
-3. Serialize: `serializeResponses(options)` or `serializeChat(options)` → JSON body.
+3. Resolve images (only when a message carries one): collect every durable `attachmentId` (recursing into tool results), read each through the mounted attachment service (`readImageRequest`, 4 MP / 4 MiB budget), then serialize — `serializeResponses(options, images)` or `serializeChat(options, images)` → JSON body. An image with no attachment service mounted is refused (`UNSUPPORTED_CONTENT`), never silently dropped.
 4. HTTP POST `{baseURL}/chat/completions` or `{baseURL}/responses` (Bearer auth, `accept: text/event-stream`).
 5. Parse SSE (`parseSse`); Chat stops at `[DONE]`, Responses passes terminal events through.
 6. Translate back to harness `StreamChunk`s (block-start/delta/block-end/usage/finish).
 
 models.dev lookup is NOT in the request path — it is an on-demand RPC from the settings page: `/llm-uniterra` → `models-dev-params` → host downloads `https://models.dev/api.json` (via proxy if enabled) and maps per gateway id:
 
-| models.dev field                          | Used as                  |
-| ----------------------------------------- | ------------------------ |
-| `entry.limit.context`                     | context window           |
-| `entry.limit.output`                      | output tokens            |
-| `entry.reasoning_options` (type `effort`) | reasoning-effort choices |
+| models.dev field                          | Used as                                        |
+| ----------------------------------------- | ---------------------------------------------- |
+| `entry.limit.context`                     | context window                                 |
+| `entry.limit.output`                      | output tokens                                  |
+| `entry.reasoning_options` (type `effort`) | reasoning-effort choices                       |
+| `entry.modalities.input`                  | `inputModalities` (narrowed to `text`/`image`) |
 
 ## Settings Page
 
-Registered as `settings.section` slot (`id: 'uniterra'`, order 15). Provides: API-key input (credentials seam), gateway base URL, default protocol select, model catalog editor (per-model context window / maxTokens / protocol override / default reasoning effort), "Fetch models" (discovers via `GET /models`, adopt-selected merges without overwriting tuned rows), proxy config, and a "Update model info" models.dev panel (overwrite-existing or fill-blank-only). Locale: zh (primary) + en.
+Registered as `settings.section` slot (`id: 'uniterra'`, order 15). Provides: API-key input (credentials seam), gateway base URL, default protocol select, model catalog editor (per-model context window / maxTokens / protocol override / default reasoning effort / **vision toggle**), "Fetch models" (discovers via `GET /models`, adopt-selected merges without overwriting tuned rows), proxy config, and a "Update model info" models.dev panel (overwrite-existing or fill-blank-only). Locale: zh (primary) + en.
 
 ## Wire Invariants (tested)
 
@@ -92,7 +93,12 @@ Locked by `test/reasoning-preservation.test.mjs` (per-shape regressions + seeded
 - **Reasoning effort rides the wire verbatim**: the harness-selected effort (e.g. `low`/`high`/`max`) maps to `reasoning_effort` on Chat Completions and `reasoning: { effort }` on Responses — the settings-page effort selector actually reaches the gateway (locked by smoke tests). A model declaring no effort sends no effort field.
 - **Default effort is `high`, not the max rung**: when a catalog row omits `defaultReasoningEffort`, the adapter prefers `high` if the model declares it (the officially recommended default across DeepSeek/Anthropic — `max` is for measured wins), else falls back to the highest declared rung; an explicit catalog `defaultReasoningEffort` still wins. The settings-page dropdown mirrors the same preference.
 
-Other locked behaviors: empty tool output → `'(no output)'`; text-less turns send `""` never `null`; `stream_options.include_usage: true` / `store: false`; cache-hit tokens subtracted for disjoint `inputTokens`; image content rejected (`UNSUPPORTED_CONTENT`).
+Other locked behaviors: empty tool output → `'(no output)'`; text-less turns send `""` never `null`; `stream_options.include_usage: true` / `store: false`; cache-hit tokens subtracted for disjoint `inputTokens`.
+
+Locked by `test/image-modality.test.mjs` + `test/provider-recognition.test.mjs` (seeded properties + deterministic regressions):
+
+- **Declared modalities reach the model directory verbatim**: a catalog row's `inputModalities` is what `listModels`/`resolveModel` report, so dsh's image preflight stops projecting images to `textOnlyImageText` for a declared vision model; an omitted row (and an unknown model id) stays `['text']`, keeping the harness's deterministic text placeholder. Locked end-to-end through `ctx.llm.stream` (chat `image_url` data URL / responses `input_image` carry the exact bytes; text-only models carry no image part).
+- **The `llm-uniterra` section registers under every mount order**: the plugin attaches the section through `ctx.inject(['settings'], …)` + `installSection`, so the settings page finds it whether the settings provider mounts before or after the plugin (the real dsh boot order mounts it after) — and `installSection` hands the composition entry back when the provider detaches. An apply-time `ctx.get('settings')` read would silently drop the namespace (and every settings-page surface reading it).
 
 ## Build / Packaging
 
