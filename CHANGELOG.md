@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.2] — 2026-09-09
+
+### Fixed
+
+- **The `llm-uniterra` settings page could not load when dsh mounted the settings provider after the provider plugin** (`packages/uniterra-provider`, `src/index.ts`). The plugin read the settings service with a synchronous `ctx.get('settings')` at apply time, which resolves to `undefined` whenever the settings provider mounts later in the boot order (the real dsh boot order, confirmed against a live `web` profile): the namespace never registered, so the settings page's `llm-uniterra` section lookup and the model directory both came up empty. The section now attaches through `ctx.inject(['settings'], …)` + `installSection` — it registers under either mount order and hands the composition entry back when the provider detaches. Regression net: `test/provider-recognition.test.mjs` (mount-order property plus the exact late-mount deterministic case).
+- **Multimodal models behind an OpenAI-compatible gateway were not recognised as multimodal** (`packages/uniterra-provider`, `src/adapter.ts` / `src/serialize-chat.ts` / `src/serialize-response.ts` / `src/client/`). The catalog reported `inputModalities: ['text']` for every row, so dsh's image preflight replaced attachments with its text placeholder, and the serializers refused image blocks outright. Catalog rows now declare `inputModalities` (`['text', 'image']` marks a vision model; an omitted row stays text-only), models.dev matches fill it from `entry.modalities.input`, and the settings page gained a per-row vision toggle. A request carrying an image now resolves every durable attachment through the profile's attachment service (`readImageRequest`, 4 MP / 4 MiB budget) and serializes it as chat `image_url` data URLs or Responses `input_image` parts — tool-result images are lifted onto the following user message, and an image with no attachment service mounted is refused loudly instead of silently dropped. Regression net: `test/image-modality.test.mjs` (seeded properties over the model directory and the wire bytes, deterministic per-protocol cases plus the text-only projection).
+
 ## [0.16.1] — 2026-09-06
 
 ### Changed
