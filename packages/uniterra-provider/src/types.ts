@@ -7,11 +7,39 @@
  * @module @uniterra-solutions/uniterra-provider/types
  */
 
+import type { ContentBlock } from '@deepseek-ai/dsh-llm';
+
 // ── shared ─────────────────────────────────────────────────────────────────
 
 /** One non-2xx error body (OpenAI-compatible shape). */
 export interface WireError {
   error?: { message?: string; type?: string; code?: string };
+}
+
+/** Durable image reference as it arrives on a content block (structural subset). */
+export type UniterraImageRef = Extract<ContentBlock, { type: 'image' }>['attachment'];
+
+/** Request-version bytes for one durable image, as the attachment service returns them. */
+export interface UniterraRequestImage {
+  /** Encoded request bytes, already normalized and resized by the store. */
+  readonly data: Uint8Array;
+  /** Media type proven after request encoding. */
+  readonly mediaType: string;
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
+ * The slice of the harness attachment service this adapter reads. Structural,
+ * so the plugin carries no dependency on the attachment package: any mounted
+ * service whose `readImageRequest` matches works.
+ */
+export interface UniterraAttachmentReader {
+  readImageRequest(
+    ref: UniterraImageRef,
+    policy: { readonly maxPixels: number; readonly maxBytes: number },
+    signal?: AbortSignal,
+  ): Promise<UniterraRequestImage>;
 }
 
 /** `GET {baseURL}/models` response (OpenAI models.list shape). */
@@ -50,7 +78,7 @@ export interface ChatRequest {
 /** One entry of the request `messages` array, discriminated on `role`. */
 export type ChatMessage =
   | { role: 'system'; content: string }
-  | { role: 'user'; content: string }
+  | { role: 'user'; content: string | ChatUserContentPart[] }
   | {
       role: 'assistant';
       content: string;
@@ -58,6 +86,13 @@ export type ChatMessage =
       tool_calls?: ChatToolCall[];
     }
   | { role: 'tool'; tool_call_id: string; content: string };
+
+/**
+ * One user-message content part: text or an inline image data URL. Text-only
+ * messages keep the compact string form.
+ */
+export type ChatUserContentPart =
+  { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
 
 /** A completed tool call replayed on an assistant history message. */
 export interface ChatToolCall {
@@ -168,9 +203,11 @@ export type ResponsesInputItem =
       output: string;
     };
 
-/** Responses content blocks (text only — this adapter is text-only). */
+/** Responses content blocks: text plus inline images for image-capable models. */
 export type ResponsesContent =
-  { type: 'input_text'; text: string } | { type: 'output_text'; text: string };
+  | { type: 'input_text'; text: string }
+  | { type: 'output_text'; text: string }
+  | { type: 'input_image'; image_url: string };
 
 /** One entry of the request `tools` array. */
 export interface ResponsesTool {
@@ -322,7 +359,12 @@ export interface ModelsDevModel {
   limit?: { context?: number; output?: number };
   /** How the model takes reasoning control; `effort` carries the levels. */
   reasoning_options?: Array<{ type: string; values?: Array<string | null> }>;
+  /** Declared input/output modalities (models.dev `modalities`). */
+  modalities?: { input?: string[]; output?: string[] };
 }
+
+/** Input modality this adapter can serve; mirrors dsh's `ModelModality`. */
+export type WireInputModality = 'text' | 'image';
 
 /** One models.dev provider match for a gateway model id. */
 export interface ModelsDevMatch {
@@ -336,6 +378,8 @@ export interface ModelsDevMatch {
   maxTokens?: number;
   /** Supported reasoning-effort ids (`reasoning_options` type `effort`). */
   reasoningEfforts?: string[];
+  /** Declared input modalities, narrowed to the ones this adapter serves. */
+  inputModalities?: WireInputModality[];
   /** True when this match's provider is the model's official vendor. */
   official?: boolean;
 }

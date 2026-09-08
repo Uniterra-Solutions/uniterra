@@ -25,6 +25,7 @@ import {
   ReasoningEffortId,
 } from '@deepseek-ai/dsh-llm';
 import type {
+  ContentBlock,
   GenerateOptions,
   LlmDiscoveredModel,
   LlmModelDiscoveryRequest,
@@ -49,7 +50,11 @@ import type {
   ModelsDevParamsRequest,
   ModelsDevParamsResponse,
   ProviderHints,
+  UniterraAttachmentReader,
+  UniterraImageRef,
+  UniterraRequestImage,
   WireError,
+  WireInputModality,
   WireModelList,
 } from './types.ts';
 
@@ -80,6 +85,8 @@ export interface UniterraCatalogModel {
   reasoningEfforts?: string[];
   /** Preset default effort for this model; must be one of {@link reasoningEfforts}. */
   defaultReasoningEffort?: string;
+  /** Input modalities the gateway model accepts; omitted rows stay text-only. */
+  inputModalities?: WireInputModality[];
 }
 
 /** Validated connection facts for one operation. */
@@ -116,7 +123,12 @@ export interface UniterraAdapterOptions {
   resolveApiKey: (connection: UniterraConnectionOptions) => Promise<string>;
   /** Name the provider route that officially serves a model id, for models.dev arbitration. */
   officialProviderOf?: (modelId: string) => Promise<string | undefined>;
+  /** Resolve the profile's attachment service; absence rejects image input. */
+  resolveAttachments?: () => UniterraAttachmentReader | undefined;
 }
+
+/** Request image budget: 4 megapixels and 4 MiB before base64 expansion. */
+const REQUEST_IMAGE_POLICY = { maxPixels: 4_000_000, maxBytes: 4 * 1024 * 1024 } as const;
 
 /** Default maximum idle interval while an adapter stream read is outstanding. */
 export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300_000;
@@ -142,13 +154,18 @@ function modelsDevMatch(provider: string, entry: ModelsDevModel): ModelsDevMatch
         (value): value is string => typeof value === 'string' && value.length > 0,
       ),
     );
-  if (contextWindow === undefined && maxTokens === undefined) return undefined;
+  const inputModalities = (entry.modalities?.input ?? []).filter(
+    (value): value is WireInputModality => value === 'text' || value === 'image',
+  );
+  if (contextWindow === undefined && maxTokens === undefined && inputModalities.length === 0)
+    return undefined;
   return {
     provider,
     ...(entry.name !== undefined && entry.name.length > 0 ? { name: entry.name } : {}),
     ...(contextWindow !== undefined ? { contextWindow } : {}),
     ...(maxTokens !== undefined ? { maxTokens } : {}),
     ...(reasoningEfforts !== undefined && reasoningEfforts.length > 0 ? { reasoningEfforts } : {}),
+    ...(inputModalities.length > 0 ? { inputModalities } : {}),
   };
 }
 
@@ -247,8 +264,19 @@ function modelInfo(provider: string, model: UniterraCatalogModel): LlmModelInfo 
     id: model.id,
     name: model.name ?? model.id,
     ...(model.description === undefined ? {} : { description: model.description }),
-    inputModalities: ['text'],
+    inputModalities: model.inputModalities ?? ['text'],
   };
+}
+
+/** Collect every image reference in a block list, recursing into tool results. */
+function collectImageRefs(
+  blocks: readonly ContentBlock[],
+  out: Map<string, UniterraImageRef>,
+): void {
+  for (const block of blocks) {
+    if (block.type === 'image') out.set(block.attachment.attachmentId, block.attachment);
+    else if (block.type === 'tool-result') collectImageRefs(block.content, out);
+  }
 }
 
 /** Effort intensity ordering, strongest first; unknown ids rank lowest. */
@@ -628,6 +656,35 @@ export class UniterraAdapter extends LlmAdapter {
     }
   }
 
+  /**
+   * Resolve every durable image in the request into gateway-ready bytes.
+   * @returns one entry per attachment id, or undefined when no message carries an image.
+   * @throws LlmError when an image is present but the profile mounts no attachment service.
+   */
+  private async requestImages(
+    options: GenerateOptions,
+    signal: AbortSignal,
+  ): Promise<ReadonlyMap<string, UniterraRequestImage> | undefined> {
+    const refs = new Map<string, UniterraImageRef>();
+    for (const message of options.messages) collectImageRefs(message.content, refs);
+    if (refs.size === 0) return undefined;
+    const reader = this.config.resolveAttachments?.();
+    if (reader === undefined) {
+      throw new LlmError(
+        `${PKG}: image input requires the profile's attachment service`,
+        'UNSUPPORTED_CONTENT',
+      );
+    }
+    const images = new Map<string, UniterraRequestImage>();
+    for (const ref of refs.values()) {
+      images.set(
+        ref.attachmentId,
+        await reader.readImageRequest(ref, REQUEST_IMAGE_POLICY, signal),
+      );
+    }
+    return images;
+  }
+
   private async *request(
     options: GenerateOptions,
     signal: AbortSignal,
@@ -636,7 +693,11 @@ export class UniterraAdapter extends LlmAdapter {
     onComment: () => void,
   ): AsyncIterable<StreamChunk> {
     const protocol = protocolOf(connection, options.model);
-    const body = protocol === 'responses' ? serializeResponses(options) : serializeChat(options);
+    const images = await this.requestImages(options, signal);
+    const body =
+      protocol === 'responses'
+        ? serializeResponses(options, images)
+        : serializeChat(options, images);
     const payload = JSON.stringify(body);
     const headers = {
       authorization: `Bearer ${apiKey}`,

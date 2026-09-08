@@ -5,6 +5,9 @@
  * `rootDir: src/client` and cannot import across the directory boundary.
  */
 
+/** Input modality this adapter can serve; mirrors the host's `WireInputModality`. */
+export type WireInputModality = 'text' | 'image';
+
 /** One models.dev provider match for a gateway model id. */
 export interface ModelsDevMatch {
   /** models.dev provider id the entry lives under (e.g. `qwen`, `alibaba`). */
@@ -17,6 +20,8 @@ export interface ModelsDevMatch {
   maxTokens?: number;
   /** Supported reasoning-effort ids (`reasoning_options` type `effort`). */
   reasoningEfforts?: string[];
+  /** Declared input modalities, narrowed to the ones this adapter serves. */
+  inputModalities?: WireInputModality[];
   /** True when this match's provider is the model's official vendor. */
   official?: boolean;
 }

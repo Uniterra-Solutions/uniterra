@@ -274,11 +274,29 @@ async function* chatSse(payloads) {
     { type: 'function_call_output', call_id: 'c1', output: 'sunny' },
   ]);
 
-  // Image content is refused on both wire routes.
+  // Prepared images ride both wire routes; an unprepared image is refused
+  // rather than silently erased (the adapter always prepares what it sends).
+  const imageRef = {
+    attachmentId: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    mediaType: 'image/png',
+    bytes: 3,
+    width: 1,
+    height: 1,
+  };
   const imageMsg = {
     model: 'm1',
-    messages: [{ role: 'user', content: [{ type: 'image', image: 'x' }] }],
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'look' },
+          { type: 'image', attachment: imageRef },
+        ],
+      },
+    ],
   };
+  const handleText = (ref, width, height) =>
+    `Image ${ref.attachmentId}; request preview ${width}x${height}px. It may be resized or re-encoded; source dimensions, format, and byte size may differ.`;
   assert.throws(
     () => plugin.serializeChatRequest(imageMsg),
     (error) => error.code === 'UNSUPPORTED_CONTENT',
@@ -287,6 +305,34 @@ async function* chatSse(payloads) {
     () => plugin.serializeResponsesRequest(imageMsg),
     (error) => error.code === 'UNSUPPORTED_CONTENT',
   );
+  const prepared = new Map([
+    [
+      imageRef.attachmentId,
+      { data: Uint8Array.from([1, 2, 3]), mediaType: 'image/png', width: 1, height: 1 },
+    ],
+  ]);
+  const imageChat = plugin.serializeChatRequest(imageMsg, prepared);
+  assert.deepEqual(imageChat.messages, [
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'look' },
+        { type: 'text', text: handleText(imageRef, 1, 1) },
+        { type: 'image_url', image_url: { url: 'data:image/png;base64,AQID' } },
+      ],
+    },
+  ]);
+  const imageResponses = plugin.serializeResponsesRequest(imageMsg, prepared);
+  assert.deepEqual(imageResponses.input, [
+    {
+      role: 'user',
+      content: [
+        { type: 'input_text', text: 'look' },
+        { type: 'input_text', text: handleText(imageRef, 1, 1) },
+        { type: 'input_image', image_url: 'data:image/png;base64,AQID' },
+      ],
+    },
+  ]);
 }
 
 // ── Block E: dual-protocol SSE translation ──

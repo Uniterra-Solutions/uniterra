@@ -6,16 +6,32 @@
  * once any assistant message carries reasoning, every later tool-call message
  * must carry the field too, so a turn whose model answer had no reasoning
  * round-trips as the empty marker (other OpenAI-compatible upstreams ignore
- * the field). Core image blocks are rejected explicitly because this wire
- * route is text-only; unknown declaration-merged block types retain the
- * adapter's documented extension fallback.
+ * the field). Images ride the standard `image_url` content-part form with a
+ * data URL, each preceded by its model-facing handle; an image the request did
+ * not prepare is rejected explicitly rather than silently erased, and images
+ * lifted out of a tool result follow it on one user message. Unknown
+ * declaration-merged block types retain the adapter's documented extension
+ * fallback.
  *
  * @module @uniterra-solutions/uniterra-provider/serialize-chat
  */
 
-import { contentHasImage, LlmError } from '@deepseek-ai/dsh-llm';
+import { LlmError, requestImageHandleText } from '@deepseek-ai/dsh-llm';
 import type { ContentBlock, GenerateOptions, Message } from '@deepseek-ai/dsh-llm';
-import type { ChatMessage, ChatRequest, ChatTool } from './types.ts';
+import type {
+  ChatMessage,
+  ChatRequest,
+  ChatTool,
+  ChatUserContentPart,
+  UniterraImageRef,
+  UniterraRequestImage,
+} from './types.ts';
+
+/** Prepared request images, keyed by durable attachment id. */
+type RequestImages = ReadonlyMap<string, UniterraRequestImage>;
+
+/** Precedes the images lifted out of a tool result onto a following user message. */
+const TOOL_RESULT_IMAGE_TEXT = 'Attached image(s) from tool result:';
 
 /** Join the text blocks of a message (used for user/tool-result content). */
 function flattenText(blocks: ContentBlock[]): string {
@@ -23,16 +39,6 @@ function flattenText(blocks: ContentBlock[]): string {
     .filter((block) => block.type === 'text')
     .map((block) => block.text)
     .join('');
-}
-
-/** Reject core image content before any text-flattening path can silently erase it. */
-function assertTextOnly(blocks: ContentBlock[]): void {
-  if (contentHasImage(blocks)) {
-    throw new LlmError(
-      'The uniterra chat-completions adapter does not support image content.',
-      'UNSUPPORTED_CONTENT',
-    );
-  }
 }
 
 /**
@@ -69,40 +75,128 @@ function serializeAssistant(message: Message, sawReasoning: boolean): ChatMessag
   };
 }
 
+/** Resolve one durable image into its model-facing handle plus inline data URL. */
+function imageParts(
+  ref: UniterraImageRef,
+  images: RequestImages | undefined,
+): ChatUserContentPart[] {
+  const image = images?.get(ref.attachmentId);
+  if (image === undefined) {
+    throw new LlmError(
+      'The uniterra chat-completions adapter cannot send an image the request did not prepare.',
+      'UNSUPPORTED_CONTENT',
+    );
+  }
+  return [
+    { type: 'text', text: requestImageHandleText(ref, image) },
+    {
+      type: 'image_url',
+      image_url: {
+        url: `data:${image.mediaType};base64,${Buffer.from(image.data).toString('base64')}`,
+      },
+    },
+  ];
+}
+
+/** Convert user or nested tool-result blocks into ordered wire parts. */
+function contentParts(
+  blocks: readonly ContentBlock[],
+  images: RequestImages | undefined,
+): ChatUserContentPart[] {
+  const parts: ChatUserContentPart[] = [];
+  for (const block of blocks) {
+    switch (block.type) {
+      case 'text':
+        if (block.text.length > 0) parts.push({ type: 'text', text: block.text });
+        break;
+      case 'image':
+        parts.push(...imageParts(block.attachment, images));
+        break;
+      case 'tool-result':
+        parts.push(...contentParts(block.content, images));
+        break;
+      case 'reasoning':
+      case 'tool-call':
+        // Assistant-only vocabulary; never user input.
+        break;
+      default:
+        // Other merge-extensible blocks are not chat-completions input vocabulary.
+        break;
+    }
+  }
+  return parts;
+}
+
+/** Keep text-only user messages on the compact string wire form. */
+function userContent(parts: readonly ChatUserContentPart[]): string | ChatUserContentPart[] {
+  const text: string[] = [];
+  for (const part of parts) {
+    if (part.type !== 'text') return [...parts];
+    text.push(part.text);
+  }
+  return text.join('');
+}
+
 /**
  * Serialize the conversation. `tool-result` blocks become standalone
  * `{role: 'tool'}` messages; the harness puts each tool result in its own
  * user-role message, so a mixed user message contributes its text first and
- * its tool results as separate wire messages after.
+ * its tool results as separate wire messages after — with any images lifted
+ * out of the results onto one following user message, because a tool message
+ * carries text only.
+ * @param messages - the harness conversation, in order.
+ * @param images - prepared request images keyed by attachment id; absent rejects images.
+ * @returns the wire messages; order preserved, each tool result expanded into its own entry.
  */
-export function serializeMessages(messages: Message[]): ChatMessage[] {
+export function serializeMessages(messages: Message[], images?: RequestImages): ChatMessage[] {
   const wire: ChatMessage[] = [];
   let sawReasoning = false;
+  let pendingToolImages: ChatUserContentPart[] = [];
+  const flushToolImages = (): void => {
+    if (pendingToolImages.length === 0) return;
+    wire.push({
+      role: 'user',
+      content: [{ type: 'text', text: TOOL_RESULT_IMAGE_TEXT }, ...pendingToolImages],
+    });
+    pendingToolImages = [];
+  };
+
   for (const message of messages) {
-    assertTextOnly(message.content);
     if (message.role === 'system') {
+      flushToolImages();
       wire.push({ role: 'system', content: flattenText(message.content) });
       continue;
     }
     if (message.role === 'assistant') {
+      flushToolImages();
       wire.push(serializeAssistant(message, sawReasoning));
       if (message.content.some((block) => block.type === 'reasoning')) sawReasoning = true;
       continue;
     }
     const toolResults = message.content.filter((block) => block.type === 'tool-result');
-    const text = flattenText(message.content);
-    if (text.length > 0 || toolResults.length === 0) {
-      wire.push({ role: 'user', content: text });
+    const regular = message.content.filter((block) => block.type !== 'tool-result');
+    const content = userContent(contentParts(regular, images));
+    if (content.length > 0 || toolResults.length === 0) {
+      flushToolImages();
+      wire.push({ role: 'user', content });
     }
     for (const result of toolResults) {
+      const parts = contentParts(result.content, images);
+      const resultImages = parts.filter((part) => part.type !== 'text');
+      const text = parts
+        .filter((part) => part.type === 'text')
+        .map((part) => part.text)
+        .join('');
       wire.push({
         role: 'tool',
         tool_call_id: result.toolCallId,
         // Empty tool output still needs SOME content on the wire.
-        content: flattenText(result.content) || '(no output)',
+        content: text || '(no output)',
       });
+      pendingToolImages.push(...resultImages);
     }
   }
+  flushToolImages();
   return wire;
 }
 
@@ -111,14 +205,15 @@ export function serializeMessages(messages: Message[]): ChatMessage[] {
  * reporting on); optional fields are omitted rather than sent as null, so
  * upstream defaults apply.
  * @param options - the harness request (model, history, system, tools, sampling).
+ * @param images - prepared request images keyed by attachment id.
  * @returns the chat-completions request body.
  */
-export function serializeRequest(options: GenerateOptions): ChatRequest {
+export function serializeRequest(options: GenerateOptions, images?: RequestImages): ChatRequest {
   const messages: ChatMessage[] = [];
   if (options.system !== undefined) {
     messages.push({ role: 'system', content: options.system });
   }
-  messages.push(...serializeMessages(options.messages));
+  messages.push(...serializeMessages(options.messages, images));
 
   const tools: ChatTool[] | undefined = options.tools?.map((tool) => ({
     type: 'function',

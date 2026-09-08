@@ -37,7 +37,12 @@ import {
   PKG,
 } from './adapter.ts';
 import type { UniterraCatalogModel, UniterraConnectionOptions, GatewayApi } from './adapter.ts';
-import type { ProviderHints, ModelsDevParamsRequest } from './types.ts';
+import type {
+  ProviderHints,
+  ModelsDevParamsRequest,
+  UniterraAttachmentReader,
+  WireInputModality,
+} from './types.ts';
 import type { HostConnectionHandle } from '@deepseek-ai/dsh-client-connection';
 
 export {
@@ -104,6 +109,7 @@ export interface ProxyConfig {
 }
 
 const API_SCHEMA = z.string().pattern(/^(chat-completions|responses)$/) as unknown as z<GatewayApi>;
+const MODALITY_SCHEMA = z.string().pattern(/^(text|image)$/) as unknown as z<WireInputModality>;
 
 const catalogModel: z<UniterraCatalogModel> = z.object({
   id: z.string().required(),
@@ -114,6 +120,7 @@ const catalogModel: z<UniterraCatalogModel> = z.object({
   api: API_SCHEMA,
   reasoningEfforts: z.array(z.string()),
   defaultReasoningEffort: z.string(),
+  inputModalities: z.array(MODALITY_SCHEMA),
 });
 
 /** Default forward proxy: the conventional Clash port on loopback. */
@@ -173,6 +180,15 @@ function resolveModels(
     }
     if (seen.has(model.id)) throw new Error(`${PKG}: duplicate catalog model "${model.id}"`);
     seen.add(model.id);
+    // Widened to `string` on purpose: this guards config that reached the
+    // resolver without the schema (direct calls, hand-built compositions).
+    for (const modality of (model.inputModalities ?? []) as readonly string[]) {
+      if (modality !== 'text' && modality !== 'image') {
+        throw new Error(
+          `${PKG}: catalog model "${model.id}" declares unknown input modality "${modality}"`,
+        );
+      }
+    }
     for (const effort of model.reasoningEfforts ?? []) {
       if (effort.length === 0)
         throw new Error(`${PKG}: catalog model "${model.id}" has an empty reasoning effort`);
@@ -198,8 +214,20 @@ function resolveModels(
       ...(model.defaultReasoningEffort === undefined
         ? {}
         : { defaultReasoningEffort: model.defaultReasoningEffort }),
+      ...(model.inputModalities === undefined || model.inputModalities.length === 0
+        ? {}
+        : { inputModalities: model.inputModalities }),
     };
   });
+}
+
+/** Narrow the optional attachment service structurally; the plugin carries no attachment dependency. */
+function attachmentReaderOf(service: unknown): UniterraAttachmentReader | undefined {
+  if (typeof service !== 'object' || service === null) return undefined;
+  const candidate = service as { readImageRequest?: unknown };
+  return typeof candidate.readImageRequest === 'function'
+    ? (service as UniterraAttachmentReader)
+    : undefined;
 }
 
 /**
@@ -335,7 +363,13 @@ export function apply(ctx: Context, config: Config): void {
     return indexCache.byModel.get(modelId);
   };
 
-  const adapter = new UniterraAdapter({ options, resolveApiKey, officialProviderOf });
+  const adapter = new UniterraAdapter({
+    options,
+    resolveApiKey,
+    officialProviderOf,
+    resolveAttachments: (): UniterraAttachmentReader | undefined =>
+      attachmentReaderOf(ctx.get('attachments')),
+  });
   ctx.llm.registerConfigurableProviders([
     {
       provider: PROVIDER,

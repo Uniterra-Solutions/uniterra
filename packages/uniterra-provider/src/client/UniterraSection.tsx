@@ -391,6 +391,12 @@ export function UniterraSection(props: UniterraSectionProps): ReactNode {
             efforts.includes(model.defaultReasoningEffort)
               ? model.defaultReasoningEffort
               : undefined;
+          const modalities = Array.isArray(model.inputModalities)
+            ? model.inputModalities.filter(
+                (modality): modality is 'text' | 'image' =>
+                  modality === 'text' || modality === 'image',
+              )
+            : [];
           const modelApi =
             model.api === 'responses' || model.api === 'chat-completions' ? model.api : undefined;
           return {
@@ -401,6 +407,7 @@ export function UniterraSection(props: UniterraSectionProps): ReactNode {
             ...(modelApi !== undefined ? { api: modelApi } : {}),
             ...(efforts.length > 0 ? { reasoningEfforts: efforts } : {}),
             ...(preset !== undefined ? { defaultReasoningEffort: preset } : {}),
+            ...(modalities.length > 0 ? { inputModalities: modalities } : {}),
           };
         }),
       });
@@ -565,14 +572,18 @@ export function UniterraSection(props: UniterraSectionProps): ReactNode {
       const nextContext = match.contextWindow;
       const nextMax = match.maxTokens;
       const nextEfforts = match.reasoningEfforts;
+      const nextModalities = match.inputModalities;
       const currentContext = numberOf(model, 'contextWindow');
       const currentMax = numberOf(model, 'maxTokens');
       const hasEfforts = Array.isArray(model.reasoningEfforts);
+      const hasModalities = Array.isArray(model.inputModalities);
       const takeContext = nextContext !== undefined && (overwrite || currentContext === undefined);
       const takeMax = nextMax !== undefined && (overwrite || currentMax === undefined);
       const takeEfforts =
         nextEfforts !== undefined && nextEfforts.length > 0 && (overwrite || !hasEfforts);
-      if (!takeContext && !takeMax && !takeEfforts) return model;
+      const takeModalities =
+        nextModalities !== undefined && nextModalities.length > 0 && (overwrite || !hasModalities);
+      if (!takeContext && !takeMax && !takeEfforts && !takeModalities) return model;
       touched += 1;
       // Each `take*` gate already narrows its value to defined (they are all
       // `x !== undefined && …`), so the object spreads below skip the second
@@ -582,6 +593,7 @@ export function UniterraSection(props: UniterraSectionProps): ReactNode {
         ...(takeContext ? { contextWindow: nextContext } : {}),
         ...(takeMax ? { maxTokens: nextMax } : {}),
         ...(takeEfforts ? { reasoningEfforts: nextEfforts } : {}),
+        ...(takeModalities ? { inputModalities: nextModalities } : {}),
       };
     });
     setModels(next);
@@ -591,7 +603,10 @@ export function UniterraSection(props: UniterraSectionProps): ReactNode {
   };
 
   /** Replace one row, dropping optional fields the edit emptied. */
-  const patch = (index: number, next: Record<string, string | number | undefined>): void => {
+  const patch = (
+    index: number,
+    next: Record<string, string | number | string[] | undefined>,
+  ): void => {
     setModels((current) =>
       current.map((model, at) => {
         if (at !== index) return model;
@@ -916,6 +931,22 @@ export function UniterraSection(props: UniterraSectionProps): ReactNode {
                     <option value="responses">{t('apiResponses')}</option>
                   </select>
                 </label>
+                <label className="uniterra-modelfield">
+                  <span className="uniterra-modelfield-label">{t('modelImageInput')}</span>
+                  <input
+                    type="checkbox"
+                    checked={
+                      Array.isArray(model.inputModalities) &&
+                      model.inputModalities.includes('image')
+                    }
+                    aria-label={`${t('modelImageInput')} ${String(index + 1)}`}
+                    onChange={(event) => {
+                      patch(index, {
+                        inputModalities: event.target.checked ? ['text', 'image'] : ['text'],
+                      });
+                    }}
+                  />
+                </label>
                 {Array.isArray(model.reasoningEfforts) &&
                 model.reasoningEfforts.every(
                   (effort): effort is string => typeof effort === 'string',
@@ -1032,7 +1063,7 @@ export function UniterraSection(props: UniterraSectionProps): ReactNode {
                 <div key={entry.id} className="uniterra-params-row">
                   <span className="uniterra-params-id">{entry.id}</span>
                   <span className="uniterra-params-values">
-                    {`${match.official === true ? `${t('officialMark')} · ` : ''}${match.provider} · ${t('contextWindow')} ${String(match.contextWindow ?? '—')} / ${t('maxTokens')} ${String(match.maxTokens ?? '—')}${match.reasoningEfforts !== undefined && match.reasoningEfforts.length > 0 ? ` · ${t('modelReasoning')}: ${match.reasoningEfforts.join('/')}` : ''}`}
+                    {`${match.official === true ? `${t('officialMark')} · ` : ''}${match.provider} · ${t('contextWindow')} ${String(match.contextWindow ?? '—')} / ${t('maxTokens')} ${String(match.maxTokens ?? '—')}${match.reasoningEfforts !== undefined && match.reasoningEfforts.length > 0 ? ` · ${t('modelReasoning')}: ${match.reasoningEfforts.join('/')}` : ''}${match.inputModalities?.includes('image') === true ? ` · ${t('modelImageInput')}` : ''}`}
                   </span>
                   <span />
                 </div>
@@ -1056,7 +1087,7 @@ export function UniterraSection(props: UniterraSectionProps): ReactNode {
                 >
                   {entry.matches.map((candidate, at) => (
                     <option key={candidate.provider} value={String(at)}>
-                      {`${candidate.official === true ? `${t('officialMark')} · ` : ''}${candidate.provider}: ${t('contextWindow')} ${String(candidate.contextWindow ?? '—')} / ${t('maxTokens')} ${String(candidate.maxTokens ?? '—')}${candidate.reasoningEfforts !== undefined && candidate.reasoningEfforts.length > 0 ? ` · ${t('modelReasoning')}: ${candidate.reasoningEfforts.join('/')}` : ''}`}
+                      {`${candidate.official === true ? `${t('officialMark')} · ` : ''}${candidate.provider}: ${t('contextWindow')} ${String(candidate.contextWindow ?? '—')} / ${t('maxTokens')} ${String(candidate.maxTokens ?? '—')}${candidate.reasoningEfforts !== undefined && candidate.reasoningEfforts.length > 0 ? ` · ${t('modelReasoning')}: ${candidate.reasoningEfforts.join('/')}` : ''}${candidate.inputModalities?.includes('image') === true ? ` · ${t('modelImageInput')}` : ''}`}
                     </option>
                   ))}
                 </select>

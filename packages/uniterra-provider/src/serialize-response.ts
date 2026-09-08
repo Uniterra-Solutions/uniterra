@@ -13,19 +13,29 @@
  * EMPTY reasoning item is rejected. A turn whose model answer had no (or
  * empty) reasoning therefore carries the conversation's most recent actual
  * chain of thought forward, so the continuation request stays valid.
- * Core image blocks are rejected because this wire route is text-only.
+ * Images ride `input_image` parts with a data URL, each preceded by its
+ * model-facing handle; an image the request did not prepare is rejected
+ * explicitly rather than silently erased.
  *
  * @module @uniterra-solutions/uniterra-provider/serialize-response
  */
 
-import { contentHasImage, LlmError } from '@deepseek-ai/dsh-llm';
+import { LlmError, requestImageHandleText } from '@deepseek-ai/dsh-llm';
 import type { ContentBlock, GenerateOptions, Message } from '@deepseek-ai/dsh-llm';
 import type {
   ResponsesContent,
   ResponsesInputItem,
   ResponsesRequest,
   ResponsesTool,
+  UniterraImageRef,
+  UniterraRequestImage,
 } from './types.ts';
+
+/** Prepared request images, keyed by durable attachment id. */
+type RequestImages = ReadonlyMap<string, UniterraRequestImage>;
+
+/** Precedes the images lifted out of a tool result onto a following user message. */
+const TOOL_RESULT_IMAGE_TEXT = 'Attached image(s) from tool result:';
 
 /** Join the text blocks of a message (used for user/tool-result content). */
 function flattenText(blocks: ContentBlock[]): string {
@@ -35,33 +45,85 @@ function flattenText(blocks: ContentBlock[]): string {
     .join('');
 }
 
-/** Reject core image content before any text-flattening path can silently erase it. */
-function assertTextOnly(blocks: ContentBlock[]): void {
-  if (contentHasImage(blocks)) {
-    throw new LlmError(
-      'The uniterra responses adapter does not support image content.',
-      'UNSUPPORTED_CONTENT',
-    );
-  }
-}
-
 /** Wrap plain text as the protocol's `input_text`/`output_text` content. */
 function textContent(text: string, kind: 'input_text' | 'output_text'): ResponsesContent[] {
   return text.length > 0 ? [{ type: kind, text }] : [];
 }
 
+/** Resolve one durable image into its model-facing handle plus inline image part. */
+function imageParts(ref: UniterraImageRef, images: RequestImages | undefined): ResponsesContent[] {
+  const image = images?.get(ref.attachmentId);
+  if (image === undefined) {
+    throw new LlmError(
+      'The uniterra responses adapter cannot send an image the request did not prepare.',
+      'UNSUPPORTED_CONTENT',
+    );
+  }
+  return [
+    { type: 'input_text', text: requestImageHandleText(ref, image) },
+    {
+      type: 'input_image',
+      image_url: `data:${image.mediaType};base64,${Buffer.from(image.data).toString('base64')}`,
+    },
+  ];
+}
+
+/** Convert user or nested tool-result blocks into ordered `input_text`/`input_image` parts. */
+function contentParts(
+  blocks: readonly ContentBlock[],
+  images: RequestImages | undefined,
+): ResponsesContent[] {
+  const parts: ResponsesContent[] = [];
+  for (const block of blocks) {
+    switch (block.type) {
+      case 'text':
+        if (block.text.length > 0) parts.push({ type: 'input_text', text: block.text });
+        break;
+      case 'image':
+        parts.push(...imageParts(block.attachment, images));
+        break;
+      case 'tool-result':
+        parts.push(...contentParts(block.content, images));
+        break;
+      case 'reasoning':
+      case 'tool-call':
+        // Assistant-only vocabulary; never user input.
+        break;
+      default:
+        // Other merge-extensible blocks are not Responses input vocabulary.
+        break;
+    }
+  }
+  return parts;
+}
+
 /**
  * Serialize the conversation into `input` items. Message roles map directly;
  * assistant tool calls and their matching results become function_call /
- * function_call_output item pairs.
+ * function_call_output item pairs — with any images lifted out of the results
+ * onto one following user message, because a function_call_output carries
+ * text only.
+ * @param messages - the harness conversation, in order.
+ * @param images - prepared request images keyed by attachment id; absent rejects images.
+ * @returns the ordered input items.
  */
-export function serializeInput(messages: Message[]): ResponsesInputItem[] {
+export function serializeInput(messages: Message[], images?: RequestImages): ResponsesInputItem[] {
   const input: ResponsesInputItem[] = [];
   let sawReasoning = false;
   let lastReasoning = '';
+  let pendingToolImages: ResponsesContent[] = [];
+  const flushToolImages = (): void => {
+    if (pendingToolImages.length === 0) return;
+    input.push({
+      role: 'user',
+      content: [{ type: 'input_text', text: TOOL_RESULT_IMAGE_TEXT }, ...pendingToolImages],
+    });
+    pendingToolImages = [];
+  };
+
   for (const message of messages) {
-    assertTextOnly(message.content);
     if (message.role === 'system') {
+      flushToolImages();
       input.push({
         role: 'system',
         content: textContent(flattenText(message.content), 'input_text'),
@@ -69,6 +131,7 @@ export function serializeInput(messages: Message[]): ResponsesInputItem[] {
       continue;
     }
     if (message.role === 'assistant') {
+      flushToolImages();
       const reasoningBlocks = message.content.filter((block) => block.type === 'reasoning');
       const reasoning = reasoningBlocks.map((block) => block.text).join('');
       if (reasoning.length > 0) lastReasoning = reasoning;
@@ -115,20 +178,30 @@ export function serializeInput(messages: Message[]): ResponsesInputItem[] {
       }
       continue;
     }
-    // user role: text rides the message; tool results become output items.
-    const text = flattenText(message.content);
+    // user role: text and images ride the message; tool results become output items.
     const toolResults = message.content.filter((block) => block.type === 'tool-result');
-    if (text.length > 0) {
-      input.push({ role: 'user', content: textContent(text, 'input_text') });
+    const regular = message.content.filter((block) => block.type !== 'tool-result');
+    const content = contentParts(regular, images);
+    if (content.length > 0 || toolResults.length === 0) {
+      flushToolImages();
+      input.push({ role: 'user', content });
     }
     for (const result of toolResults) {
+      const parts = contentParts(result.content, images);
+      const resultImages = parts.filter((part) => part.type !== 'input_text');
+      const text = parts
+        .filter((part) => part.type === 'input_text')
+        .map((part) => part.text)
+        .join('');
       input.push({
         type: 'function_call_output',
         call_id: result.toolCallId,
-        output: flattenText(result.content) || '(no output)',
+        output: text || '(no output)',
       });
+      pendingToolImages.push(...resultImages);
     }
   }
+  flushToolImages();
   return input;
 }
 
@@ -136,14 +209,18 @@ export function serializeInput(messages: Message[]): ResponsesInputItem[] {
  * Build the full wire request. Always streaming; optional fields are omitted
  * rather than sent as null, so upstream defaults apply.
  * @param options - the harness request (model, history, system, tools, sampling).
+ * @param images - prepared request images keyed by attachment id.
  * @returns the responses request body.
  */
-export function serializeRequest(options: GenerateOptions): ResponsesRequest {
+export function serializeRequest(
+  options: GenerateOptions,
+  images?: RequestImages,
+): ResponsesRequest {
   const input: ResponsesInputItem[] = [];
   if (options.system !== undefined && options.system.length > 0) {
     input.push({ role: 'system', content: textContent(options.system, 'input_text') });
   }
-  input.push(...serializeInput(options.messages));
+  input.push(...serializeInput(options.messages, images));
 
   const tools: ResponsesTool[] | undefined = options.tools?.map((tool) => ({
     type: 'function',
