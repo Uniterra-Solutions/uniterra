@@ -396,21 +396,24 @@ export function apply(ctx: Context, config: Config): void {
   // composition config (defaults -> config base -> user section) and read the
   // resolved value per request. The settings seam is OPTIONAL (like
   // credentials): without a provider the plugin runs on its composition config
-  // alone. Accessed through ctx.get (not the proxy property) so an absent seam
-  // resolves to undefined instead of tripping cordis' strict inject gate. The
-  // scope's validate refuses writes the adapter could not act on; the watch
-  // re-registers the adapter when the retry policy changes.
-  const settings = ctx.get('settings');
-  if (settings !== undefined) {
-    const scope = settings.register(NS, Config, {
-      base: config,
+  // alone. The section attaches through ctx.inject so it registers whether the
+  // settings provider is already mounted or arrives later in boot order —
+  // reading ctx.get at apply time drops the namespace (and every settings-page
+  // surface that reads it) whenever the provider mounts after this plugin —
+  // and installSection hands the composition entry back when the provider
+  // detaches. Its validate refuses writes the adapter could not act on;
+  // onChange re-registers the adapter when the retry policy changes.
+  ctx.inject(['settings'], (settingsCtx) => {
+    settingsCtx.settings.installSection(ctx, NS, Config, config, {
       validate: (value) => {
         resolveAdapterOptions(value, launchEnvironmentOf(ctx));
       },
+      setSource: (source) => {
+        current = source;
+      },
+      onChange: () => {
+        ensureRegistrationFacts();
+      },
     });
-    current = (): Config => scope.get();
-    scope.watch((): void => {
-      ensureRegistrationFacts();
-    });
-  }
+  });
 }
