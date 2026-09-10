@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.3] — 2026-09-10
+
+### Fixed
+
+- **DeepSeek rejected the continuation of any tool-call turn whose answer carried no reasoning** (`packages/uniterra-provider`, `src/serialize-chat.ts` / `src/serialize-response.ts`). Both serializers gated the thinking-mode passback on "reasoning appeared somewhere earlier in the conversation" (`sawReasoning`), so the FIRST tool-call turn — and every turn before the model produced its first chain of thought — replayed a call the gateway could not recognize: Chat omitted `reasoning_content`, Responses omitted the `reasoning` item, and the next request failed with "The `reasoning_content` in the thinking mode must be passed back to the API". Chat now carries the field on EVERY tool-call turn (a reasoningless turn round-trips as the empty marker `""`) and Responses emits a `reasoning` item before every tool-call turn — the turn's own reasoning, else the conversation's most recent real chain of thought, else a single-space placeholder (an EMPTY reasoning item is rejected too). Regression net: `test/reasoning-preservation.test.mjs` (deterministic agent-loop cases for both directions plus the seeded serialize properties).
+- **Responses tool calls were replayed under an id the gateway never minted** (`packages/uniterra-provider`, `src/translate-response.ts`). The translator keyed a translated `function_call` on the per-response item id, while DeepSeek's Responses API validates a thinking-mode continuation against the id it minted itself (`call_id`) — so replaying the item id forced a reasoning passback on turns whose answer produced none. The translator now adopts the upstream `call_id` (the bare item id is only the fallback for gateways that omit it), and the done/terminal item is authoritative for the id, refreshing a block that already streamed from deltas. Regression net: `test/reasoning-preservation.test.mjs` (adoption, fallback, and translate → serialize round-trip cases plus a seeded per-shape property) and the smoke wire assertions.
+- Existing profiles pick both fixes up on their next launch without a version bump: the desktop's `copyBuiltinsStale()` compares the installed copy against the source by `package.json` version AND the shared-file content fingerprint, so the same-version provider bundle is re-provisioned.
+
+### Changed
+
+- **Docs and specs synced with the code** (`docs/`, `README.md`, `AGENTS.md`). The provider README + module doc now state the passback rule as implemented (every tool-call turn) and the call-id adoption, and the module doc gained the matching maintenance rule; `docs/testing.md` and `AGENTS.md` mirror what the suites lock, including the corrected built-ins staleness rule (version AND shared-file content identity — the text claimed workspace copies are compared by version alone). The built-in inventory was resynced with the registry: `dsh-notifier` is retired (`README.md`, `docs/tech-stack.md`, `docs/modules/vendor-plugins.md`), `dsh-git-worktree` and the vendored `@dsh-external/workflow` layer are listed, the npm built-in count is 9, and the README quick start no longer names the pre-rename Windows install path (`%LOCALAPPDATA%\Programs\cardo` → `\Uniterra`). The retired `dsh-notifier` entry also left the root `pnpm-workspace.yaml` `minimumReleaseAgeExclude`, and four test files were restored to Prettier compliance.
+
 ## [0.16.2] — 2026-09-09
 
 ### Fixed
