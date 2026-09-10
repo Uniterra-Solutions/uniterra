@@ -253,7 +253,9 @@ async function* chatSse(payloads) {
   const responsesEffort = plugin.serializeResponsesRequest({ ...base, reasoningEffort: 'high' });
   assert.deepEqual(responsesEffort.reasoning, { effort: 'high' });
 
-  // Tool-call turns serialize to function_call items in the Responses input.
+  // Tool-call turns serialize to function_call items in the Responses input —
+  // each introduced by a reasoning item (here the placeholder, since no chain
+  // of thought exists yet; the gateway rejects an unreasoned continuation).
   const toolTurn = plugin.serializeResponsesRequest({
     model: 'm1',
     messages: [
@@ -270,6 +272,12 @@ async function* chatSse(payloads) {
     ],
   });
   assert.deepEqual(toolTurn.input, [
+    {
+      type: 'reasoning',
+      id: 'reasoning_0',
+      content: [{ type: 'reasoning_text', text: ' ' }],
+      summary: [{ type: 'summary_text', text: ' ' }],
+    },
     { type: 'function_call', call_id: 'c1', name: 'get_weather', arguments: '{"city":"x"}' },
     { type: 'function_call_output', call_id: 'c1', output: 'sunny' },
   ]);
@@ -426,6 +434,18 @@ async function* chatSse(payloads) {
           delta: 'Hello',
         });
         yield JSON.stringify({
+          type: 'response.output_item.added',
+          output_index: 2,
+          item: {
+            type: 'function_call',
+            id: 'fc1',
+            status: 'in_progress',
+            call_id: 'call_00_smoke123',
+            name: 'run_code',
+            arguments: '',
+          },
+        });
+        yield JSON.stringify({
           type: 'response.function_call_arguments.delta',
           item_id: 'fc1',
           output_index: 2,
@@ -486,7 +506,8 @@ async function* chatSse(payloads) {
   const respTool = responsesChunks.find(
     (c) => c.type === 'block-end' && c.block.type === 'tool-call',
   );
-  assert.equal(respTool.block.name, '');
+  assert.equal(respTool.block.id, 'call_00_smoke123');
+  assert.equal(respTool.block.name, 'run_code');
   assert.equal(respTool.block.arguments, '{"a":1}');
   const respFinish = responsesChunks.find((c) => c.type === 'finish');
   assert.deepEqual(respFinish.reason, { kind: 'stop' });

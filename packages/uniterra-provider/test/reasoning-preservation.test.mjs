@@ -488,8 +488,168 @@ test('responses: buffered function_call arriving only in response.completed is p
   const toolBlock = chunks.find(
     (chunk) => chunk.type === 'block-end' && chunk.block.type === 'tool-call',
   );
+  assert.equal(toolBlock.block.id, 'call_1');
   assert.equal(toolBlock.block.name, 'get_weather');
   assert.equal(toolBlock.block.arguments, '{"city":"x"}');
+});
+
+test('agent-loop: Responses translation adopts the upstream call_id as the tool-call id', async () => {
+  // The replayed function_call.call_id must be the id the gateway minted — its
+  // own ids ride thinking-mode continuations alone, while a foreign id (the
+  // per-response item UUID) forces a reasoning passback; the item id is only
+  // the fallback for gateways that omit `call_id`.
+  const chunks = await collect(
+    translateResponses(
+      (async function* () {
+        yield JSON.stringify({
+          type: 'response.output_item.added',
+          output_index: 2,
+          item: {
+            type: 'function_call',
+            id: 'fc_item_1',
+            status: 'in_progress',
+            call_id: 'call_00_TEST1234567890',
+            name: 'f',
+            arguments: '',
+          },
+        });
+        yield JSON.stringify({
+          type: 'response.function_call_arguments.delta',
+          item_id: 'fc_item_1',
+          output_index: 2,
+          delta: '{"a":',
+        });
+        yield JSON.stringify({
+          type: 'response.function_call_arguments.delta',
+          item_id: 'fc_item_1',
+          output_index: 2,
+          delta: '1}',
+        });
+        yield JSON.stringify({
+          type: 'response.function_call_arguments.done',
+          item_id: 'fc_item_1',
+          output_index: 2,
+          arguments: '{"a":1}',
+        });
+        yield JSON.stringify({
+          type: 'response.completed',
+          response: { id: 'r1', status: 'completed', output: [] },
+        });
+      })(),
+    ),
+  );
+  assert.deepEqual(
+    chunks.filter((chunk) => chunk.type === 'tool-call-delta').map((chunk) => chunk.id),
+    ['call_00_TEST1234567890', 'call_00_TEST1234567890'],
+  );
+  const toolBlock = chunks.find(
+    (chunk) => chunk.type === 'block-end' && chunk.block.type === 'tool-call',
+  );
+  assert.equal(toolBlock.block.id, 'call_00_TEST1234567890');
+  assert.equal(toolBlock.block.name, 'f');
+  assert.equal(toolBlock.block.arguments, '{"a":1}');
+});
+
+test('agent-loop: Responses translation falls back to the item id when call_id is absent', async () => {
+  const chunks = await collect(
+    translateResponses(
+      (async function* () {
+        yield JSON.stringify({
+          type: 'response.function_call_arguments.delta',
+          item_id: 'fc_item_2',
+          output_index: 0,
+          delta: '{}',
+        });
+        yield JSON.stringify({
+          type: 'response.function_call_arguments.done',
+          item_id: 'fc_item_2',
+          output_index: 0,
+          arguments: '{}',
+        });
+        yield JSON.stringify({
+          type: 'response.completed',
+          response: { id: 'r1', status: 'completed', output: [] },
+        });
+      })(),
+    ),
+  );
+  const toolBlock = chunks.find(
+    (chunk) => chunk.type === 'block-end' && chunk.block.type === 'tool-call',
+  );
+  assert.equal(toolBlock.block.id, 'fc_item_2');
+});
+
+test('agent-loop: Responses tool-call ids survive the translate → serialize round trip', async () => {
+  // The production chain: the gateway streams a function_call whose item id is
+  // a per-response UUID and whose call_id is what the gateway mints; the
+  // harness stores the translated block and replays it on the next request.
+  // The replayed function_call/function_call_output must carry the gateway's
+  // own call_id — a foreign id demands a reasoning passback instead.
+  const chunks = await collect(
+    translateResponses(
+      (async function* () {
+        yield JSON.stringify({
+          type: 'response.output_item.added',
+          output_index: 0,
+          item: {
+            type: 'function_call',
+            id: 'fc_item_3',
+            status: 'in_progress',
+            call_id: 'call_00_ROUNDTRIP',
+            name: 'f',
+            arguments: '',
+          },
+        });
+        yield JSON.stringify({
+          type: 'response.function_call_arguments.delta',
+          item_id: 'fc_item_3',
+          output_index: 0,
+          delta: '{}',
+        });
+        yield JSON.stringify({
+          type: 'response.output_item.done',
+          output_index: 0,
+          item: {
+            type: 'function_call',
+            id: 'fc_item_3',
+            status: 'completed',
+            call_id: 'call_00_ROUNDTRIP',
+            name: 'f',
+            arguments: '{}',
+          },
+        });
+        yield JSON.stringify({
+          type: 'response.completed',
+          response: { id: 'r1', status: 'completed', output: [] },
+        });
+      })(),
+    ),
+  );
+  const block = chunks.find(
+    (chunk) => chunk.type === 'block-end' && chunk.block.type === 'tool-call',
+  ).block;
+  const wire = serializeResponsesRequest({
+    model: 'm1',
+    messages: [
+      { role: 'assistant', content: [block] },
+      {
+        role: 'user',
+        content: [
+          { type: 'tool-result', toolCallId: block.id, content: [{ type: 'text', text: 'ok' }] },
+        ],
+      },
+    ],
+  });
+  assert.deepEqual(wire.input, [
+    {
+      type: 'reasoning',
+      id: 'reasoning_0',
+      content: [{ type: 'reasoning_text', text: ' ' }],
+      summary: [{ type: 'summary_text', text: ' ' }],
+    },
+    { type: 'function_call', call_id: 'call_00_ROUNDTRIP', name: 'f', arguments: '{}' },
+    { type: 'function_call_output', call_id: 'call_00_ROUNDTRIP', output: 'ok' },
+  ]);
 });
 
 // ── Agent-loop round-trip: history serialization ───────────────────────────
@@ -722,6 +882,172 @@ test('agent-loop: Responses serialization carries reasoning forward on reasoning
   ]);
 });
 
+test('agent-loop: Responses serialization carries a placeholder chain of thought onto a tool-call turn before any reasoning', () => {
+  // A first-turn tool call whose answer produced no reasoning still needs a
+  // non-empty reasoning item: DeepSeek's Responses API rejects the
+  // continuation of any tool-call turn without reasoning_text, and when no
+  // chain of thought exists yet the placeholder keeps the continuation valid.
+  const wire = serializeResponsesRequest({
+    model: 'm1',
+    messages: [
+      { role: 'user', content: [{ type: 'text', text: 'solve' }] },
+      {
+        role: 'assistant',
+        content: [
+          { type: 'text', text: 'starting' },
+          { type: 'tool-call', id: 'c1', name: 'f', arguments: '{}' },
+        ],
+      },
+      {
+        role: 'user',
+        content: [
+          { type: 'tool-result', toolCallId: 'c1', content: [{ type: 'text', text: 'ok' }] },
+        ],
+      },
+    ],
+  });
+  assert.deepEqual(wire.input, [
+    { role: 'user', content: [{ type: 'input_text', text: 'solve' }] },
+    {
+      type: 'reasoning',
+      id: 'reasoning_1',
+      content: [{ type: 'reasoning_text', text: ' ' }],
+      summary: [{ type: 'summary_text', text: ' ' }],
+    },
+    { type: 'function_call', call_id: 'c1', name: 'f', arguments: '{}' },
+    { type: 'function_call_output', call_id: 'c1', output: 'ok' },
+  ]);
+});
+
+test('agent-loop: Chat serialization carries the empty reasoning marker on a tool-call turn before any reasoning', () => {
+  // DeepSeek's chat thinking mode rejects the continuation of a tool-call turn
+  // whose replayed call id it cannot recognize without `reasoning_content` —
+  // the empty marker satisfies it (and other gateways ignore the field).
+  const wire = serializeChatRequest({
+    model: 'm1',
+    messages: [
+      {
+        role: 'assistant',
+        content: [
+          { type: 'text', text: 'starting' },
+          { type: 'tool-call', id: 'c1', name: 'f', arguments: '{}' },
+        ],
+      },
+      {
+        role: 'user',
+        content: [
+          { type: 'tool-result', toolCallId: 'c1', content: [{ type: 'text', text: 'ok' }] },
+        ],
+      },
+    ],
+  });
+  assert.deepEqual(wire.messages, [
+    {
+      role: 'assistant',
+      content: 'starting',
+      reasoning_content: '',
+      tool_calls: [{ id: 'c1', type: 'function', function: { name: 'f', arguments: '{}' } }],
+    },
+    { role: 'tool', tool_call_id: 'c1', content: 'ok' },
+  ]);
+});
+
+test('agent-loop: Responses serialization carries a reasoning item onto every tool-call turn of a run that produced no reasoning yet', () => {
+  // The f2e8-class counterexample: several tool-call turns before the model's
+  // first chain of thought. The gateway rejects a continuation whose replayed
+  // call id it did not mint without reasoning_text, so EVERY early turn needs
+  // its own reasoning item — the placeholder until a real one exists.
+  const wire = serializeResponsesRequest({
+    model: 'm1',
+    messages: [
+      { role: 'user', content: [{ type: 'text', text: 'solve' }] },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool-call', id: 'c1', name: 'f', arguments: '{}' }],
+      },
+      {
+        role: 'user',
+        content: [
+          { type: 'tool-result', toolCallId: 'c1', content: [{ type: 'text', text: 'ok' }] },
+        ],
+      },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool-call', id: 'c2', name: 'f', arguments: '{}' }],
+      },
+      {
+        role: 'user',
+        content: [
+          { type: 'tool-result', toolCallId: 'c2', content: [{ type: 'text', text: 'ok' }] },
+        ],
+      },
+    ],
+  });
+  assert.deepEqual(wire.input, [
+    { role: 'user', content: [{ type: 'input_text', text: 'solve' }] },
+    {
+      type: 'reasoning',
+      id: 'reasoning_1',
+      content: [{ type: 'reasoning_text', text: ' ' }],
+      summary: [{ type: 'summary_text', text: ' ' }],
+    },
+    { type: 'function_call', call_id: 'c1', name: 'f', arguments: '{}' },
+    { type: 'function_call_output', call_id: 'c1', output: 'ok' },
+    {
+      type: 'reasoning',
+      id: 'reasoning_4',
+      content: [{ type: 'reasoning_text', text: ' ' }],
+      summary: [{ type: 'summary_text', text: ' ' }],
+    },
+    { type: 'function_call', call_id: 'c2', name: 'f', arguments: '{}' },
+    { type: 'function_call_output', call_id: 'c2', output: 'ok' },
+  ]);
+});
+
+test('agent-loop: Chat serialization carries the empty reasoning marker on every tool-call turn of a run that produced no reasoning yet', () => {
+  const wire = serializeChatRequest({
+    model: 'm1',
+    messages: [
+      {
+        role: 'assistant',
+        content: [{ type: 'tool-call', id: 'c1', name: 'f', arguments: '{}' }],
+      },
+      {
+        role: 'user',
+        content: [
+          { type: 'tool-result', toolCallId: 'c1', content: [{ type: 'text', text: 'ok' }] },
+        ],
+      },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool-call', id: 'c2', name: 'f', arguments: '{}' }],
+      },
+      {
+        role: 'user',
+        content: [
+          { type: 'tool-result', toolCallId: 'c2', content: [{ type: 'text', text: 'ok' }] },
+        ],
+      },
+    ],
+  });
+  assert.deepEqual(wire.messages, [
+    {
+      role: 'assistant',
+      content: '',
+      reasoning_content: '',
+      tool_calls: [{ id: 'c1', type: 'function', function: { name: 'f', arguments: '{}' } }],
+    },
+    { role: 'tool', tool_call_id: 'c1', content: 'ok' },
+    {
+      role: 'assistant',
+      content: '',
+      reasoning_content: '',
+      tool_calls: [{ id: 'c2', type: 'function', function: { name: 'f', arguments: '{}' } }],
+    },
+    { role: 'tool', tool_call_id: 'c2', content: 'ok' },
+  ]);
+});
+
 test('property: Responses serialization never drops assistant reasoning', () => {
   const rand = mulberry32(0x5eed);
   const pick = (items) => items[Math.floor(rand() * items.length)];
@@ -730,14 +1056,12 @@ test('property: Responses serialization never drops assistant reasoning', () => 
     const messages = [];
     const expectedReasoning = [];
     const turnCount = 1 + Math.floor(rand() * 6);
-    let sawReasoning = false;
     let lastReasoning = '';
     for (let turn = 0; turn < turnCount; turn += 1) {
       const content = [];
       if (rand() < 0.7) {
         const text = pick(['r1', 'r2', 'r3', 'r4', '']);
         content.push({ type: 'reasoning', text });
-        sawReasoning = true;
         if (text.length > 0) lastReasoning = text;
       }
       if (rand() < 0.4) content.push({ type: 'text', text: pick(['a1', 'a2']) });
@@ -748,7 +1072,10 @@ test('property: Responses serialization never drops assistant reasoning', () => 
         .filter((block) => block.type === 'reasoning')
         .map((block) => block.text)
         .join('');
-      const mustReplay = hasReasoning || (toolCall && sawReasoning);
+      // Every tool-call turn replays a reasoning item; a reasoningless turn
+      // carries the conversation's most recent real chain of thought forward,
+      // else the single-space placeholder.
+      const mustReplay = hasReasoning || toolCall;
       if (mustReplay) {
         const text =
           ownReasoning.length > 0 ? ownReasoning : lastReasoning.length > 0 ? lastReasoning : ' ';
@@ -789,10 +1116,23 @@ test('property: Responses serialization never drops assistant reasoning', () => 
         `run ${run}: reasoning item at ${at} is not adjacent to a function_call or assistant message`,
       );
     }
+    // Every run of function_call items must be introduced by a reasoning
+    // item: the gateway rejects a tool-call continuation without
+    // reasoning_text — a replayed call id it did not mint demands it even on
+    // a turn whose answer produced no reasoning.
+    for (let at = 0; at < wire.input.length; at += 1) {
+      if (wire.input[at].type !== 'function_call') continue;
+      if (wire.input[at - 1]?.type === 'function_call') continue;
+      assert.equal(
+        wire.input[at - 1]?.type,
+        'reasoning',
+        `run ${run}: function_call at ${at} is not introduced by a reasoning item`,
+      );
+    }
   }
 });
 
-test('property: Chat serialization never drops reasoning markers once thinking is active', () => {
+test('property: Chat serialization never leaves a tool-call turn without a reasoning marker', () => {
   const rand = mulberry32(0xca11d);
   const pick = (items) => items[Math.floor(rand() * items.length)];
 
@@ -800,12 +1140,10 @@ test('property: Chat serialization never drops reasoning markers once thinking i
     const messages = [];
     const expected = [];
     const turnCount = 1 + Math.floor(rand() * 6);
-    let sawReasoning = false;
     for (let turn = 0; turn < turnCount; turn += 1) {
       const content = [];
       if (rand() < 0.7) {
         content.push({ type: 'reasoning', text: pick(['r1', 'r2', 'r3', 'r4', '']) });
-        sawReasoning = true;
       }
       if (rand() < 0.4) content.push({ type: 'text', text: pick(['a1', 'a2']) });
       const toolCall = rand() < 0.6;
@@ -815,7 +1153,10 @@ test('property: Chat serialization never drops reasoning markers once thinking i
         .filter((block) => block.type === 'reasoning')
         .map((block) => block.text)
         .join('');
-      const mustReplay = hasReasoning || (toolCall && sawReasoning);
+      // Every tool-call turn carries the marker (the gateway rejects its
+      // continuation without the field when the call id is foreign or thinking
+      // is already active); a reasoningless turn carries the empty marker.
+      const mustReplay = hasReasoning || toolCall;
       expected.push(mustReplay ? ownReasoning : undefined);
       messages.push({ role: 'assistant', content });
       if (toolCall) {
@@ -1168,6 +1509,84 @@ test('property: responses translation never drops or duplicates wire content', a
       blockTexts(chunks, 'text').join(''),
       expectedText.join(''),
       `run ${run}: text lost or duplicated`,
+    );
+  }
+});
+
+test('property: Responses translation preserves the upstream call_id across stream shapes', async () => {
+  const rand = mulberry32(0xca11d5);
+
+  for (let run = 0; run < 120; run += 1) {
+    const suffix = Math.floor(rand() * 1e9).toString(36);
+    const callId = `call_00_${suffix}`;
+    const itemId = `fc_${suffix}`;
+    const item = {
+      type: 'function_call',
+      id: itemId,
+      status: 'completed',
+      call_id: callId,
+      name: 'f',
+      arguments: '{}',
+    };
+    const shape = Math.floor(rand() * 3);
+    const payloads = [];
+    if (shape === 0) {
+      // added → deltas → done (the live gateway's streamed shape)
+      payloads.push(
+        JSON.stringify({
+          type: 'response.output_item.added',
+          output_index: 0,
+          item: { ...item, status: 'in_progress', arguments: '' },
+        }),
+        JSON.stringify({
+          type: 'response.function_call_arguments.delta',
+          item_id: itemId,
+          output_index: 0,
+          delta: '{}',
+        }),
+        JSON.stringify({ type: 'response.output_item.done', output_index: 0, item }),
+      );
+    } else if (shape === 1) {
+      // deltas first; the call id arrives only on the done item
+      payloads.push(
+        JSON.stringify({
+          type: 'response.function_call_arguments.delta',
+          item_id: itemId,
+          output_index: 0,
+          delta: '{}',
+        }),
+        JSON.stringify({ type: 'response.output_item.done', output_index: 0, item }),
+      );
+    } else {
+      // buffered: only the terminal output array carries the item
+      payloads.push(
+        JSON.stringify({
+          type: 'response.completed',
+          response: { id: 'r1', status: 'completed', output: [item] },
+        }),
+      );
+    }
+    payloads.push(
+      JSON.stringify({
+        type: 'response.completed',
+        response: { id: 'r1', status: 'completed', output: [] },
+      }),
+    );
+
+    const chunks = await collect(
+      translateResponses(
+        (async function* () {
+          for (const payload of payloads) yield payload;
+        })(),
+      ),
+    );
+    const toolBlock = chunks.find(
+      (chunk) => chunk.type === 'block-end' && chunk.block.type === 'tool-call',
+    );
+    assert.equal(
+      toolBlock.block.id,
+      callId,
+      `run ${run}: upstream call_id not preserved (shape ${shape})`,
     );
   }
 });
