@@ -8,11 +8,13 @@
  * `summary` on reasoning items and DeepSeek merges `content` into the adjacent
  * assistant message, so both consume the same shape.
  *
- * DeepSeek's thinking mode is all-or-nothing: once any assistant turn carried
- * reasoning, every later tool-call turn must pass reasoning_text back — and an
- * EMPTY reasoning item is rejected. A turn whose model answer had no (or
- * empty) reasoning therefore carries the conversation's most recent actual
- * chain of thought forward, so the continuation request stays valid.
+ * DeepSeek's thinking mode demands reasoning_text back on the continuation of
+ * ANY tool-call turn: the request is rejected when a replayed function_call
+ * has no reasoning item — including a turn whose answer produced zero
+ * reasoning, and replays whose call id the gateway does not recognize as one
+ * it minted. An EMPTY reasoning item is rejected too, so a reasoningless turn
+ * carries the conversation's most recent actual chain of thought forward,
+ * else a single-space placeholder, so the continuation request stays valid.
  * Images ride `input_image` parts with a data URL, each preceded by its
  * model-facing handle; an image the request did not prepare is rejected
  * explicitly rather than silently erased.
@@ -109,7 +111,6 @@ function contentParts(
  */
 export function serializeInput(messages: Message[], images?: RequestImages): ResponsesInputItem[] {
   const input: ResponsesInputItem[] = [];
-  let sawReasoning = false;
   let lastReasoning = '';
   let pendingToolImages: ResponsesContent[] = [];
   const flushToolImages = (): void => {
@@ -135,17 +136,18 @@ export function serializeInput(messages: Message[], images?: RequestImages): Res
       const reasoningBlocks = message.content.filter((block) => block.type === 'reasoning');
       const reasoning = reasoningBlocks.map((block) => block.text).join('');
       if (reasoning.length > 0) lastReasoning = reasoning;
-      if (reasoningBlocks.length > 0) sawReasoning = true;
       const toolCalls = message.content.filter((block) => block.type === 'tool-call');
-      const mustReplay = reasoningBlocks.length > 0 || (toolCalls.length > 0 && sawReasoning);
+      // Every tool-call turn replays a chain of thought. DeepSeek's Responses
+      // API in thinking mode rejects the continuation of ANY tool-call turn
+      // lacking reasoning_text — it cannot recognize a call id it did not mint
+      // (e.g. a replayed harness id), and it demands the reasoning instead,
+      // even on a turn whose answer produced no reasoning at all. The turn's
+      // own reasoning wins; a reasoningless turn carries the conversation's
+      // most recent actual chain of thought forward, else a single-space
+      // placeholder (EMPTY reasoning items are rejected too — the carried text
+      // keeps the thinking context alive).
+      const mustReplay = reasoningBlocks.length > 0 || toolCalls.length > 0;
       if (mustReplay) {
-        // Round-trip the previous turn's chain of thought. DeepSeek's
-        // Responses API in thinking mode rejects a multi-turn tool-call
-        // continuation unless the prior turn's reasoning is replayed as a
-        // `reasoning` input item BEFORE its function_call items — and rejects
-        // EMPTY reasoning items too, so a turn whose answer had no reasoning
-        // carries the conversation's most recent actual chain of thought
-        // forward (the model's own text; it keeps the thinking context alive).
         // `id` is a locally synthesized unique key: the harness does not
         // persist reasoning item ids, and both OpenAI and DeepSeek only need
         // it unique within the request.

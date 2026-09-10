@@ -13,7 +13,10 @@
  *    items → reasoning; each source appends exactly once — a whole-item /
  *    done-event replay is skipped when deltas already streamed, so nothing is
  *    lost and nothing is duplicated
- *  - `response.function_call_arguments.delta` → tool-call delta (item id = call id)
+ *  - `response.function_call_arguments.delta` → tool-call delta (the item's
+ *    upstream-minted `call_id` — the id a continuation must replay and the id
+ *    thinking-mode passback checks key on; the bare item id is only the
+ *    fallback for gateways that omit `call_id`)
  *  - `response.completed` → usage + finish, and materializes any items that
  *    arrived only inside the terminal `response.output` array
  *  - `response.failed` / `response.incomplete` → error finish
@@ -89,6 +92,21 @@ export async function* translate(events: AsyncIterable<string>): AsyncGenerator<
   const streamedReasoning = new Set<string>();
   /** Item ids whose answer text already streamed incrementally. */
   const streamedText = new Set<string>();
+  /** Upstream-minted call ids by function-call item id. */
+  const callIds = new Map<string, string>();
+
+  /** The upstream call id for one function-call item (item id as fallback). */
+  function callIdOf(itemId: string): string {
+    return callIds.get(itemId) ?? itemId;
+  }
+
+  /** Record one item's upstream call id and refresh its open block. */
+  function rememberCallId(itemId: string, callId: string | undefined): void {
+    if (typeof callId !== 'string' || callId.length === 0) return;
+    callIds.set(itemId, callId);
+    const block = toolBlocks.get(itemId);
+    if (block !== undefined) block.callId = callId;
+  }
 
   function open(kind: OpenBlock['kind']): OpenBlock {
     const block: OpenBlock = { index: nextIndex++, kind, text: '' };
@@ -153,13 +171,19 @@ export async function* translate(events: AsyncIterable<string>): AsyncGenerator<
       yield* pushMessageItem(item);
     } else {
       callNames.set(item.id, item.name);
+      rememberCallId(item.id, item.call_id);
       if (!toolBlocks.has(item.id)) {
         const block = open('tool-call');
-        block.callId = item.id;
+        block.callId = callIdOf(item.id);
         block.name = item.name;
         block.text = item.arguments;
         toolBlocks.set(item.id, block);
         yield { type: 'block-start', index: block.index, blockType: 'tool-call' };
+      } else {
+        // The block already streamed from deltas; the done item is
+        // authoritative for the id as well.
+        const block = toolBlocks.get(item.id);
+        if (block !== undefined) block.callId = callIdOf(item.id);
       }
     }
   }
@@ -265,13 +289,13 @@ export async function* translate(events: AsyncIterable<string>): AsyncGenerator<
         break;
       }
       case 'response.function_call_arguments.delta': {
-        const callId = event.item_id;
-        let block = toolBlocks.get(callId);
+        const itemId = event.item_id;
+        let block = toolBlocks.get(itemId);
         if (!block) {
           block = open('tool-call');
-          block.callId = callId;
-          toolBlocks.set(callId, block);
-          const name = callNames.get(callId);
+          block.callId = callIdOf(itemId);
+          toolBlocks.set(itemId, block);
+          const name = callNames.get(itemId);
           if (name !== undefined) block.name = name;
           yield { type: 'block-start', index: block.index, blockType: 'tool-call' };
         }
@@ -279,7 +303,7 @@ export async function* translate(events: AsyncIterable<string>): AsyncGenerator<
         yield {
           type: 'tool-call-delta',
           index: block.index,
-          id: ToolCallId(callId),
+          id: ToolCallId(callIdOf(itemId)),
           ...(block.name !== undefined ? { name: block.name } : {}),
           argumentsDelta: event.delta,
         };
@@ -294,10 +318,11 @@ export async function* translate(events: AsyncIterable<string>): AsyncGenerator<
         const item = event.item;
         if (item.type === 'function_call') {
           callNames.set(item.id, item.name);
+          rememberCallId(item.id, item.call_id);
           // The item may arrive fully-formed (no deltas): materialize a block.
           if (item.arguments && !toolBlocks.has(item.id)) {
             const block = open('tool-call');
-            block.callId = item.id;
+            block.callId = callIdOf(item.id);
             block.name = item.name;
             block.text = item.arguments;
             toolBlocks.set(item.id, block);
