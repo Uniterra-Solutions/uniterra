@@ -30,13 +30,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const pluginIndex = join(
-  here,
-  '..',
-  '..',
-  '..',
-  'vendor/dsh-plugins/dsh-workflow/lib/index.js',
-);
+const pluginIndex = join(here, '..', '..', '..', 'vendor/dsh-plugins/dsh-workflow/lib/index.js');
 
 const source = readFileSync(pluginIndex, 'utf8');
 
@@ -44,7 +38,9 @@ const source = readFileSync(pluginIndex, 'utf8');
 const MIN_SANE_CEILING = 32_768;
 
 function defaultCeiling(name) {
-  const re = new RegExp(`${name}\\s*:\\s*z\\.natural\\(\\)\\.min\\(1\\)\\.default\\((\\d[\\d_]*)\\)`);
+  const re = new RegExp(
+    `${name}\\s*:\\s*z\\.natural\\(\\)\\.min\\(1\\)\\.default\\((\\d[\\d_]*)\\)`,
+  );
   const match = source.match(re);
   assert.ok(match, `schema default for ${name} not found in ${pluginIndex}`);
   return Number(match[1].replaceAll('_', ''));

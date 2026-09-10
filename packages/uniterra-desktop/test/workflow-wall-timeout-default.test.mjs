@@ -30,13 +30,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const pluginIndex = join(
-  here,
-  '..',
-  '..',
-  '..',
-  'vendor/dsh-plugins/dsh-workflow/lib/index.js',
-);
+const pluginIndex = join(here, '..', '..', '..', 'vendor/dsh-plugins/dsh-workflow/lib/index.js');
 
 const source = readFileSync(pluginIndex, 'utf8');
 
@@ -53,14 +47,9 @@ function schemaDefault(name) {
 }
 
 function resolveConfigFallback(name) {
-  const re = new RegExp(
-    `${name}\\s*:\\s*config\\.${name}\\s*\\?\\?\\s*(\\d[\\d_]*),`,
-  );
+  const re = new RegExp(`${name}\\s*:\\s*config\\.${name}\\s*\\?\\?\\s*(\\d[\\d_]*),`);
   const match = source.match(re);
-  assert.ok(
-    match,
-    `resolveConfig fallback for ${name} not found in ${pluginIndex}`,
-  );
+  assert.ok(match, `resolveConfig fallback for ${name} not found in ${pluginIndex}`);
   return Number(match[1].replaceAll('_', ''));
 }
 

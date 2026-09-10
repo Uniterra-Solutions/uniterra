@@ -14,8 +14,24 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const planScript = path.resolve(here, '..', 'src', 'skills', 'uniterra-plan', 'scripts', 'init_plan.mjs');
-const taskScript = path.resolve(here, '..', 'src', 'skills', 'uniterra-implement', 'scripts', 'init_task.mjs');
+const planScript = path.resolve(
+  here,
+  '..',
+  'src',
+  'skills',
+  'uniterra-plan',
+  'scripts',
+  'init_plan.mjs',
+);
+const taskScript = path.resolve(
+  here,
+  '..',
+  'src',
+  'skills',
+  'uniterra-implement',
+  'scripts',
+  'init_task.mjs',
+);
 
 function run(cwd: string, script: string, args: string[]): string {
   return execFileSync('node', [script, ...args], { cwd, encoding: 'utf8' });
@@ -57,7 +73,10 @@ test('init_plan.mjs honors an explicit timestamp + a filesystem-safe plan-name s
   const cwd = mkdtempSync(path.join(tmpdir(), 'uniterra-init-plan2-'));
   try {
     run(cwd, planScript, ['User Auth', '20261231']);
-    assert.ok(existsSync(path.join(cwd, '.plan', '20261231', 'User-Auth', 'prd.md')), 'explicit timestamp + slug used');
+    assert.ok(
+      existsSync(path.join(cwd, '.plan', '20261231', 'User-Auth', 'prd.md')),
+      'explicit timestamp + slug used',
+    );
   } finally {
     cleanup(cwd);
   }
@@ -92,7 +111,13 @@ test('init_task.mjs scaffolds .dsh/<YYYYMMDD-HHmmss>/<project>/<task>.md and a p
     );
     for (const t of [task1, task2]) {
       const content = readFileSync(t, 'utf8');
-      for (const section of ['## Goal', '## Context', '## Requirements', '## Conventions', '## Constraints']) {
+      for (const section of [
+        '## Goal',
+        '## Context',
+        '## Requirements',
+        '## Conventions',
+        '## Constraints',
+      ]) {
         assert.ok(content.includes(section), `${path.basename(t)} has ${section}`);
       }
     }
@@ -128,8 +153,14 @@ test('init_task.mjs keeps one task.json per project under a shared timestamp (no
     const payments = JSON.parse(
       readFileSync(path.join(cwd, '.dsh', '20261231-143052', 'payments', 'task.json'), 'utf8'),
     ) as { tasks: Array<{ id: string }> };
-    assert.deepEqual(auth.tasks.map((t) => t.id), ['T1']);
-    assert.deepEqual(payments.tasks.map((t) => t.id), ['P1']);
+    assert.deepEqual(
+      auth.tasks.map((t) => t.id),
+      ['T1'],
+    );
+    assert.deepEqual(
+      payments.tasks.map((t) => t.id),
+      ['P1'],
+    );
   } finally {
     cleanup(cwd);
   }

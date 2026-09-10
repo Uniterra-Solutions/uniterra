@@ -21,7 +21,8 @@ import { register } from 'node:module';
 import { pathToFileURL } from 'node:url';
 
 register('./workflow-engine-stub-loader.mjs', new URL('./', import.meta.url));
-const { DynamicWorkflowEngine } = await import('../../../vendor/dsh-plugins/dsh-workflow/lib/engine.js');
+const { DynamicWorkflowEngine } =
+  await import('../../../vendor/dsh-plugins/dsh-workflow/lib/engine.js');
 
 /** A minimal engine with the config the createApi construction path touches. */
 function makeEngine() {
