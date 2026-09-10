@@ -15,7 +15,6 @@ allowBuilds:
 minimumReleaseAgeExclude:
   - dsh-better-sidebar@0.18.0
   - dsh-file-upload@0.4.3
-  - dsh-notifier@0.9.0
   - dshmarket@1.41.0
   - dsh-find-plugin@0.3.7
   - dsh-subagent-model-picker@0.1.1
