@@ -1,6 +1,6 @@
 # Module: Built-in Plugins (vendor/dsh-plugins + npm built-ins)
 
-**Purpose:** The plugin surface that ships with Uniterra — 10 npm-published community plugins, 2 vendored community plugins pinned at fixed commits (dsh-shortcuts + the @dsh-external/workflow dynamic multi-agent workflow layer), 1 optional vendored plugin (the Deep Whale skin — shipped but NOT forced, enabled per-profile via a `.uniterra.json` toggle), and 1 in-house workspace plugin. Active ones are ensured into the user's dsh `web` profile at startup (`packages/uniterra-desktop/src/builtin.ts`).
+**Purpose:** The plugin surface that ships with Uniterra — 9 npm-published community plugins, 2 vendored community plugins pinned at fixed commits (dsh-shortcuts + the @dsh-external/workflow dynamic multi-agent workflow layer), 1 optional vendored plugin (the Deep Whale skin — shipped but NOT forced, enabled per-profile via a `.uniterra.json` toggle), and 1 in-house workspace plugin. Active ones are ensured into the user's dsh `web` profile at startup (`packages/uniterra-desktop/src/builtin.ts`).
 
 ## Built-in Lists
 
@@ -11,7 +11,6 @@ Pinned exact, installed via `dsh plugin add` — declared with `registerBuiltinP
 | Spec                            | Purpose                      |
 | ------------------------------- | ---------------------------- |
 | dshmarket@1.41.0                | Plugin marketplace           |
-| dsh-notifier@0.9.0              | Push notifications           |
 | dsh-better-sidebar@0.18.0       | Sidebar enhancement          |
 | dsh-file-upload@0.4.3           | File upload                  |
 | dsh-find-plugin@0.3.7           | Plugin discovery             |
@@ -45,7 +44,7 @@ Reconcile semantics (`reconcileOptionalPlugins` runs BEFORE the provisioning gat
 - Enabled ⇒ bundle row + fresh copy ensured (copy, not pnpm link — survives app moves, self-heals to the shipped source version); disabled ⇒ row and installed copy removed, idempotently.
 - An illegible toggle file is never destructive and never overwritten — state is derived from the bundle rows like a missing file, but not persisted.
 
-The retired `deep-whale-day-night-theme` distribution is documented in `vendor/dsh-plugins/VENDOR.md` (it depended on `dsh-client-ui-theme-plugins` / `dsh-host-theme-catalog`, absent in the pinned rc.6 family, so its patch silently no-oped). Retired built-ins removed because their function overlapped another built-in — `dsh-hotkeys` (npm, covered by `dsh-shortcuts`), `@leetoners/dsh-ui-subagent-monitor` and `dsh-git-graph` (covered by dsh-better-sidebar's Tasks / Git pages), `dsh-thinking-effort` (covered by the provider's models.dev reasoningEfforts), and `@cardo/cardo-provider` (pre-rename workspace built-in, now shipped as `@uniterra-solutions/uniterra-provider`) — are declared `retired: true` in the SAME registry and stripped by `removeRetiredBuiltins()` from already-provisioned profiles on every ensure pass.
+The retired `deep-whale-day-night-theme` distribution is documented in `vendor/dsh-plugins/VENDOR.md` (it depended on `dsh-client-ui-theme-plugins` / `dsh-host-theme-catalog`, absent in the pinned rc.6 family, so its patch silently no-oped). Retired built-ins removed because their function overlapped another built-in — `dsh-hotkeys` (npm, covered by `dsh-shortcuts`), `@leetoners/dsh-ui-subagent-monitor` and `dsh-git-graph` (covered by dsh-better-sidebar's Tasks / Git pages), `dsh-thinking-effort` (covered by the provider's models.dev reasoningEfforts), `@cardo/cardo-provider` (pre-rename workspace built-in, now shipped as `@uniterra-solutions/uniterra-provider`), and `dsh-notifier` (standalone desktop notifier — its notifications overlap dsh-better-sidebar's Tasks page; user-installed copies are preserved) — are declared `retired: true` in the SAME registry and stripped by `removeRetiredBuiltins()` from already-provisioned profiles on every ensure pass.
 
 ### Workspace built-in (`kind: 'workspace'`)
 

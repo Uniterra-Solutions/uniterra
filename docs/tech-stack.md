@@ -69,12 +69,12 @@ All pinned exact at 0.1.2-rc.1 (+ cordis 4.0.2, `@deepseek-ai/dsh-client-runtime
 
 Provisioned into the user's dsh profile at startup — see [modules/vendor-plugins.md](modules/vendor-plugins.md) and `packages/uniterra-desktop/src/builtin.ts`.
 
-| Source                           | Plugins                                                                                                                                                                                                                                          |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| npm (pinned exact)               | dshmarket 1.41.0, dsh-notifier 0.9.0, dsh-better-sidebar 0.18.0, dsh-file-upload 0.4.3, dsh-find-plugin 0.3.7, dsh-subagent-model-picker 0.1.1, dsh-tool-git 0.1.3, dsh-browser-playwright 0.1.1, dsh-computer-use 0.2.0, dsh-git-worktree 0.7.4 |
-| vendored (`vendor/dsh-plugins/`) | dsh-shortcuts                                                                                                                                                                                                                                    |
-| optional (`vendor/dsh-plugins/`) | dsh-deep-whale (skin, opt-in)                                                                                                                                                                                                                    |
-| workspace built-in               | @uniterra-solutions/uniterra-provider                                                                                                                                                                                                            |
+| Source                           | Plugins                                                                                                                                                                                                                      |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| npm (pinned exact)               | dshmarket 1.41.0, dsh-better-sidebar 0.18.0, dsh-file-upload 0.4.3, dsh-find-plugin 0.3.7, dsh-subagent-model-picker 0.1.1, dsh-tool-git 0.1.3, dsh-browser-playwright 0.1.1, dsh-computer-use 0.2.0, dsh-git-worktree 0.7.4 |
+| vendored (`vendor/dsh-plugins/`) | dsh-shortcuts, @dsh-external/workflow (dynamic multi-agent workflow layer)                                                                                                                                                   |
+| optional (`vendor/dsh-plugins/`) | dsh-deep-whale (skin, opt-in)                                                                                                                                                                                                |
+| workspace built-in               | @uniterra-solutions/uniterra-provider                                                                                                                                                                                        |
 
 ## External Services
 

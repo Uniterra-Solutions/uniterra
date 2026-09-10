@@ -11,7 +11,6 @@ The app ships 13 built-in plugins (9 npm community, 2 vendored, 1 optional, 1 in
 | Plugin                                  | Type     | Source                                                                                                       | License         |
 | --------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------ | --------------- |
 | `dshmarket`                             | npm      | [dsh-market/dsh-market](https://github.com/dsh-market/dsh-market)                                            | MIT             |
-| `dsh-notifier`                          | npm      | [THEWOLFWALKER/dsh-notifier](https://github.com/THEWOLFWALKER/dsh-notifier)                                  | MIT             |
 | `dsh-better-sidebar`                    | npm      | [omdsh-dev/DSH-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar)                              | MIT             |
 | `dsh-file-upload`                       | npm      | [HongMing-Huang/dsh-file-upload](https://github.com/HongMing-Huang/dsh-file-upload)                          | MIT             |
 | `dsh-find-plugin`                       | npm      | [awesome-dsh-plugin/dsh-find-plugin](https://github.com/awesome-dsh-plugin/dsh-find-plugin)                  | MIT             |
@@ -19,6 +18,7 @@ The app ships 13 built-in plugins (9 npm community, 2 vendored, 1 optional, 1 in
 | `dsh-tool-git`                          | npm      | [lxj808624/dsh-tool-git](https://github.com/lxj808624/dsh-tool-git)                                          | MIT             |
 | `dsh-browser-playwright`                | npm      | [ChenyuHeee/dsh-browser-playwright](https://github.com/ChenyuHeee/dsh-browser-playwright)                    | MIT             |
 | `dsh-computer-use`                      | npm      | [988hj7tczd-oss/dsh-computer-use](https://github.com/988hj7tczd-oss/dsh-computer-use)                        | MIT             |
+| `dsh-git-worktree`                      | npm      | [wloops/dsh-git-worktree](https://github.com/wloops/dsh-git-worktree)                                        | MIT             |
 | `dsh-deep-whale`                        | optional | [Small-tailqwq/dsh-deep-whale](https://github.com/Small-tailqwq/dsh-deep-whale)                              | CC BY-NC-SA 4.0 |
 | `dsh-shortcuts`                         | vendored | [Ricketts-Guo/dsh-shortcuts](https://github.com/Ricketts-Guo/dsh-shortcuts)                                  | MIT             |
 | `@dsh-external/workflow`                | vendored | [omdsh-dev/dsh_workflow](https://github.com/omdsh-dev/dsh_workflow)                                          | MIT             |
@@ -48,7 +48,7 @@ Workflow details: [docs/modules/uniterra-skills.md](docs/modules/uniterra-skills
 # Install the app (macOS / Windows 10+)
 npm install -g @uniterra-solutions/uniterra
 uniterra setup
-# macOS → ~/Applications/Uniterra.app; Windows → %LOCALAPPDATA%\Programs\cardo (with a Start Menu shortcut)
+# macOS → ~/Applications/Uniterra.app; Windows → %LOCALAPPDATA%\Programs\Uniterra (with a Start Menu shortcut)
 uniterra update
 # One-command update: refresh the CLI + rebuild/reinstall the app + auto-relaunch (Update Now in the app runs this too)
 
