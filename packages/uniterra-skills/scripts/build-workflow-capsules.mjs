@@ -71,7 +71,10 @@ function extractPrompt(source, name) {
 /** Build the implement capsule source. Mirrors the original fan-out: all tasks
  * in `args.tasks` run in parallel, or serial batches of parallel tasks when
  * `args.batches` is given; any failing child fails the whole run (batches are
- * dependent). Returns { status, agents } on success. */
+ * dependent). Returns { status, agents, reports } on success and
+ * { status, batch, reports } on failure — `reports` carries every per-task
+ * { id, ...structured } report in dispatch order, so the main agent can
+ * reconcile coverage against the requirements. */
 function implementSource() {
   const fixedRules = readFileSync(
     path.join(srcSkills, 'uniterra-implement', 'assets', 'workflow-template.md'),
@@ -131,8 +134,9 @@ function implementSource() {
 
   for (let b = 0; b < groups.length; b++) {
     const label = groups.length > 1 ? 'batch-' + (b + 1) : 'implement';
+    const batch = groups[b];
     const done = await wf.phase(label, () => wf.parallel(
-      groups[b].map(t => async () => wf.runAgent({
+      batch.map(t => async () => wf.runAgent({
         name: String(t?.id ?? 'task'),
         prompt: await taskPrompt(t) + '\\n\\n' + FIXED_RULES,
         readOnly: false,
@@ -140,10 +144,20 @@ function implementSource() {
         outputSchema: RETURN_SCHEMA,
       })),
     ));
-    if (done.some(r => r === null)) return { status: 'failed', batch: b + 1 };
-    results.push(...done.map(r => r.structured));
+    // Identify every report by its task id so the main agent can reconcile the
+    // per-task reports against the requirements; the order is dispatch order.
+    // A null child (failed, or its return did not validate) stays visible as a
+    // { id, failed: true } entry instead of silently disappearing.
+    const batchEntries = done.map((r, i) => {
+      const id = String(batch[i]?.id ?? 'task');
+      return r === null ? { id, failed: true } : { id, ...(r.structured ?? {}) };
+    });
+    if (done.some(r => r === null)) {
+      return { status: 'failed', batch: b + 1, reports: [...results, ...batchEntries] };
+    }
+    results.push(...batchEntries);
   }
-  return { status: 'done', agents: results.length };
+  return { status: 'done', agents: results.length, reports: results };
 }`;
 }
 

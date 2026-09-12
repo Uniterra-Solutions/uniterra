@@ -173,12 +173,27 @@ test('IMPLEMENT: on failure the reported batch is the first batch with a null ch
     if (firstFailing === -1) {
       assert.equal(result.status, 'done', `seed ${seed}: no failures should be done`);
       assert.equal(result.agents, all.length, `seed ${seed}: agents equals total task count`);
+      // Every task contributes exactly one report (the reconciliation evidence).
+      const reports = result.reports as Array<Record<string, unknown>>;
+      assert.equal(reports.length, all.length, `seed ${seed}: one report per task`);
+      assert.deepEqual(
+        Array.from(reports, (r) => r.id),
+        all,
+        `seed ${seed}: reports keep the dispatch order`,
+      );
     } else {
       assert.equal(result.status, 'failed', `seed ${seed}: a failing child fails the run`);
       assert.equal(
         result.batch,
         firstFailing + 1,
         `seed ${seed}: reported batch is the first failing batch`,
+      );
+      // A failed run is never evidence-free: the reports carry what was produced.
+      const reports = result.reports as Array<Record<string, unknown>>;
+      assert.ok(reports.length > 0, `seed ${seed}: a failed run still reports its evidence`);
+      assert.ok(
+        reports.every((r) => typeof r.id === 'string'),
+        `seed ${seed}: every report of a failed run carries a task id`,
       );
       // No batch after the failing one is dispatched.
       const phases = calls.map((c) => c.phase).filter((p) => p !== null);

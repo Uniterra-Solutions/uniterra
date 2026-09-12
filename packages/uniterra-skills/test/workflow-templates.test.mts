@@ -253,6 +253,22 @@ test('implement capsule supports parallel tasks and serial batches', async () =>
     const r = result as Record<string, unknown>;
     assert.equal(r.status, 'done');
     assert.equal(r.agents, 2);
+    // The per-task reports are the reconciliation evidence: one entry per task,
+    // identified by its task id, carrying the child's structured output.
+    const reports = r.reports as Array<Record<string, unknown>>;
+    assert.equal(reports.length, 2, 'one report per dispatched task');
+    assert.deepEqual(
+      Array.from(reports, (x) => x.id),
+      ['T1', 'T2'],
+      'reports keep the dispatch order',
+    );
+    for (const report of reports) {
+      assert.equal(typeof report.id, 'string', 'every report carries its task id');
+      assert.ok(
+        Array.isArray(report.changed_files),
+        'every report carries the child structured output (changed_files)',
+      );
+    }
   }
 
   {
@@ -297,6 +313,18 @@ test('implement capsule supports parallel tasks and serial batches', async () =>
     const r = result as Record<string, unknown>;
     assert.equal(r.status, 'failed');
     assert.equal(r.batch, 2);
+    // A failed run still returns its evidence: the batches that completed BEFORE the
+    // failing one, then the failing batch (the live children's reports plus a
+    // `failed: true` marker for every child that returned nothing).
+    const reports = r.reports as Array<Record<string, unknown>>;
+    assert.deepEqual(
+      Array.from(reports, (x) => x.id),
+      ['A', 'B'],
+      'reports carry the completed batch then the failing batch',
+    );
+    assert.equal(reports.length, 2, 'the completed child + the failed child are both reported');
+    assert.equal(reports[1]!.failed, true, 'the child that returned nothing is marked failed:true');
+    assert.ok(!('failed' in reports[0]!), 'a completed task is not marked failed');
   }
 });
 

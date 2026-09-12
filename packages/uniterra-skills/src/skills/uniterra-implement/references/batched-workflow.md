@@ -9,10 +9,16 @@ of `args.tasks`, and copy the template's script verbatim.
 
 ## Overlap → partition
 
-1. Build the overlap relation from `owned_files` intersections.
+1. Build the overlap relation from `owned_files` intersections **and from the seams**: two
+   tasks that share a seam (an interface, a serialized shape, an event one emits and the other
+   consumes) overlap even when their file sets are disjoint.
 2. Partition tasks into the smallest number of batches such that overlapping tasks land in
-   DIFFERENT batches; tasks that only depend on earlier batches sit in later batches.
-3. `args.batches` is an array of task arrays (not the flat task list) — partition before
+   DIFFERENT batches — except two tasks that share a seam and each mock it, which may share a
+   batch. Tasks that only depend on earlier batches sit in later batches, and when a seam is
+   NOT mocked the PROVIDER goes first, its consumer in a later batch.
+3. Every seam must already be pinned by a test in the red suite, or be promoted to a
+   requirement / acceptance line before dispatch.
+4. `args.batches` is an array of task arrays (not the flat task list) — partition before
    dispatching. Scaffold each task's brief with the init CLI
    (`node "<skill_base>/scripts/init_task.mjs" <project-name> <id> <name>`), fill in the
    placeholders, and reference it via `promptFile` — `args` stays tiny.

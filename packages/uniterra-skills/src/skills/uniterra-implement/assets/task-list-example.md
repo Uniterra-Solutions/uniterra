@@ -47,10 +47,15 @@ overwrite each other's `task.json`.
 - `id` — stable identifier, used as the agent `label` for observability.
 - `name` — one-line task name.
 - `promptFile` — **the file that holds the entire subagent instruction block as one markdown
-  string**. It must include, at minimum, the sections rendered below (goal, requirements with
-  their `test`, conventions, context files, constraints). The capsule inlines this file into the
-  subagent prompt at run time and appends the shared `FIXED_RULES` (see
-  `assets/workflow-template.md`) — the subagent does NOT read the file itself.
+  string**. It must include, at minimum, the sections rendered below (goal, requirements +
+  acceptance with their allocated `test`, conventions, context files, constraints). The capsule
+  inlines this file into the subagent prompt at run time and appends the shared `FIXED_RULES`
+  (see `assets/workflow-template.md`) — the subagent does NOT read the file itself.
+- Each task carries only its OWN slice of the spec: the requirements it satisfies, the acceptance
+  lines that verify them, and the tests allocated to it. Tasks that share a seam (an interface, a
+  serialized shape, an event one emits and another consumes) are grouped in one batch with each
+  task mocking the seam, or ordered provider-first across batches — see
+  `references/parallel-workflow.md` / `references/batched-workflow.md`.
 - **The brief lives in the `promptFile`, not in `args`.** Pass `promptFile` only — writing the
   brief to a file keeps the tool call JSON small and valid, rather than embedding a
   `prompt`/`goal`/`requirements`/`conventions`/`constraints` nested object as an `args` value.
@@ -80,9 +85,9 @@ Then fill in the placeholders, e.g.:
 - <path> — <description> (read: <symbol / §section>)
 - …
 
-## Requirements
+## Requirements & Acceptance
 
-- <REQ-id>: <text> — [test: <package/x/test.ts → 'case'>]
+- <REQ-id>: <text> — acceptance: <criteria> — [test: <repo-relative path → case>]
 - …
 
 ## Conventions

@@ -45,7 +45,9 @@ export function slugify(name) {
     .replace(/^-|-$/gu, '');
 }
 
-/** The subagent task brief template the agent fills in before dispatch. */
+/** The subagent task brief template the agent fills in before dispatch. Every
+ * requirement line carries its acceptance criteria and the allocated test, so a
+ * subagent holds only its own slice of the spec. */
 export function taskTemplate({ id, name }) {
   return `# Task: ${name}
 
@@ -58,9 +60,9 @@ export function taskTemplate({ id, name }) {
 - <path> — <description> (read: <symbol / §section>)
 - …
 
-## Requirements
+## Requirements & Acceptance
 
-- <REQ-id>: <text> — [test: <package/x/test.ts → 'case'>]
+- <REQ-id>: <text> — acceptance: <criteria> — [test: <repo-relative path → case>]
 - …
 
 ## Conventions

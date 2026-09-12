@@ -122,7 +122,7 @@ test('init_task.mjs scaffolds .dsh/<YYYYMMDD-HHmmss>/<project>/<task>.md and a p
       for (const section of [
         '## Goal',
         '## Context',
-        '## Requirements',
+        '## Requirements & Acceptance',
         '## Conventions',
         '## Constraints',
       ]) {

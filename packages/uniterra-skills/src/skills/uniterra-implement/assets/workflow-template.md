@@ -55,9 +55,10 @@ const FIXED_RULES = `You are an isolated subagent implementing ONE task of an ap
 prior conversation context — your full brief is inlined in the '## Task to implement' block
 below plus the rules here. Where the task is ambiguous, make a reasonable decision and record it.
 
-- Your full brief — goal, context files, requirements with their allocated failing tests,
-  conventions, and constraints — is ALREADY in your prompt. Treat the inlined brief as the
-  source of truth, and re-read the task file only when a referenced file's details are missing.
+- Your full brief — goal, context files, requirements with their acceptance criteria and
+  allocated failing tests, conventions, and constraints — is ALREADY in your prompt. Treat the
+  inlined brief as the source of truth, and re-read the task file only when a referenced file's
+  details are missing.
 
 - Work at the repo root (your cwd). Leave all changes UNCOMMITTED — a later review reads the diff.
 - Work only on the files named in your task's \\`owned_files\\`. A file outside \\`owned_files\\`,
@@ -71,7 +72,11 @@ below plus the rules here. Where the task is ambiguous, make a reasonable decisi
 - Follow the project's conventions (AGENTS.md / CLAUDE.md): run lint / typecheck / build, add
   tests for new behaviour, and make your requirements' failing property tests GREEN.
 - Verify external APIs against real documentation before using them; write only what you have checked.
-- Record any deviation from the design doc in \\`deviations\\`.
+- Never weaken, narrow, or delete an allocated test. If an allocated failing test appears
+  wrong or unsatisfiable, keep it RED and record why in \\`deviations\\` (one line) — do not
+  work around it and do not relax the test.
+- If your change alters an interface another task's tests consume, record it in
+  \\`deviations\\` (one line).
 - Report your result with the \\`structured_output\\` tool exactly once: the JSON report
   (changed_files, satisfied_requirements, deviations). The \\`structured_output\\` call is the
   result; finish with it, and report the JSON in that call.`;
@@ -157,16 +162,26 @@ for (let b = 0; b < groups.length; b++) {
         agent((await taskPrompt(t)) + '\n\n' + FIXED_RULES, { label: t.id, schema: RETURN_SCHEMA }),
     ),
   );
-  if (done.some((r) => r === null)) return { status: 'failed', batch: b + 1 };
-  results.push(...done);
+  const batchEntries = done.map((r, i) =>
+    r === null
+      ? { id: String(groups[b][i]?.id ?? 'task'), failed: true }
+      : { id: String(groups[b][i]?.id ?? 'task'), ...(r.structured ?? {}) },
+  );
+  if (done.some((r) => r === null)) {
+    return { status: 'failed', batch: b + 1, reports: [...results, ...batchEntries] };
+  }
+  results.push(...batchEntries);
 }
-return { status: 'done', agents: results.length };
+return { status: 'done', agents: results.length, reports: results };
 ```
 
 ## Reading the result
 
-- `status: 'done'` — all tasks returned a valid JSON report; `agents` is the count.
+- `status: 'done'` — all tasks returned a valid JSON report; `agents` is the count and
+  `reports` holds one `{ id, ...structured }` entry per task in dispatch order.
 - `status: 'failed'` — a task returned `null` (child failed or return did not validate); when
-  batched, `batch` names the failing batch. A `null` in any group fails the whole run because
-  later batches likely depend on it.
+  batched, `batch` names the failing batch and `reports` carries the batches completed before it
+  plus the failing batch (each live child's report, and `{ id, failed: true }` for a child that
+  returned nothing). A `null` in any group fails the whole run because later batches likely
+  depend on it.
 - The subagent **returns JSON** (via `schema`); only its **input prompt** is markdown.
