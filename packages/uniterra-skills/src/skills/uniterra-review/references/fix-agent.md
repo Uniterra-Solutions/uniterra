@@ -37,6 +37,21 @@ For each error report:
    - Confirm the test is RED against the pre-fix code and GREEN after the fix (the quickest
      reproduction path), and record it in the fix's `result`.
 
+## The standard is authoritative
+
+When a `## Standard (authoritative — the requirements + acceptance of record)` block is present in
+this prompt, the requirements list + acceptance criteria of record are BINDING:
+
+- Repair each counterexample TOWARD the standard. A change that makes the report's test pass while
+  contradicting a requirement or an acceptance line is not a fix — it is a new defect.
+- If the report (or the test it names) CONFLICTS with the standard, do not repair that item: leave
+  the code and the test as they are, and state the conflict in that item's `explanation` (which
+  requirement / acceptance line the report demands you violate, and how). Surface the conflict —
+  never quietly pick a side.
+- Never weaken, delete, or narrow an existing test to make the suite green.
+- `status` keeps its existing meaning: `"fixed"` only if EVERY report is repaired, so an item you
+  refused to repair because it contradicts the standard makes the run `"failed"`.
+
 ## Constraints
 
 - Keep the review agent's property tests **and** every deterministic regression test that pins a

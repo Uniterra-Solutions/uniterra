@@ -169,8 +169,12 @@ function implementSource() {
  * repairs each counterexample (only if any were found). The review knowledge is
  * split into responsibility-separated reference files; the capsule composes ONE
  * self-contained REVIEW_PROMPT from them (the subagent cannot read the skill
- * dir from the repo under review). The manifest is not read-only because the
- * fixer must change source; the REVIEW agent is individually read-only.
+ * dir from the repo under review). When \`args.standard\` names the plan's
+ * prd + acceptance (repo-relative paths), both documents are read and inlined
+ * VERBATIM into the review AND fixer prompts — the standard reaches the agents
+ * as the document text, never as the main agent's narrative. The manifest is
+ * not read-only because the fixer must change source; the REVIEW agent is
+ * individually read-only.
  */
 function reviewSource() {
   const reviewDir = path.join(srcSkills, 'uniterra-review', 'references');
@@ -202,11 +206,35 @@ function reviewSource() {
   ].join('\n\n');
 
   return `{
-  const { task } = args;
+  const { task, standard } = args;
 
   const REVIEW_PROMPT = \`${tmpl(reviewPrompt)}\`;
 
   const FIXER_PROMPT = \`${tmpl(fixerPrompt)}\`;
+
+  const STANDARD_BLOCK = '## Standard (authoritative — the requirements + acceptance of record)';
+
+  // The standard is the plan's prd + acceptance AS THEIR ORIGINAL TEXT: the
+  // authoritative documents go in, the main agent's narrative stays out. Both
+  // paths must resolve to non-empty content or there is no standard at all
+  // (standalone review degrades to pure code modelling, exactly as before).
+  async function readStandard() {
+    if (standard == null || typeof standard !== 'object') return '';
+    try {
+      const requirements = typeof standard.requirements === 'string' && standard.requirements.trim().length > 0
+        ? (await wf.readFile(standard.requirements)) || ''
+        : '';
+      const acceptance = typeof standard.acceptance === 'string' && standard.acceptance.trim().length > 0
+        ? (await wf.readFile(standard.acceptance)) || ''
+        : '';
+      if (requirements.trim().length === 0 || acceptance.trim().length === 0) return '';
+      return '\\n\\n' + STANDARD_BLOCK + '\\n' + requirements.trim() + '\\n\\n' + acceptance.trim();
+    } catch {
+      return '';
+    }
+  }
+
+  const standardBlock = await readStandard();
 
   const REVIEW_SCHEMA = {
     type: 'object',
@@ -214,6 +242,7 @@ function reviewSource() {
     properties: {
       spec_table: { type: 'array', items: { type: 'object', required: ['module', 'state', 'operation', 'precondition', 'postcondition', 'invariant'], properties: { module: { type: 'string' }, state: { type: 'string' }, operation: { type: 'string' }, precondition: { type: 'string' }, postcondition: { type: 'string' }, invariant: { type: 'string' } } } },
       reports: { type: 'array', items: { type: 'object', required: ['id', 'level', 'file', 'line', 'invariant', 'input', 'expected', 'actual', 'test'], properties: { id: { type: 'string' }, level: { type: 'string', enum: ['critical', 'medium', 'low'] }, file: { type: 'string' }, line: { type: 'number' }, invariant: { type: 'string' }, input: { type: 'string' }, expected: { type: 'string' }, actual: { type: 'string' }, test: { type: 'string' } } } },
+      compliance: { type: 'array', items: { type: 'object', required: ['requirement', 'status'], properties: { requirement: { type: 'string' }, acceptance: { type: 'string' }, test: { type: 'string' }, status: { type: 'string', enum: ['pass', 'fail', 'missing', 'contradiction'] }, note: { type: 'string' } } } },
     },
   };
 
@@ -228,7 +257,7 @@ function reviewSource() {
 
   const review = await wf.phase('review', () => wf.runAgent({
     name: 'review',
-    prompt: REVIEW_PROMPT + '\\n\\n## Review scope\\n' + task,
+    prompt: REVIEW_PROMPT + standardBlock + '\\n\\n## Review scope\\n' + task,
     readOnly: false,
     modelHint: 'deep',
     outputSchema: REVIEW_SCHEMA,
@@ -236,13 +265,16 @@ function reviewSource() {
   if (review === null) return { status: 'blocked', reason: 'review agent failed' };
 
   const reports = review.structured?.reports ?? [];
+  // The compliance table is the review's own output (requirement X/Y), passed
+  // through untouched so the main agent aggregates it instead of inventing it.
+  const compliance = review.structured?.compliance ?? [];
   const clean = reports.length === 0;
 
   let fixes = [];
   if (!clean) {
     const fix = await wf.phase('fix', () => wf.runAgent({
       name: 'fix',
-      prompt: FIXER_PROMPT + '\\n\\n## Error reports\\n' + JSON.stringify(reports, null, 2),
+      prompt: FIXER_PROMPT + standardBlock + '\\n\\n## Error reports\\n' + JSON.stringify(reports, null, 2),
       readOnly: false,
       modelHint: 'deep',
       outputSchema: FIXER_SCHEMA,
@@ -252,10 +284,10 @@ function reviewSource() {
     // A fixer that could not repair every counterexample is an incomplete review,
     // not a completed one — surface 'failed' (parity with simplify),
     // never a misleading 'done'.
-    if (fix.structured?.status === 'failed') return { status: 'failed', clean: false, reports, fixes };
+    if (fix.structured?.status === 'failed') return { status: 'failed', clean: false, reports, fixes, compliance };
   }
 
-  return { status: 'done', clean, reports, fixes };
+  return { status: 'done', clean, reports, fixes, compliance };
 }`;
 }
 

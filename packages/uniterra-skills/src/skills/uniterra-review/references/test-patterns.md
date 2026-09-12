@@ -93,6 +93,38 @@ type-boundary values; assert the data invariant on every generated case.
 - If a property test for an invariant already exists (e.g. from an earlier run), re-run it
   instead of duplicating it.
 
+## Standard axis — auditing the evidence
+
+When the review carries a standard (the requirements list + acceptance criteria of record), every
+requirement line gets audited against the evidence its acceptance line names. This is NOT a fourth
+PBT layer — it is a different axis: the layers prove the code's own invariants, this proves the
+code against what the plan ASKED for. Audit each requirement in this order:
+
+1. **Locate the evidence.** Take the acceptance line that verifies the requirement and the test it
+   names. When it names none, search the suite for the test covering that acceptance outcome. No
+   test anywhere covers it → the requirement is a **coverage gap** (`missing`).
+2. **Run it.** A named test that does not exist verifies nothing (`missing`); one that exists and
+   fails is a `fail` row with the observed output.
+3. **Break it — the hollow-test check.** A passing test is evidence only if it CAN fail. Read it and
+   ask what wrong implementation would still satisfy it:
+   - does it assert the acceptance OUTCOME, or merely that a call happened, a value is defined, or
+     the code's own output was snapshotted back?
+   - would a deliberately naive implementation (identity, empty return, hardcoded path) pass it?
+   - is the assertion fed by the same mock the code under test produced (the test proving itself)?
+   - does it pin a shape the requirement never mentions while the required behaviour goes
+     unasserted?
+     A test that survives its own wrong implementation is a **hollow test**: report it as a `fail` row
+     whose `note` states exactly what a broken implementation could still do. When it is unclear,
+     WRITE the naive counter-implementation in the repo's stack and run it — a test the wrong code
+     passes is hollow, and that is a reproducible fact rather than an opinion.
+4. **Report a contradiction** (`contradiction`) when the code or its tests are deliberately at odds
+   with a requirement / acceptance line: the standard says one thing, the implementation does
+   another, and the suite encodes the implementation's version. It is a finding against the code,
+   never a licence to edit the standard.
+
+A requirement whose evidence exists, passes, and can fail is a `pass` row. Evidence that lives
+only in a comment, a doc, or the author's intent is a coverage gap.
+
 ## Run all the tests together, in the background
 
 After EVERY test is written, run them ALL in ONE command so the batch executes once. Launch the

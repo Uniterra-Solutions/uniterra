@@ -63,12 +63,25 @@ function loadCapsule(root: string, { skill, file }: { skill: string; file: strin
   return capsule;
 }
 
-/** A stub `wf` object driving the capsules the way the dsh_workflow engine does. */
-function stubWf(agentMap: Record<string, (input: Record<string, unknown>) => unknown>): {
+/** The default `wf.readFile` fixture (the inlined task brief). */
+const DEFAULT_BRIEF =
+  '# stub brief\n\nGoal: stub\nRequirements: REQ-1 (test: a)\nowned_files: a.js\nforbidden_files: b.js';
+
+/**
+ * A stub `wf` object driving the capsules the way the dsh_workflow engine does.
+ * `readFile` overrides the host file fixture (used to serve the authoritative
+ * standard documents); `prompts` records every agent prompt the capsule built.
+ */
+function stubWf(
+  agentMap: Record<string, (input: Record<string, unknown>) => unknown>,
+  readFile?: (path: string) => string,
+): {
   wf: Record<string, unknown>;
   calls: string[];
+  prompts: Array<{ name: string; prompt: string }>;
 } {
   const calls: string[] = [];
+  const prompts: Array<{ name: string; prompt: string }> = [];
   const wf = {
     runId: 'test',
     args: null,
@@ -79,6 +92,7 @@ function stubWf(agentMap: Record<string, (input: Record<string, unknown>) => unk
     },
     runAgent: async (input: Record<string, unknown>): Promise<{ structured: unknown } | null> => {
       calls.push('agent:' + String(input.name));
+      prompts.push({ name: String(input.name), prompt: String(input.prompt) });
       const fixture = agentMap[String(input.name)];
       return fixture === undefined ? null : { structured: fixture(input) };
     },
@@ -113,18 +127,19 @@ function stubWf(agentMap: Record<string, (input: Record<string, unknown>) => unk
     synthesize: async (): Promise<{ text: string }> => ({ text: '' }),
     workflow: async (): Promise<null> => null,
     artifact: async (): Promise<{ name: string; path: string }> => ({ name: '', path: '' }),
-    readFile: async (): Promise<string> =>
-      '# stub brief\n\nGoal: stub\nRequirements: REQ-1 (test: a)\nowned_files: a.js\nforbidden_files: b.js',
+    readFile: async (file: string): Promise<string> =>
+      readFile === undefined ? DEFAULT_BRIEF : readFile(file),
     log: (): void => undefined,
   };
-  return { wf, calls };
+  return { wf, calls, prompts };
 }
 
 async function runCapsule(
   capsule: { source: string },
   args: unknown,
   agentMap: Record<string, (input: Record<string, unknown>) => unknown>,
-): Promise<{ result: unknown; calls: string[] }> {
+  readFile?: (path: string) => string,
+): Promise<{ result: unknown; calls: string[]; prompts: Array<{ name: string; prompt: string }> }> {
   const context: Record<string, unknown> = { __run: undefined };
   vm.createContext(context);
   const script = new vm.Script(`"use strict";\n${capsule.source}\n;globalThis.__run = run;`, {
@@ -132,9 +147,9 @@ async function runCapsule(
   });
   script.runInContext(context);
   const run = context.__run as (wf: unknown, args: unknown) => Promise<unknown>;
-  const { wf, calls } = stubWf(agentMap);
+  const { wf, calls, prompts } = stubWf(agentMap, readFile);
   const result = await run(wf, args);
-  return { result, calls };
+  return { result, calls, prompts };
 }
 
 test('every pipeline skill ships a valid dsh.workflow capsule', () => {
@@ -372,6 +387,136 @@ test('review capsule runs single-pass and skips the fixer on a clean review', as
     assert.equal(r.status, 'done');
     assert.equal(r.clean, false);
     assert.equal((r.fixes as unknown[]).length, 1);
+  }
+});
+
+/** The verbatim header of the standard block the review capsule inlines. */
+const STANDARD_HEADER = '## Standard (authoritative — the requirements + acceptance of record)';
+
+test('review capsule injects the authoritative standard documents into the review and fixer prompts', async () => {
+  const root = builtinSkillsDir();
+  const capsule = loadCapsule(root, CAPSULES[1]!);
+  const requirementsPath = '.plan/20260913/orders/prd.md';
+  const acceptancePath = '.plan/20260913/orders/acceptance.md';
+  // The standard reaches the agent as the DOCUMENT TEXT — never as the main
+  // agent's summary of it (the anti-pollution boundary).
+  const prdText = '# PRD — orders\n\n- REQ-1: order totals round half-up\n';
+  const acceptanceText =
+    '# Acceptance — orders\n\n| Req | Objective | Verifiable evidence |\n| REQ-1 | rounding | test/money.test.ts |\n';
+  const documents: Record<string, string> = {
+    [requirementsPath]: prdText,
+    [acceptancePath]: acceptanceText,
+  };
+  const readStandard = (file: string): string => {
+    const content = documents[file];
+    if (content === undefined) throw new Error('ENOENT: ' + file);
+    return content;
+  };
+  const report = {
+    id: 'r1',
+    level: 'critical',
+    file: 'a.js',
+    line: 3,
+    invariant: 'inv',
+    input: 'x',
+    expected: 'y',
+    actual: 'z',
+    test: 't',
+  };
+  const compliance = [
+    {
+      requirement: 'REQ-1',
+      acceptance: 'REQ-1 row',
+      test: 'test/money.test.ts',
+      status: 'fail',
+      note: 'rounding is half-even',
+    },
+  ];
+
+  {
+    // A standard is supplied → BOTH agent prompts carry the verbatim documents.
+    const { result, prompts } = await runCapsule(
+      capsule,
+      { task: 'scope', standard: { requirements: requirementsPath, acceptance: acceptancePath } },
+      {
+        review: () => ({ spec_table: [], reports: [report], compliance }),
+        fix: () => ({
+          status: 'fixed',
+          fixes: [{ id: 'r1', diff: 'd', result: 'green', explanation: 'e' }],
+        }),
+      },
+      readStandard,
+    );
+    for (const name of ['review', 'fix']) {
+      const prompt = prompts.find((call) => call.name === name)?.prompt ?? '';
+      assert.ok(prompt.length > 0, `the ${name} agent was dispatched`);
+      assert.ok(
+        prompt.includes(STANDARD_HEADER),
+        `the ${name} prompt carries the standard block header`,
+      );
+      assert.ok(
+        prompt.includes(prdText.trim()),
+        `the ${name} prompt carries the requirements document verbatim`,
+      );
+      assert.ok(
+        prompt.includes(acceptanceText.trim()),
+        `the ${name} prompt carries the acceptance document verbatim`,
+      );
+    }
+    // The compliance table the review produced is passed straight through.
+    const r = result as Record<string, unknown>;
+    assert.equal(r.status, 'done');
+    assert.deepEqual(
+      JSON.parse(JSON.stringify(r.compliance)),
+      compliance,
+      'compliance is passed through from the review structured output',
+    );
+  }
+
+  {
+    // No standard → the capsule behaves exactly as before (no block, and the
+    // standard documents are never read).
+    const { result, prompts } = await runCapsule(
+      capsule,
+      { task: 'scope' },
+      { review: () => ({ spec_table: [], reports: [] }) },
+      () => {
+        throw new Error('the capsule must not read any file when no standard is given');
+      },
+    );
+    const r = result as Record<string, unknown>;
+    assert.equal(r.status, 'done');
+    assert.equal(r.clean, true);
+    assert.deepEqual(
+      JSON.parse(JSON.stringify(r.compliance)),
+      [],
+      'compliance defaults to an empty list',
+    );
+    assert.ok(
+      !prompts[0]!.prompt.includes(STANDARD_HEADER),
+      'no standard block when no standard is supplied',
+    );
+  }
+
+  {
+    // A sole document is not a standard: both must load and carry content.
+    const partials = [
+      { requirements: requirementsPath },
+      { acceptance: acceptancePath },
+      { requirements: requirementsPath, acceptance: '.plan/20260913/orders/missing.md' },
+    ];
+    for (const standard of partials) {
+      const { prompts } = await runCapsule(
+        capsule,
+        { task: 'scope', standard },
+        { review: () => ({ spec_table: [], reports: [] }) },
+        readStandard,
+      );
+      assert.ok(
+        !prompts[0]!.prompt.includes(STANDARD_HEADER),
+        `no standard block for an incomplete standard (${JSON.stringify(standard)})`,
+      );
+    }
   }
 });
 

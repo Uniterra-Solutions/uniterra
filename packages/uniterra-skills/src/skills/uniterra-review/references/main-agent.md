@@ -7,7 +7,7 @@ aggregate.
 
 ## Aggregate
 
-You receive `{ status, clean, reports, fixes }` from the workflow:
+You receive `{ status, clean, reports, fixes, compliance }` from the workflow:
 
 1. Collect every structured error report (`reports`) and its fix outcome (`fixes`: diff + result +
    explanation).
@@ -30,7 +30,15 @@ You receive `{ status, clean, reports, fixes }` from the workflow:
    where-only label and does not state the guarantee it enforces, raise it as a `low` issue naming
    the test itself, so a hidden-meaning test is never silently accepted.
 
-5. Verdict: `pass` if no `critical`/`medium` counterexample remains open (unfixed); `fail` if any
+5. **Standard summary** (when `compliance` is non-empty) — report the compliance result as
+   requirements X/Y and acceptance M/N met, counting a requirement as met only when its row is
+   `pass`. List every non-`pass` row with its requirement and reason, naming each of the three
+   finding classes explicitly: **coverage gap** (`missing`), **hollow test** (`fail` with a
+   non-discriminating assertion), **spec contradiction** (`contradiction`). The standard axis is
+   not a PBT layer — present it NEXT TO the severity report, never merged into it. When no standard
+   was supplied, say so and report the severity analysis alone.
+
+6. Verdict: `pass` if no `critical`/`medium` counterexample remains open (unfixed); `fail` if any
    `critical`/`medium` counterexample is still open. When `clean` is true (no counterexample at all),
    the code is proven sound — report `pass`.
 
@@ -47,3 +55,5 @@ Produce `{ verdict: "pass" | "fail", summary, issues: [ { id, level, logic, why,
 
 - If there are no counterexamples, return verdict `pass`, a short summary, and an empty `issues` list.
 - If a counterexample is unfixed, carry its report and mark `fixed: false`.
+- Carry the standard summary (requirements X/Y, acceptance M/N + every non-`pass` row) alongside
+  the issues whenever a standard was supplied.
