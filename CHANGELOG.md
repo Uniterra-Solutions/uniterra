@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.4] — 2026-09-13
+
 ### Changed
 
 - **The plan is now a requirements list plus its acceptance criteria — the architecture design is gone from the whole pipeline** (`packages/uniterra-skills`, `src/skills/uniterra-plan/`). `init_plan.mjs` scaffolds exactly two documents (`prd.md` + `acceptance.md`) and the plan skill gained a read-only reconnaissance step before clarification: it reads the relevant modules, existing tests and conventions first (so every acceptance evidence entry cites a real path or command in the repo), then clarifies ONLY the requirements, the acceptance criteria, and the facts/constraints the repo cannot answer (external-system behavior, compatibility commitments, organizational conventions, irreversible choices) — anything the repo can answer must not be asked, and the implementation is never co-designed with the user. `prd.md`'s `## Assumptions` section became `## Assumptions & Constraints` (a constraint that cannot be derived from the repo lands as a requirement or an acceptance row, never as design prose), and `acceptance.md` now asks for evidence that already exists in this repo. The plan skill, the scaffolding CLI, `README.md` and the project docs were synced; no design artifact is scaffolded, read or referenced anywhere in the pipeline any more.
