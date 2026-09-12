@@ -6,7 +6,7 @@ description: >
   read-only, clarify only the requirements / acceptance / facts the repo cannot
   answer, scaffold the plan run directory, write prd.md + acceptance.md, and
   confirm them with the user. The plan is a requirements list plus the
-  acceptance criteria that verify it — there is no design document. LOAD when:
+  acceptance criteria that verify it — there is no architecture design. LOAD when:
   - User asks to plan a feature or task (prd / design / plan / 規劃 / 計畫)
   - User references Jovaltus planning or asks for an execution plan
   Use uniterra-implement to execute a plan and uniterra-review /

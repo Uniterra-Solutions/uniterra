@@ -17,24 +17,31 @@ description: >
 # Uniterra Simplify — behaviour-preserving simplification
 
 Pipeline position: after `uniterra-implement`, or standalone. The review is
-driven by a goal + three context blocks (requirements, design, acceptance) —
-NOT by `execution-plan.json`.
+driven by a goal + the context blocks (requirements and acceptance, which are
+authoritative; an optional legacy design block) — NOT by `execution-plan.json`.
 
 ## 1. Assemble goal and context
 
 - **goal** — one line: what the change should achieve.
-- **context.requirements** — the requirements list.
-- **context.design** — the architecture/design.
-- **context.acceptance** — the acceptance criteria list.
+- **context.requirements** — the requirements list (authoritative).
+- **context.acceptance** — the acceptance criteria list (authoritative).
+- **context.design** — **optional**, kept for compatibility. The plan no longer
+  produces an architecture design, so pass this block only when an older plan (or
+  another source) still carries one.
 
-These may come from the plan docs (`prd.md`, `design.md`, `acceptance.md`) or be
-written by you directly for simple tasks. Any block may be empty.
+These may come from the plan docs (`prd.md`, `acceptance.md`) or be written by you
+directly for simple tasks. Any block may be empty.
 
-The `design` block is AUTHORITATIVE: the simplification must never contradict the
-plan's architecture or engineering needs. Design-mandated machinery (layers,
-interfaces, config flags, guards, error paths) and stated engineering needs
-(testability, observability, security, error handling, performance) are not
-over-engineering — keep them in place.
+The `requirements` + `acceptance` blocks are AUTHORITATIVE: a simplification must
+never contradict a requirement or an acceptance line. Machinery a requirement or an
+acceptance line demands (a layer, an interface, a config flag, a guard, an error
+path, a testability seam, an observability hook) is NOT over-engineering — keep it in
+place. An engineering need counts only once the requirements or acceptance state it:
+declare it there and it is justified by definition; do not infer one, and do not
+delete machinery on the theory that it might be unnecessary.
+
+A missing `design` block changes none of the above, and is NEVER a reason to delete
+machinery a requirement or an acceptance line requires.
 
 ## 2. Run the simplify workflow
 
@@ -80,10 +87,12 @@ applies. Skipped items are never dropped and are returned with the result.
 - A `risky` recommendation is pinned by equivalence tests BEFORE it is applied —
   written against the current code, run green, then applied and re-confirmed; it
   is applied only after that gate, and skipped only with a genuine reason.
-- The `design` context is authoritative: a simplification that contradicts the
-  plan's architecture or engineering needs is omitted. Design-mandated machinery
-  and stated engineering needs are not simplification opportunities; the checklist
-  applies only where the design is silent.
+- The `requirements` + `acceptance` blocks are authoritative: a simplification
+  that contradicts a requirement or an acceptance line is omitted. Required
+  machinery and the engineering needs those two documents state are not
+  simplification opportunities; the checklist applies only where they are silent.
+  When an optional `design` block is present it is honoured alongside them, and
+  when no context is supplied at all the goal is the binding constraint.
 
 ## Files
 

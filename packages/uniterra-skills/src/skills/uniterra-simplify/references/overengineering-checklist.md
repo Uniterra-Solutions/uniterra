@@ -4,17 +4,22 @@ A focus checklist for the simplify review agent: the over-engineering mistakes
 AI coding agents most often introduce. Check every change against these; a match
 is a simplification opportunity.
 
-> **Gate — read before the checklist.** The plan's `Design` context is
-> AUTHORITATIVE. A match below is an opportunity ONLY when the design does not
-> require the machinery:
+> **Gate — read before the checklist.** The plan's `Requirements` and
+> `Acceptance` contexts are AUTHORITATIVE. A match below is an opportunity ONLY
+> when they do not require the machinery:
 >
-> - If the design explicitly names a layer, interface, config flag, guard, error
->   path, or module boundary, it is NOT over-engineering — leave it in place.
-> - Engineering needs the design or requirements state (testability,
+> - If a requirement or an acceptance line names a layer, interface, config flag,
+>   guard, error path, or module boundary, it is NOT over-engineering — leave it in
+>   place.
+> - Engineering needs the requirements or acceptance state (testability,
 >   observability, security, error handling, performance, extensibility) are
->   justified by definition — keep them in place.
-> - A checklist match that contradicts the design is not a simplification
->   opportunity; every item below reads "…unless the design requires it".
+>   justified by definition — keep them in place. An engineering need nobody
+>   declared does not license deleting the machinery that carries it.
+> - A checklist match that contradicts a requirement or an acceptance line is not a
+>   simplification opportunity; every item below reads "…unless the requirements
+>   require it".
+> - The `Design` block is optional (kept for compatibility with older plans); when
+>   present it is honoured alongside the two above, and its absence changes nothing.
 
 ## 1. Unnecessary abstraction / pass-through indirection
 

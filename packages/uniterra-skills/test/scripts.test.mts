@@ -57,7 +57,7 @@ test('init_plan.mjs scaffolds .plan/<YYYYMMDD>/<plan-name>/ with the requirement
     assert.equal(planDirs.length, 1, 'one plan-name directory');
     const planDir = path.join(cwd, '.plan', ts!, planDirs[0]!);
     // The plan is a requirements list + its acceptance criteria — exactly two
-    // documents. There is no design document anywhere in the pipeline.
+    // documents. There is no architecture design anywhere in the pipeline.
     assert.deepEqual(
       readdirSync(planDir).sort(),
       ['acceptance.md', 'prd.md'],

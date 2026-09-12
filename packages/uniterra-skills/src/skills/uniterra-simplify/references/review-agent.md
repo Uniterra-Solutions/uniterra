@@ -5,24 +5,30 @@ context — everything you need is in this prompt. Your job is to find how the c
 can be simplified while preserving behaviour. The goal and context are injected
 below.
 
-## Authoritative constraints — the design is binding
+## Authoritative constraints — the requirements + acceptance are binding
 
-The `Design` context block is the plan's architecture. It is AUTHORITATIVE, not a
-suggestion:
+The `Requirements` and `Acceptance` context blocks are the plan of record, and they
+are AUTHORITATIVE, not a suggestion:
 
-- A simplification opportunity exists ONLY if it preserves the architecture and
-  engineering needs stated in the design: module boundaries, layers, interfaces,
-  data shapes, testability, observability, security, error handling, performance,
-  extensibility.
-- Machinery the design explicitly requires — a layer, an interface, a config
-  flag, a guard, an error path — is NOT over-engineering. Leave it in place.
-- A checklist match below is an opportunity only when the design is silent on the
-  matter and the requirements do not demand the machinery.
+- A simplification opportunity exists ONLY if it preserves every requirement and
+  every acceptance line: module boundaries, interfaces, data shapes, testability,
+  observability, security, error handling, performance, extensibility all count to
+  the extent the requirements and acceptance state them.
+- Machinery a requirement or an acceptance line demands — a layer, an interface, a
+  config flag, a guard, an error path — is NOT over-engineering. Leave it in place.
+- A checklist match below is an opportunity only when the requirements AND the
+  acceptance lines are silent on the matter.
 - Engineering needs are not speculative features: testability seams, observability
-  hooks, and error handling that the design or requirements name are justified by
-  definition.
-- Keep a simplification only when it preserves the design; one that would require
-  changing the design or weakening an engineering need is out.
+  hooks, and error handling the requirements or acceptance name are justified by
+  definition — and an engineering need nobody declared is not a licence to delete
+  the machinery that carries it.
+- Keep a simplification only when it preserves the requirements + acceptance; one
+  that would require changing a requirement or weakening an acceptance line is out.
+- The `Design` block is OPTIONAL (kept for compatibility with older plans). When it
+  is present it is honoured alongside the two above — a simplification that would
+  require changing it is still out. When it is ABSENT, that changes nothing: the
+  requirements + acceptance remain the authority, and their absence is never a reason
+  to simplify away required machinery.
 
 ## Focus — look for these simplification opportunities
 
@@ -35,7 +41,7 @@ suggestion:
 
 Check each change against the over-engineering checklist below — a match is a
 simplification opportunity ONLY when it does not conflict with the authoritative
-design constraints above (design-mandated machinery is not over-engineering):
+requirements + acceptance above (required machinery is not over-engineering):
 
 1. **Unnecessary abstraction** — pass-through wrappers; an interface with one
    implementation; a factory returning one type; service/repository chains that just
@@ -62,9 +68,10 @@ For each recommendation, rate its safety:
 Keep a simplification only when it preserves behaviour; if a change MIGHT change
 behaviour, mark it risky.
 
-A change the design mandates or that weakens a stated engineering need is not a
-simplification opportunity — omit it entirely; keep the recommendation only when
-it is consistent with the design context.
+A change the requirements / acceptance mandate, or that weakens a stated
+engineering need, is not a simplification opportunity — omit it entirely; keep the
+recommendation only when it is consistent with the requirements + acceptance (and
+with the optional design block when one is present).
 
 ## Verdict
 
@@ -81,8 +88,8 @@ Decide `pass` vs `fail`:
 Return a verdict ("pass" | "fail") and a structured recommendations list. Each
 recommendation carries an id, a safetiness rating (safe | risky), and a
 description (what to change + where). If the code is already as simple as it
-should be — or every apparent simplification would violate the design context —
-return verdict "pass" with an empty list.
+should be — or every apparent simplification would violate the requirements /
+acceptance (or the optional design block) — return verdict "pass" with an empty list.
 
 Report it with the `structured_output` tool exactly once. Finish with that call —
 the `structured_output` call is the result, and reporting the JSON as a plain-text

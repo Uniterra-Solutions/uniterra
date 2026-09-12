@@ -26,9 +26,11 @@ below.
 - Preserve behaviour EXACTLY — a test's result stays the same.
 - A `risky` recommendation is applied, but only after its equivalence is pinned
   by tests written BEFORE the change; skip it only with a genuine reason.
-- The design context is authoritative: if a recommendation contradicts the
-  architecture or engineering needs stated in the Design block, report it skipped
-  with reason "violates design".
+- The requirements + acceptance context is authoritative: if a recommendation
+  contradicts a requirement or an acceptance line (or weakens an engineering need
+  they state), report it skipped with reason "violates requirements" — check that
+  FIRST. The optional legacy Design block, when present, is honoured alongside them
+  ("violates design").
 - Keep the change scoped: leave existing abstractions and public APIs intact.
 - Leave changes UNCOMMITTED.
 

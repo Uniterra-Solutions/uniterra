@@ -8,7 +8,7 @@
  * Creates <cwd>/.plan/<timestamp>/<plan-name>/ with prd.md and acceptance.md
  * templates, then prints the created directory. The agent fills in the
  * placeholders. The plan is a requirements list plus its acceptance criteria —
- * there is no design document.
+ * there is no architecture design.
  *
  * Run in the repo root (your cwd), e.g.:
  *   node "<skill_base>/scripts/init_plan.mjs" "user auth"
