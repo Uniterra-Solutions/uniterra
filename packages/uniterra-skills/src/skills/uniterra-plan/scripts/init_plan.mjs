@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 /**
- * Scaffold the plan run directory and its three plan document templates.
+ * Scaffold the plan run directory and its two plan document templates.
  *
  * Usage:
  *   node init_plan.mjs <plan-name> [timestamp]
  *
- * Creates <cwd>/.plan/<timestamp>/<plan-name>/ with prd.md, design.md and
- * acceptance.md templates, then prints the created directory. The agent fills
- * in the placeholders.
+ * Creates <cwd>/.plan/<timestamp>/<plan-name>/ with prd.md and acceptance.md
+ * templates, then prints the created directory. The agent fills in the
+ * placeholders. The plan is a requirements list plus its acceptance criteria —
+ * there is no design document.
  *
  * Run in the repo root (your cwd), e.g.:
  *   node "<skill_base>/scripts/init_plan.mjs" "user auth"
@@ -33,7 +34,7 @@ export function slugify(name) {
     .replace(/^-|-$/gu, '');
 }
 
-/** The three plan document templates, keyed by filename. */
+/** The two plan document templates, keyed by filename. */
 export function planTemplates(planName) {
   return {
     'prd.md': `# PRD — ${planName}
@@ -59,36 +60,19 @@ export function planTemplates(planName) {
 
 - <explicitly NOT built>
 
-## Assumptions
+## Assumptions & Constraints
 
-- <assumptions the requirements rely on>
-`,
-    'design.md': `# Design — ${planName}
+Facts and constraints that cannot be derived from the repo and must hold. Each
+one lands as a requirement (REQ-n) or an acceptance row — never as design prose.
 
-## Architecture
-
-<Module boundaries, main components, and how they interact.>
-
-## Data Model
-
-<Key data shapes / types / schemas.>
-
-## Business-Logic Surface
-
-<The functions / handlers that carry the business rules, and their contracts.>
-
-## External Dependencies
-
-- <library / service / tool — and why it is necessary>
-
-## Trade-offs
-
-- <decisions made, with the alternatives considered>
+- <assumption / constraint the requirements rely on>
 `,
     'acceptance.md': `# Acceptance — ${planName}
 
 One entry per requirement (REQ-1, …). Each names an objective, verifiable piece
-of evidence (a test, a command output, an observable behavior).
+of evidence (a test, a command output, an observable behavior). Prefer evidence
+that already exists in this repo — a real test file or a real command — over a
+described one.
 
 | Req | Objective | Verifiable evidence |
 |-----|-----------|---------------------|
@@ -100,7 +84,7 @@ of evidence (a test, a command output, an observable behavior).
 }
 
 /**
- * Create <cwd>/.plan/<timestamp>/<plan-name-slug>/ with the three templates.
+ * Create <cwd>/.plan/<timestamp>/<plan-name-slug>/ with the two templates.
  * Returns the absolute run-dir path.
  */
 export function generatePlan({ cwd, planName, timestamp }) {
@@ -122,7 +106,7 @@ function cli(argv) {
   const runDir = generatePlan({ cwd: process.cwd(), planName, timestamp });
   const rel = path.relative(process.cwd(), runDir);
   console.log(`plan scaffolding written to ${rel}`);
-  console.log(`  prd.md\n  design.md\n  acceptance.md`);
+  console.log(`  prd.md\n  acceptance.md`);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {

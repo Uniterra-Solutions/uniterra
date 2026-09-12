@@ -46,7 +46,7 @@ function cleanup(dir: string): void {
   rmSync(dir, { recursive: true, force: true });
 }
 
-test('init_plan.mjs scaffolds .plan/<YYYYMMDD>/<plan-name>/ with prd/design/acceptance', () => {
+test('init_plan.mjs scaffolds .plan/<YYYYMMDD>/<plan-name>/ with the requirements + acceptance documents only', () => {
   const cwd = mkdtempSync(path.join(tmpdir(), 'uniterra-init-plan-'));
   try {
     run(cwd, planScript, ['User Auth']);
@@ -56,12 +56,20 @@ test('init_plan.mjs scaffolds .plan/<YYYYMMDD>/<plan-name>/ with prd/design/acce
     const planDirs = dirs(path.join(cwd, '.plan'), ts!);
     assert.equal(planDirs.length, 1, 'one plan-name directory');
     const planDir = path.join(cwd, '.plan', ts!, planDirs[0]!);
-    for (const file of ['prd.md', 'design.md', 'acceptance.md']) {
-      assert.ok(existsSync(path.join(planDir, file)), `${file} generated`);
-    }
+    // The plan is a requirements list + its acceptance criteria — exactly two
+    // documents. There is no design document anywhere in the pipeline.
+    assert.deepEqual(
+      readdirSync(planDir).sort(),
+      ['acceptance.md', 'prd.md'],
+      'the plan scaffolds exactly the two plan documents',
+    );
+    assert.ok(
+      !existsSync(path.join(planDir, 'design.md')),
+      'no design.md is scaffolded (the plan carries no architecture design)',
+    );
     const prd = readFileSync(path.join(planDir, 'prd.md'), 'utf8');
     assert.ok(prd.includes('REQ-1'), 'prd seeds a requirement list');
-    assert.ok(readFileSync(path.join(planDir, 'design.md'), 'utf8').includes('## Architecture'));
+    assert.ok(prd.includes('## Assumptions'), 'prd seeds the assumptions & constraints section');
     const accept = readFileSync(path.join(planDir, 'acceptance.md'), 'utf8');
     assert.ok(accept.includes('Verifiable evidence'), 'acceptance seeds evidence column');
   } finally {
