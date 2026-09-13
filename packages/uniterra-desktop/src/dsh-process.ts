@@ -37,6 +37,13 @@ export interface DshRuntimeHandle {
 /** How long a dsh child may take to report readiness before the wait fails. */
 const READINESS_TIMEOUT_MS = 60_000;
 
+/** Any argument that re-enables dsh's OS browser handoff. `--no-open` is the
+ * negation of an `open` option, so a token beginning with `--open` flips the
+ * handoff back on; the shell IS this app's browser (the BrowserWindow loads the
+ * readiness URL), and a suppressed launch must never be replaced by an
+ * equivalent — the defect of issue #28. */
+const AUTO_OPEN_ARGUMENT = /^--open/u;
+
 /** Wait for the dsh readiness URL line on stdout.
  *
  * @param stdout the child's stdout stream.
@@ -123,7 +130,10 @@ export async function startDsh(options: DshRuntimeOptions): Promise<DshRuntimeHa
   if (options.port !== undefined) {
     args.push('--port', String(options.port));
   }
-  args.push(...(options.args ?? []));
+  // Caller arguments are filtered: dsh's option is the NEGATION `--no-open`, so
+  // any token that begins with `--open` turns the handoff back on — a caller
+  // must not be able to undo the contract the shell depends on (issue #28).
+  args.push(...(options.args ?? []).filter((arg) => !AUTO_OPEN_ARGUMENT.test(arg)));
 
   const child = spawn(options.nodeExec, [options.cli, ...args], {
     env: {
