@@ -74,7 +74,6 @@ jobs:
         run: pnpm run build
       - name: Tests
         run: |
-          pnpm --filter @uniterra-solutions/uniterra-systemprompt test
           pnpm --filter @uniterra-solutions/uniterra-provider test
           pnpm --filter @uniterra-solutions/uniterra-skills test
           pnpm --filter @uniterra-solutions/uniterra test

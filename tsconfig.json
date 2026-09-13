@@ -1,7 +1,6 @@
 {
   "files": [],
   "references": [
-    { "path": "./packages/uniterra-systemprompt" },
     { "path": "./packages/uniterra-skills" },
     { "path": "./packages/uniterra-cli" },
     { "path": "./packages/uniterra-desktop" },

@@ -1,5 +1,13 @@
 node_modules/
 dist/
+# The vendored ego-browser plugin ships its COMPILED browser entry inside
+# runtime/ego-browser/dist/out/index.js, loaded by that exact path on every ego_*
+# call. The repository-wide dist/ rule would drop it and leave a fresh clone with
+# a vendored plugin that cannot run; re-include the whole chain (git cannot
+# re-include a file whose parent directory stays excluded).
+!vendor/dsh-plugins/ego-browser/runtime/ego-browser/dist/
+!vendor/dsh-plugins/ego-browser/runtime/ego-browser/dist/out/
+!vendor/dsh-plugins/ego-browser/runtime/ego-browser/dist/out/index.js
 *.log
 .tsbuildinfo
 .vsix
@@ -11,4 +19,7 @@ dist/
 
 .codegraph/
 vendor/dsh-runtime/
+
+# uniterra-implement run directory (transient per-run task briefs)
+.dsh/
 .pnpm-store/

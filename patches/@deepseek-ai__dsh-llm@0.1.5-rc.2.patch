@@ -1,0 +1,31 @@
+# pnpm patch for @deepseek-ai/dsh-llm@0.1.5-rc.2 — ALIAS-ONLY compatibility re-exports.
+#
+# WHY: 0.1.5-rc.2 exports `ToolCallId` but no longer exposes the pre-rename `CallId` name, and it
+# does not re-export `assertNever` / `deepFreeze` at the package root. A plugin pinned to an older
+# dsh family still imports the old names: `dsh-computer-use@0.2.0` depends on
+# `@deepseek-ai/dsh-tools@0.1.1-rc.2`, whose `lib/index.js` does
+# `import { CallId, HarnessError, assertNever, createUserMessage, deepFreeze } from
+# "@deepseek-ai/dsh-llm"`, so without these aliases that plugin fails to load.
+#
+# WHAT: appended re-exports only — every name already exists in the module's own scope or in
+# `@deepseek-ai/dsh-util-values` (a direct dependency of dsh-llm). No behaviour change.
+#
+# REMOVAL CONDITION: delete this patch and its `patchedDependencies` entry as soon as no consumer
+# imports `CallId`, `assertNever` or `deepFreeze` from `@deepseek-ai/dsh-llm` — i.e. once
+# `@deepseek-ai/dsh-tools` republishes against the renamed surface (`ToolCallId`, with
+# `assertNever` / `deepFreeze` imported straight from `@deepseek-ai/dsh-util-values`) and every
+# plugin that pinned the old `dsh-tools` (currently `dsh-computer-use@0.2.0`) has moved with it —
+# or once dsh-llm itself exports those names again.
+#
+diff --git a/lib/index.js b/lib/index.js
+index 4ed780e..e794f97 100644
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -2324,3 +2324,7 @@ function adapterFailureChunk(error, signal) {
+ }
+ //#endregion
+ export { APP_IDENTITY, AssistantStreamAccumulator, BlockAssembler, CONTEXT_SUMMARY_MAX_CHARS, CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESPONSE_CODE, HarnessError, INVALID_CREDENTIAL_CODE, LlmAdapter, LlmAttemptId, LlmError, LlmRuntime, LlmRuntime as default, MessageId, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId, RetryPolicySchema, ToolCallId, assembleAssistantStream, assertUsableApiKey, assistantStreamChunks, assistantStreamFirstTokenTime, assistantStreamHasVisibleContent, assistantStreamHasVisibleText, attributionHeaders, boundContextSummary, callConfigEquals, chunkHasVisibleText, contentHasFile, contentHasImage, createAssistantMessage, createMessage, createSystemMessage, createToolResultMessage, createUserMessage, errorChain, expandAssistantStream, fileHandleText, freezeMessage, isAgentLoopRequest, isContextWindowExceededError, isHarnessError, isQuotaExceededError, isTokenDelta, isVisibleChunk, joinAssistantStreamText, lastAssistantStreamChunk, markAgentLoopRequest, normalizeApiKey, offloadRequestImagesWithPolicy, offloadedImagePrefixCount, offloadedImageText, projectFilesToText, projectImagesForTextModel, requestImageHandleText, resolveImageAttachmentAccess, resolveRetryPolicy, runFirstTokenTime, runFirstVisibleTime, textOnlyImageText, userAgent };
++
++export { ToolCallId as CallId }
++
++export { assertNever, deepFreeze } from "@deepseek-ai/dsh-util-values"

@@ -1,5 +1,8 @@
 node_modules/
 dist/
+# Build output: the provider emits its esbuild bundle to lib/ (eslint ignores **/lib/ for the same reason)
+lib/
+.dsh/
 *.log
 .tsbuildinfo
 pnpm-lock.yaml

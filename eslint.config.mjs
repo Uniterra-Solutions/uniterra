@@ -14,6 +14,8 @@ export default tseslint.config(
       // the package's own `tsc -p tsconfig.test.json` in the test:pbt lane.
       '**/test/',
       '**/scripts/',
+      // uniterra-implement run directory: transient generated workflow scripts
+      '.dsh/',
     ],
   },
   js.configs.recommended,
