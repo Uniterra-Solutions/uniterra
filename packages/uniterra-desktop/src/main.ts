@@ -42,6 +42,13 @@ import {
 } from './notifications.js';
 import { startDshTurnObserver, type DshTurnObserverHandle } from './dsh-observer.js';
 import type { TurnNotice } from './turn-observer.js';
+import { spawnUpdater } from './update-launch.js';
+import {
+  loadProgressState,
+  pendingSummary,
+  progressDialogContent,
+  writeConsumedRun,
+} from './update-progress.js';
 import {
   resolveUniterraUpdateStatus,
   resolveUpdateAction,
@@ -294,18 +301,14 @@ async function runUniterraStartupUpdateCheck(): Promise<void> {
     // so a stale global uniterra CLI can never do a CLI-only update and leave
     // the app closed; UNITERRA_UPDATE_COMMAND overrides the command. (npm
     // shims are `.cmd` on Windows — shell: true lets cmd.exe resolve them.)
+    // `spawnUpdater` also hands the child the progress-record path under
+    // userData, so the update that outlives this process can report back here
+    // on the next boot.
     const invocation = updateInvocation(process.env.UNITERRA_UPDATE_COMMAND);
-    const { spawn } = await import('node:child_process');
-    const child = spawn(invocation.command, invocation.args, {
-      detached: true,
-      stdio: 'ignore',
-      shell: process.platform === 'win32',
-    });
-    child.once('error', (error: Error) => {
+    spawnUpdater(invocation, app.getPath('userData'), process.platform, (error: Error) => {
       console.error('[uniterra] failed to launch the updater:', error);
       void shell.openExternal(envOrDefault('UNITERRA_UPDATE_RELEASES_PAGE', DEFAULT_RELEASES_PAGE));
     });
-    child.unref();
     app.quit();
   } else if (action.action === 'skip-version') {
     writeSkippedVersion(action.skippedVersion);
@@ -458,6 +461,43 @@ function reportStartupFailure(err: unknown, showDialog: boolean): void {
   }
 }
 
+// ── update result (issue #15) ─────────────────────────────────────────────
+
+/** Whether this process already looked for an update result. The record is
+ * written by the updater that ran while the app was closed; the consumption
+ * marker under userData is what makes the NEXT boot silent. */
+let updateResultHandled = false;
+
+/** Show the result the updater left in `<userData>/update-progress.ndjson`,
+ * exactly once, and persist the consumption marker. Fail-soft by contract: a
+ * missing, unreadable or unfinished record shows nothing, and any failure is
+ * logged instead of being allowed to delay or break the boot. */
+async function showLastUpdateResult(): Promise<void> {
+  if (updateResultHandled) {
+    return;
+  }
+  updateResultHandled = true;
+  try {
+    const userData = app.getPath('userData');
+    const summary = pendingSummary(loadProgressState(userData));
+    if (summary === undefined) {
+      return;
+    }
+    const content = progressDialogContent(summary);
+    const parent = mainWindow !== null && !mainWindow.isDestroyed() ? mainWindow : undefined;
+    await dialog.showMessageBox(parent ?? (undefined as never), {
+      type: summary.status === 'ok' ? 'info' : 'error',
+      title: content.title,
+      message: content.message,
+      detail: content.detail,
+      buttons: ['OK'],
+    });
+    writeConsumedRun(userData, summary.run);
+  } catch (error) {
+    console.warn('[uniterra] failed to report the last update result:', error);
+  }
+}
+
 async function boot(): Promise<void> {
   // Uniterra IS the dsh desktop surface: it runs against the user's dsh config.
   // Dev uses a mirrored test home (never touches the real ~/.dsh); the
@@ -545,6 +585,11 @@ async function boot(): Promise<void> {
   } else {
     void mainWindow.loadURL(handle.url);
   }
+
+  // The window now exists, so a result left by the update that ran while this
+  // app was closed has somewhere to appear. Fire-and-forget: boot never waits
+  // on the read or on the dialog.
+  void showLastUpdateResult();
 }
 
 const gotLock = app.requestSingleInstanceLock();

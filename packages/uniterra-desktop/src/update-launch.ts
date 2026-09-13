@@ -9,6 +9,7 @@
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
+import { updateProgressFilePath } from './update-progress.js';
 
 export interface UpdaterInvocation {
   readonly command: string;
@@ -20,15 +21,21 @@ export interface UpdaterInvocation {
  * record path so the update reports back to this app on its next boot. */
 export function spawnUpdater(
   invocation: UpdaterInvocation,
-  _userDataDir: string,
+  userDataDir: string,
   platform: NodeJS.Platform,
   onError: (error: Error) => void,
 ): ChildProcess {
-  // STUB: the progress record environment variable is missing.
   const child = spawn(invocation.command, [...invocation.args], {
     detached: true,
     stdio: 'ignore',
     shell: platform === 'win32',
+    env: {
+      ...process.env,
+      // The running update appends its event stream here; the next boot reads
+      // it. Resolving the path is a pure string join — nothing is created in
+      // userData by spawning.
+      UNITERRA_UPDATE_PROGRESS_FILE: updateProgressFilePath(userDataDir),
+    },
   });
   child.once('error', onError);
   child.unref();
