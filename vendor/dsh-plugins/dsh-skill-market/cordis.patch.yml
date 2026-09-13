@@ -1,0 +1,12 @@
+# dsh-skill-market bundle patch
+# Registers the node half (index.js) with the host cordis runtime.
+# The browser half is picked up automatically via dsh.client.inject in package.json.
+- insert:
+    - id: skill-market
+      name: dsh-skill-market
+      # LOCAL PATCH (uniterra): the upstream row hardcoded the author's own
+      # environment here (an installDir under the author's home plus a
+      # githubTokenFile inside the author's work tree). The config block is
+      # dropped so the plugin's own defaults apply: installDir resolves to
+      # <DSH_HOME>/skills (resolveSkillRoot in index.js) and no token file is
+      # read unless the user configures one.

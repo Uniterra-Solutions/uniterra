@@ -1,12 +1,12 @@
 # Uniterra
 
-A desktop app built on the DeepSeek Harness (dsh) agent runtime and community dsh plugins: an Electron shell launches the bundled dsh CLI, provisions built-in plugins and skills into the user's profile, and hosts the dsh Web UI in a window. **The goal is to let you build your own desktop agent app through plugins** — it ships 6 npm community plugins, 3 vendored community plugins (dsh-shortcuts, the dsh_workflow dynamic-workflow layer, and the ego-browser browser-automation plugin), 1 optional vendored plugin (the Deep Whale skin, opt-in), and 1 in-house provider plugin, and you can install more at any time. A finished turn raises a native OS notification, so long agent runs do not need watching.
+A desktop app built on the DeepSeek Harness (dsh) agent runtime and community dsh plugins: an Electron shell launches the bundled dsh CLI, provisions built-in plugins and skills into the user's profile, and hosts the dsh Web UI in a window. **The goal is to let you build your own desktop agent app through plugins** — it ships 6 npm community plugins, 4 vendored community plugins (dsh-shortcuts, the dsh_workflow dynamic-workflow layer, the ego-browser browser-automation plugin, and the skill-market installer), 1 optional vendored plugin (the Deep Whale skin, opt-in), and 1 in-house provider plugin, and you can install more at any time. A finished turn raises a native OS notification, so long agent runs do not need watching.
 
 **Docs: [Documentation](docs/README.md)** (architecture diagrams, module deep dives, setup, testing, workflows) · **Spec: [AGENTS.md](AGENTS.md)**
 
 ## Built-in Plugins
 
-The app ships 11 built-in plugins (6 npm community, 3 vendored, 1 optional, 1 in-house). Source and license:
+The app ships 12 built-in plugins (6 npm community, 4 vendored, 1 optional, 1 in-house). Source and license:
 
 | Plugin                                  | Type     | Source                                                                                                       | License                                |
 | --------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------- |
@@ -20,6 +20,7 @@ The app ships 11 built-in plugins (6 npm community, 3 vendored, 1 optional, 1 in
 | `dsh-shortcuts`                         | vendored | [Ricketts-Guo/dsh-shortcuts](https://github.com/Ricketts-Guo/dsh-shortcuts)                                  | MIT                                    |
 | `@dsh-external/workflow`                | vendored | [omdsh-dev/dsh_workflow](https://github.com/omdsh-dev/dsh_workflow)                                          | MIT                                    |
 | `dsh-ego-browser`                       | vendored | [Fisfzy/dsh-ego-browser](https://github.com/Fisfzy/dsh-ego-browser)                                          | MIT                                    |
+| `dsh-skill-market`                      | vendored | [QQ-M/dsh-skill-market](https://github.com/QQ-M/dsh-skill-market)                                            | MIT                                    |
 | `@uniterra-solutions/uniterra-provider` | in-house | [Uniterra-Solutions/uniterra](https://github.com/Uniterra-Solutions/uniterra) (`packages/uniterra-provider`) | MIT                                    |
 
 Vendored plugins are pinned at fixed commits — see [vendor/dsh-plugins/VENDOR.md](vendor/dsh-plugins/VENDOR.md). We vendor a plugin **only because we customize it** (edit its copied source in place, recording the divergence + pending-upstream note in the `VENDOR.md` pin ledger); a plugin we do not modify stays a `node_modules`/npm import.

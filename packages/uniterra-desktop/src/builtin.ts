@@ -164,6 +164,40 @@ registerBuiltinPlugin({
   package: 'dsh-ego-browser',
 });
 
+// The Skill Market plugin (QQ-M/dsh-skill-market @ 8fa51ed5…, v0.1.0, MIT):
+// a "Skill Market" section in the settings page that searches GitHub for
+// skills and installs them with one click into dsh's USER SKILL ROOT
+// (<DSH_HOME>/skills), served by its host half through a same-origin JSON API
+// (webServer prefix route /skill-market/api/*). Vendored because upstream is
+// not on npm (the pin is the only lock) and because the copy needs LOCAL
+// PATCHes to load at all in a uniterra profile:
+//   1. its host half imported the scoped `@deepseek-ai/schemastery`, which no
+//      dsh profile resolves (ERR_MODULE_NOT_FOUND, verified in a throwaway
+//      DSH_HOME) — it imports the BARE `schemastery` the profile already links
+//      (PROFILE_RUNTIME_DEPS), the way the vendored ego-browser plugin does.
+//   2. `installDir` defaulted to the author's own /root/.dsh/skills, and the
+//      shipped cordis.patch.yml row hardcoded that value plus a
+//      githubTokenFile in the author's work tree. The exported pure
+//      resolveSkillRoot() is now used by BOTH the Config default and apply():
+//      an explicit configuration wins, else the LIVE DSH_HOME, else
+//      <home>/.dsh/skills — always an absolute path — and the patch ships no
+//      config block, so no token file is read unless the user sets one.
+//   3. package.json dropped its `@deepseek-ai/dsh-client-runtime` inject row
+//      and peer: that package does NOT exist in the pinned 0.1.5-rc.2 family
+//      (the same LOCAL PATCH dsh-shortcuts carries); the two other inject
+//      rows do exist there.
+//   4. the READMEs' config examples no longer name the author's paths.
+// Removal condition: drop this vendored copy for an npm import once upstream
+// republishes against the pinned family — a release that imports a package a
+// dsh profile resolves, defaults installDir to <DSH_HOME>/skills, and
+// declares no removed inject row. Until then, this is the reason it is
+// vendored (see vendor/dsh-plugins/VENDOR.md for the pin ledger).
+registerBuiltinPlugin({
+  kind: 'vendor',
+  dir: 'dsh-skill-market',
+  package: 'dsh-skill-market',
+});
+
 // In-house workspace built-ins ship built — the workspace build must have run
 // before provisioning — and their host bundles are self-contained (runtime
 // deps inlined), so copying the package dir is enough: the profile gets
@@ -302,31 +336,42 @@ export function copyBuiltins(kind: CopyBuiltin['kind']): readonly CopyBuiltin[] 
   return activeBuiltins().filter((entry): entry is CopyBuiltin => entry.kind === kind);
 }
 
+/** The copy-based entries one provisioning pass owns, in declaration order:
+ * vendored then workspace. Optional entries are NOT here —
+ * reconcileOptionalPlugins owns their row and copy. */
+function copiedBuiltinEntries(): readonly CopyBuiltin[] {
+  return [...copyBuiltins('vendor'), ...copyBuiltins('workspace')];
+}
+
 /** The package names of every retired built-in, in declaration order. */
 export function retiredBuiltinNames(): readonly string[] {
   return registry.filter(isRetired).map((entry) => entry.package);
 }
 
-/** The expected bundle rows of a fully provisioned uniterra profile: the
- * official dsh bundles plus every active built-in plugin's package name. */
-export function expectedBuiltinBundles(): string[] {
+/** The bundle rows one registry snapshot implies: the two official dsh
+ * bundles plus every active (non-retired, non-optional) built-in's package
+ * name, in declaration order. The pure derivation behind
+ * {@link expectedBuiltinBundles}, so a generated registry can be checked
+ * against it. An npm spec contributes its package name (scoped names
+ * included), a copy-based entry its package name; retired and optional
+ * entries contribute nothing. */
+export function bundlesForEntries(entries: readonly BuiltinPlugin[]): string[] {
   return [
     '@deepseek-ai/dsh-base',
     '@deepseek-ai/dsh-web-app',
-    ...npmBuiltinSpecs().map(builtinPackageName),
-    ...copyBuiltins('vendor').map((entry) => entry.package),
-    ...copyBuiltins('workspace').map((entry) => entry.package),
+    ...entries.flatMap((entry) =>
+      isRetired(entry) || entry.kind === 'optional'
+        ? []
+        : [entry.kind === 'npm' ? builtinPackageName(entry.spec) : entry.package],
+    ),
   ];
 }
 
-/** The bundle rows one registry snapshot implies: the two official dsh
- * bundles plus every active (non-retired) built-in's package name, in
- * declaration order. The pure derivation behind
- * {@link expectedBuiltinBundles}, so a generated registry can be checked
- * against it. */
-export function bundlesForEntries(_entries: readonly BuiltinPlugin[]): string[] {
-  // STUB: derives nothing from the registry.
-  return [];
+/** The expected bundle rows of a fully provisioned uniterra profile: the
+ * official dsh bundles plus every active built-in plugin's package name,
+ * derived from the LIVE registry through {@link bundlesForEntries}. */
+export function expectedBuiltinBundles(): string[] {
+  return bundlesForEntries(builtinPlugins());
 }
 
 /** Whether the profile's bundle list already carries every built-in. */
@@ -751,36 +796,11 @@ export function ensureBuiltinPlugins(
   // Copy-based built-ins (vendor + workspace): copy under their package name
   // and append the bundle rows to the profile manifest (dsh plugin add can't
   // be used — these packages declare peers that are not on npm). Optional
-  // entries are NOT copied here — reconcileOptionalPlugins owns them.
-  const manifestPath = path.join(dir, 'package.json');
-  const manifest = readJson(manifestPath) as {
-    name?: string;
-    private?: boolean;
-    dependencies?: Record<string, string>;
-    dsh?: { profile?: { bundles?: string[] } };
-  };
-  manifest.dsh ??= {};
-  manifest.dsh.profile ??= {};
-  manifest.dsh.profile.bundles ??= [];
-  const bundles = manifest.dsh.profile.bundles;
-
-  // Copy one built-in package dir into the profile's node_modules and make
-  // sure its Loader bundle row is present in the manifest.
-  const copyBuiltin = (sourceDir: string, pkgName: string): void => {
-    if (!bundles.includes(pkgName)) {
-      bundles.push(pkgName);
-    }
-    const dest = path.join(dir, 'node_modules', ...pkgName.split('/'));
-    rmSync(dest, { recursive: true, force: true });
-    mkdirSync(path.dirname(dest), { recursive: true });
-    cpSync(sourceDir, dest, { recursive: true });
-  };
-
-  for (const entry of [...copyBuiltins('vendor'), ...copyBuiltins('workspace')]) {
-    const root = entry.kind === 'vendor' ? vendorRoot : sourceRoot;
-    copyBuiltin(path.join(root, entry.dir), entry.package);
-  }
-  writeJson(manifestPath, manifest);
+  // entries are NOT copied here — reconcileOptionalPlugins owns them. The
+  // SAME helper heals an already-provisioned profile on boot, so there is
+  // exactly one copy+row path (use the manifest the npm installs above just
+  // wrote, i.e. re-read it there).
+  ensureCopiedBuiltins(dir, vendorRoot, sourceRoot);
 }
 
 /**
@@ -797,12 +817,46 @@ export function ensureBuiltinPlugins(
  * @returns true when the profile (manifest or a copy) was changed.
  */
 export function ensureCopiedBuiltins(
-  _profileDirPath: string,
-  _vendorRoot: string,
-  _sourceRoot: string,
+  profileDirPath: string,
+  vendorRoot: string,
+  sourceRoot: string,
 ): boolean {
-  // STUB: installs nothing.
-  return false;
+  const manifestPath = path.join(profileDirPath, 'package.json');
+  let manifest: { dsh?: { profile?: { bundles?: string[] } } };
+  try {
+    manifest = readJson(manifestPath) as { dsh?: { profile?: { bundles?: string[] } } };
+  } catch {
+    return false; // no legible manifest — nothing to ensure, and never a throw
+  }
+
+  // The rows this pass owns; a malformed list is rebuilt only when a row of
+  // ours is actually missing (never a throw, never a silent reset).
+  const rows = manifest.dsh?.profile?.bundles;
+  const bundles = Array.isArray(rows) ? rows : [];
+
+  let changed = false;
+  let addedRow = false;
+  for (const entry of copiedBuiltinEntries()) {
+    const root = entry.kind === 'vendor' ? vendorRoot : sourceRoot;
+    const sourceDir = path.join(root, entry.dir);
+    const dest = path.join(profileDirPath, 'node_modules', ...entry.package.split('/'));
+    if (copyEntryStale(sourceDir, dest)) {
+      copyPluginDir(profileDirPath, entry.package, sourceDir);
+      changed = true;
+    }
+    if (!bundles.includes(entry.package)) {
+      bundles.push(entry.package);
+      addedRow = true;
+    }
+  }
+  if (addedRow) {
+    manifest.dsh ??= {};
+    manifest.dsh.profile ??= {};
+    manifest.dsh.profile.bundles = bundles;
+    writeJson(manifestPath, manifest);
+    changed = true;
+  }
+  return changed;
 }
 
 /** The bundled skills dir (rank-600 bundled provider): dev → monorepo
