@@ -43,6 +43,7 @@ import {
   OPTIONAL_PLUGINS_FILE,
   builtinPackageName,
   builtinPlugins,
+  bundlesForEntries,
   copyBuiltins,
   copyBuiltinsStale,
   ensureProfileInitialized,
@@ -1149,4 +1150,147 @@ test('BOOTSTRAP: a failing CLI is swallowed — the boot falls back to the behav
     await rm(home, { recursive: true, force: true });
     await rm(stub.dir, { recursive: true, force: true });
   }
+});
+
+// ---------------------------------------------------------------------------
+// REGISTRY-VENDOR — the vendored skill market (issue #27): declared once, in
+//   the expected bundles, and covered by the staleness oracle
+// ---------------------------------------------------------------------------
+
+/** The exact-pin predicate the npm built-in rule is stated in — kept here once
+ * so the generated-input check below and the live-registry check cannot drift. */
+function isExactPin(spec) {
+  const at = spec.lastIndexOf('@');
+  return at > 0 && /^\d+\.\d+\.\d+$/u.test(spec.slice(at + 1));
+}
+
+/** Independent model of the bundle rows one registry snapshot implies. */
+function modelBundleRows(entries) {
+  const rows = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'];
+  for (const entry of entries) {
+    if (entry.retired === true || entry.kind === 'optional') {
+      continue;
+    }
+    rows.push(entry.kind === 'npm' ? packageNameOf(entry.spec) : entry.package);
+  }
+  return rows;
+}
+
+/** Registry entries a generator can produce: every kind, retired entries, the
+ * skill market in its wrong shapes (npm, optional, workspace, duplicated). */
+const registryEntryArb = fc.oneof(
+  fc.constant({ kind: 'npm', spec: 'dshmarket@1.41.0' }),
+  fc.constant({ kind: 'npm', spec: '@scope/name@2.0.0' }),
+  fc.constant({ kind: 'vendor', dir: 'dsh-skill-market', package: 'dsh-skill-market' }),
+  fc.constant({ kind: 'vendor', dir: 'dsh-shortcuts', package: 'dsh-shortcuts' }),
+  fc.constant({
+    kind: 'workspace',
+    dir: 'packages/uniterra-provider',
+    package: '@uniterra-solutions/uniterra-provider',
+  }),
+  fc.constant({
+    kind: 'optional',
+    dir: 'dsh-deep-whale',
+    package: '@dsh-external/dsh-client-ui-skin-maid-atelier',
+  }),
+  fc.constant({ retired: true, package: 'dsh-notifier' }),
+  fc.constant({ retired: true, package: 'dsh-skill-market' }),
+);
+
+test('REGISTRY-VENDOR: exactly one skill-market vendor declaration enters the expected bundles', () => {
+  // The live registry and the pure derivation agree on the same rows.
+  assert.deepEqual(
+    bundlesForEntries(builtinPlugins()),
+    expectedBuiltinBundles(),
+    'expectedBuiltinBundles is bundlesForEntries over the live registry',
+  );
+
+  const declared = builtinPlugins().filter(
+    (entry) =>
+      entry.retired !== true && entry.kind === 'vendor' && entry.dir === 'dsh-skill-market',
+  );
+  assert.equal(declared.length, 1, 'the skill market is declared exactly once');
+  assert.equal(declared[0].package, 'dsh-skill-market', 'under its upstream package name');
+  assert.ok(
+    expectedBuiltinBundles().includes('dsh-skill-market'),
+    'a fresh profile receives the skill market bundle row',
+  );
+
+  // The derivation is faithful over ANY registry snapshot — including the
+  // wrong shapes (an npm/optional/workspace/duplicated skill market).
+  fc.assert(
+    fc.property(fc.array(registryEntryArb, { maxLength: 8 }), (entries) => {
+      const rows = bundlesForEntries(entries);
+      assert.deepEqual(rows, modelBundleRows(entries));
+      for (const entry of entries) {
+        if (entry.retired === true) {
+          assert.ok(
+            !rows.includes(entry.package),
+            `retired ${entry.package} never enters the expected bundles`,
+          );
+        }
+        if (entry.kind === 'optional') {
+          assert.ok(!rows.includes(entry.package), 'optional entries are never forced');
+        }
+      }
+    }),
+    { numRuns: 200 },
+  );
+});
+
+test('REGISTRY-VENDOR: a missing or drifted skill-market copy is stale, a faithful one is fresh', async () => {
+  const { dir, vendor, source, profile } = await staleFixture({ driftDir: null });
+  try {
+    assert.equal(copyBuiltinsStale(profile, vendor, source), false, 'all copies are faithful');
+    const installed = join(profile, 'node_modules', 'dsh-skill-market');
+    await rm(installed, { recursive: true, force: true });
+    assert.equal(
+      copyBuiltinsStale(profile, vendor, source),
+      true,
+      'an existing profile without the skill market forces a re-provision on boot',
+    );
+    await writeInstalledCopy(profile, 'dsh-skill-market', '1.0.0');
+    assert.equal(copyBuiltinsStale(profile, vendor, source), false, 'restored');
+    // Same version, different content: the content fingerprint decides.
+    await writeFile(join(vendor, 'dsh-skill-market', 'index.js'), 'export const v = 1\n');
+    await writeFile(join(installed, 'index.js'), 'export const v = 2\n');
+    assert.equal(
+      copyBuiltinsStale(profile, vendor, source),
+      true,
+      'STALE-CONTENT-DRIFT: the same version with different bytes is stale',
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('REGISTRY-NPM-SET: the npm pin set is unchanged and dshmarket stays', () => {
+  assert.ok(
+    NPM_SPECS.includes('dshmarket@1.41.0'),
+    'dshmarket stays the plugin marketplace built-in (the skill market never replaces it)',
+  );
+  for (const spec of NPM_SPECS) {
+    assert.ok(isExactPin(spec), `${spec} is an exact pin`);
+  }
+  assert.ok(
+    !NPM_SPECS.some((spec) => packageNameOf(spec) === 'dsh-skill-market'),
+    'the skill market is a vendored built-in, never an npm spec',
+  );
+  // The predicate above is not vacuous: it rejects every non-exact form.
+  const cases = [
+    ['dshmarket@1.41.0', true],
+    ['@scope/pkg@1.0.0', true],
+    ['dshmarket@^1.41.0', false],
+    ['dshmarket@~1.41.0', false],
+    ['dshmarket@>=1.41.0', false],
+    ['dshmarket@1.41', false],
+    ['dshmarket@latest', false],
+    ['dshmarket', false],
+    ['dsh-skill-market', false],
+  ];
+  fc.assert(
+    fc.property(fc.constantFrom(...cases), ([spec, exact]) => {
+      assert.equal(isExactPin(spec), exact, `${spec}`);
+    }),
+  );
 });

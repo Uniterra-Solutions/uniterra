@@ -319,6 +319,16 @@ export function expectedBuiltinBundles(): string[] {
   ];
 }
 
+/** The bundle rows one registry snapshot implies: the two official dsh
+ * bundles plus every active (non-retired) built-in's package name, in
+ * declaration order. The pure derivation behind
+ * {@link expectedBuiltinBundles}, so a generated registry can be checked
+ * against it. */
+export function bundlesForEntries(_entries: readonly BuiltinPlugin[]): string[] {
+  // STUB: derives nothing from the registry.
+  return [];
+}
+
 /** Whether the profile's bundle list already carries every built-in. */
 export function hasAllBuiltins(profileDirPath: string): boolean {
   try {
@@ -771,6 +781,28 @@ export function ensureBuiltinPlugins(
     copyBuiltin(path.join(root, entry.dir), entry.package);
   }
   writeJson(manifestPath, manifest);
+}
+
+/**
+ * The local half of one provisioning pass: install every copy-based built-in
+ * (vendor + workspace) into the profile's `node_modules` and make sure its
+ * Loader bundle row is present in the profile manifest.
+ *
+ * Idempotent by construction: a copy whose `package.json` version and shared
+ * file bytes already match the source is left alone, and the manifest is only
+ * rewritten when a row was actually added — so a second pass over an
+ * up-to-date profile changes nothing. Rows, dependencies and copies that are
+ * not in this registry are never touched.
+ *
+ * @returns true when the profile (manifest or a copy) was changed.
+ */
+export function ensureCopiedBuiltins(
+  _profileDirPath: string,
+  _vendorRoot: string,
+  _sourceRoot: string,
+): boolean {
+  // STUB: installs nothing.
+  return false;
 }
 
 /** The bundled skills dir (rank-600 bundled provider): dev → monorepo

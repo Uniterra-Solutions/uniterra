@@ -179,6 +179,45 @@ test('installPlan: update = CLI refresh + app rebuild + relaunch; setup never to
   );
 });
 
+test('PLAN (issue 28): parseArgs → installPlan yields at most one launch, and it is always last', () => {
+  fc.assert(
+    fc.property(
+      fc.array(fc.oneof(flagArb, versionFlagArb, helpArb, commandArb, junkArb, sourceFlagArb), {
+        maxLength: 8,
+      }),
+      (args) => {
+        let parsed: ReturnType<typeof parseArgs>;
+        try {
+          parsed = parseArgs(args);
+        } catch {
+          return; // unknown command or a missing --source value: no plan to check
+        }
+        if (parsed.command !== 'setup' && parsed.command !== 'update') {
+          return;
+        }
+        const plan = installPlan(parsed.command, parsed.open, parsed.dryRun);
+        const launches = plan.filter((stage) => stage === 'launch-app');
+        assert.ok(launches.length <= 1, 'at most one launch stage per plan');
+        if (launches.length === 1) {
+          assert.equal(plan[plan.length - 1], 'launch-app', 'the launch is always the last stage');
+          assert.ok(parsed.open && !parsed.dryRun, 'a launch implies open without dry-run');
+        }
+        if (parsed.dryRun) {
+          assert.deepEqual(plan, [], 'a dry run executes nothing at all');
+          return;
+        }
+        // Issue #15 adds a progress STREAM, never a stage: the stage set and
+        // order must stay byte-identical to the documented plan.
+        assert.deepEqual(plan, [
+          ...(parsed.command === 'update' ? ['update-cli'] : []),
+          'build-install-app',
+          ...(parsed.open && !parsed.dryRun ? ['launch-app'] : []),
+        ]);
+      },
+    ),
+  );
+});
+
 // ---------------------------------------------------------------------------
 // URL — sourceArchiveUrl
 // ---------------------------------------------------------------------------

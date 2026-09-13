@@ -20,6 +20,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import * as fc from 'fast-check';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -142,6 +143,108 @@ test('SPAWN: a child that exits before readiness rejects promptly with its captu
       elapsed < 10_000,
       'rejected on the child exit, not the readiness timeout (took ' + String(elapsed) + 'ms)',
     );
+  } finally {
+    await stub.cleanup();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// SPAWN-NOOPEN (issue #28) — the suppression is the shell's own contract
+// ---------------------------------------------------------------------------
+
+/** Any token that re-enables dsh's OS browser handoff: `--no-open` is the
+ * negation of an `open` option, so a token beginning with `--open` flips it
+ * back on. The shell may never let a caller inject one. */
+const AUTO_OPEN_FLAG = /^--open/u;
+
+/** argv tokens are passed verbatim to the child: they must be spawnable, so
+ * control characters are dropped (an embedded NUL is not a valid argument). */
+const tokenArb = fc
+  .string({ maxLength: 12 })
+  .map((value) => value.replace(/[\u0000-\u001f\u007f]/gu, ''));
+
+const profileArb = fc.oneof(
+  { weight: 2, arbitrary: tokenArb },
+  { weight: 1, arbitrary: fc.constant('') },
+  { weight: 1, arbitrary: fc.constant('  spaced profile  ') },
+  { weight: 1, arbitrary: fc.constant('--not-a-profile') },
+  { weight: 1, arbitrary: fc.constant('web') },
+);
+
+const portArb = fc.oneof(
+  { weight: 2, arbitrary: fc.constant(undefined) },
+  { weight: 1, arbitrary: fc.constant(0) },
+  { weight: 1, arbitrary: fc.constant(65535) },
+  { weight: 1, arbitrary: fc.integer({ min: 1, max: 65535 }) },
+);
+
+const extraArgsArb = fc.array(
+  fc.oneof(
+    { weight: 3, arbitrary: tokenArb },
+    { weight: 1, arbitrary: fc.constant('--no-open') },
+    { weight: 1, arbitrary: fc.constant('--open') },
+    { weight: 1, arbitrary: fc.constant('--open-browser') },
+    { weight: 1, arbitrary: fc.constant('--port') },
+    { weight: 1, arbitrary: fc.constant('extra.yml') },
+  ),
+  { maxLength: 4 },
+);
+
+test('SPAWN-NOOPEN: --no-open is always present and nothing can remove it', async () => {
+  const stub = await stubCli(READY_STUB);
+  try {
+    await fc.assert(
+      fc.asyncProperty(profileArb, portArb, extraArgsArb, async (profile, port, args) => {
+        const handle = await startDsh({
+          cli: stub.cli,
+          nodeExec: process.execPath,
+          profile,
+          ...(port === undefined ? {} : { port }),
+          args,
+        });
+        try {
+          const argv = JSON.parse(await readFile(stub.argvFile, 'utf8'));
+          assert.ok(
+            argv.filter((token) => token === '--no-open').length >= 1,
+            `--no-open must always be in the final argv, got ${JSON.stringify(argv)}`,
+          );
+          for (const token of argv) {
+            assert.ok(
+              !AUTO_OPEN_FLAG.test(token),
+              `an auto-open flag must never reach the child: ${token}`,
+            );
+          }
+          // The contract flags lead; caller args can only be appended after them.
+          assert.deepEqual(argv.slice(0, 3), ['--profile', profile, '--no-open']);
+        } finally {
+          await stopDsh(handle.child, 2000);
+        }
+      }),
+      { numRuns: 12 },
+    );
+  } finally {
+    await stub.cleanup();
+  }
+});
+
+test('SPAWN-NOOPEN regression: a caller-supplied --open is dropped, --no-open survives', async () => {
+  const stub = await stubCli(READY_STUB);
+  try {
+    const handle = await startDsh({
+      cli: stub.cli,
+      nodeExec: process.execPath,
+      profile: 'web',
+      args: ['--open', '--no-open', '--patch', 'extra.yml'],
+    });
+    try {
+      const argv = JSON.parse(await readFile(stub.argvFile, 'utf8'));
+      assert.ok(!argv.includes('--open'), 'the injected auto-open flag was dropped');
+      assert.equal(argv[0], '--profile');
+      assert.equal(argv[2], '--no-open', 'the contract flag is still the third token');
+      assert.ok(argv.includes('--patch'), 'ordinary extra args survive');
+    } finally {
+      await stopDsh(handle.child, 2000);
+    }
   } finally {
     await stub.cleanup();
   }

@@ -327,6 +327,33 @@ export function installPlan(
   return stages;
 }
 
+/** One UI surface a run puts on screen. An install/update may create exactly
+ * one surface — the Electron desktop app; a browser surface is the defect of
+ * issue #28, never a legitimate outcome. */
+export interface LaunchSurface {
+  readonly kind: 'electron-app' | 'browser';
+  readonly target: string;
+}
+
+/** The surfaces one CLI run launches, in launch order: the Electron app exactly
+ * once iff the run was asked to open it and is not a dry run, and nothing else
+ * ever. Pure so the launch cardinality is property-testable. */
+export function planSurfaces(
+  command: 'setup' | 'update',
+  open: boolean,
+  dryRun: boolean,
+  platform: InstallPlatform,
+  destination: string,
+): readonly LaunchSurface[] {
+  // STUB: hands the Web UI URL to a browser instead of launching the app.
+  return [
+    {
+      kind: 'browser',
+      target: `http://127.0.0.1:3080/?command=${command}&open=${String(open)}&dryRun=${String(dryRun)}&platform=${platform}&destination=${destination}`,
+    },
+  ];
+}
+
 export interface ParsedArgs {
   readonly command: 'setup' | 'update' | 'version' | 'help';
   readonly open: boolean;
