@@ -34,8 +34,22 @@ export interface DshRuntimeHandle {
   readonly exited: Promise<number | null>;
 }
 
-/** Wait for the dsh readiness URL line on stdout. */
-export function awaitReadiness(stdout: Readable, timeoutMs = 60_000): Promise<string> {
+/** How long a dsh child may take to report readiness before the wait fails. */
+const READINESS_TIMEOUT_MS = 60_000;
+
+/** Wait for the dsh readiness URL line on stdout.
+ *
+ * @param stdout the child's stdout stream.
+ * @param timeoutMs how long to wait before rejecting.
+ * @param signal releases the wait early: a competing outcome (the child's own
+ *   exit) has already settled the caller's race, and neither this wait's timer
+ *   nor its stdout listener may outlive it.
+ */
+function awaitReadinessCancellable(
+  stdout: Readable,
+  timeoutMs: number,
+  signal: AbortSignal | undefined,
+): Promise<string> {
   return new Promise((resolve, reject) => {
     let buffer = '';
     const timer = setTimeout(() => {
@@ -66,13 +80,32 @@ export function awaitReadiness(stdout: Readable, timeoutMs = 60_000): Promise<st
       }
     };
 
+    const onAbort = (): void => {
+      cleanup();
+      reject(new Error('dsh readiness wait was cancelled'));
+    };
+
     const cleanup = (): void => {
       clearTimeout(timer);
       stdout.off('data', onData);
+      signal?.removeEventListener('abort', onAbort);
     };
 
+    if (signal?.aborted === true) {
+      onAbort();
+      return;
+    }
+    signal?.addEventListener('abort', onAbort, { once: true });
     stdout.on('data', onData);
   });
+}
+
+/** Wait for the dsh readiness URL line on stdout. */
+export function awaitReadiness(
+  stdout: Readable,
+  timeoutMs = READINESS_TIMEOUT_MS,
+): Promise<string> {
+  return awaitReadinessCancellable(stdout, timeoutMs, undefined);
 }
 
 /**
@@ -80,7 +113,13 @@ export function awaitReadiness(stdout: Readable, timeoutMs = 60_000): Promise<st
  * The child owns its exit; callers should wire `exited` to restart/quit.
  */
 export async function startDsh(options: DshRuntimeOptions): Promise<DshRuntimeHandle> {
-  const args = ['--profile', options.profile];
+  // `--no-open` is required of every consumer that owns its own browser: the
+  // shell IS this app's browser (the BrowserWindow loads `url`), and dsh
+  // otherwise hands the same URL to the operating system's default browser at
+  // readiness (observed on 0.1.5-rc.2, and present in 0.1.2-rc.1 too). URL
+  // printing and the browser handoff are independent switches, so the
+  // readiness line this module parses is unaffected.
+  const args = ['--profile', options.profile, '--no-open'];
   if (options.port !== undefined) {
     args.push('--port', String(options.port));
   }
@@ -112,7 +151,29 @@ export async function startDsh(options: DshRuntimeOptions): Promise<DshRuntimeHa
 
   const stdout = child.stdout;
 
-  const url = await awaitReadiness(stdout).catch((err: unknown) => {
+  // A child that dies before readiness (a busy port, a profile whose plugin
+  // tree fails to load) has already written its diagnosis to stderr: settle on
+  // that instead of waiting out the readiness timeout, which the shell
+  // surfaces as a ~60 s hang followed by a generic failure. The rejection is
+  // pre-handled because the race only reads it while the readiness wait is
+  // still pending — a later, ordinary exit must not surface as an unhandled
+  // rejection.
+  const exitedEarly = exited.then((code) => {
+    throw new Error(`dsh exited with code ${String(code)} before reporting readiness`);
+  });
+  void exitedEarly.catch(() => undefined);
+
+  // The readiness wait owns a timer and a stdout listener. On the exit path the
+  // race settles on `exitedEarly` alone, so that wait is cancelled here — a dead
+  // child must not leave its 60 s window (and the listening process) alive. The
+  // rejection is pre-handled: the cancellation lands after the race has already
+  // settled, and must not surface as an unhandled rejection.
+  const cancelReadiness = new AbortController();
+  const readiness = awaitReadinessCancellable(stdout, READINESS_TIMEOUT_MS, cancelReadiness.signal);
+  void readiness.catch(() => undefined);
+
+  const url = await Promise.race([readiness, exitedEarly]).catch((err: unknown) => {
+    cancelReadiness.abort();
     child.kill('SIGTERM');
     throw new Error(
       `dsh failed to start: ${err instanceof Error ? err.message : String(err)}\n${stderrTail}`,

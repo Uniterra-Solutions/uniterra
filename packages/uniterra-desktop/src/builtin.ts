@@ -84,18 +84,22 @@ function isRetired(entry: BuiltinPlugin): entry is RetiredBuiltin {
 // ---------------------------------------------------------------------------
 
 registerBuiltinPlugin({ kind: 'npm', spec: 'dshmarket@1.41.0' });
-registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-better-sidebar@0.18.0' });
-registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-file-upload@0.4.3' });
+// Sidebar enhancement, 0.19.0 — the release built for the dsh 0.1.5 family:
+// every @deepseek-ai/* peer moves to ^0.1.5-rc.1 and the integration is
+// re-planted on the NEW native right-sidebar services
+// (ctx.inject(['sidebarRightTabs'], …) + ctx.get('sidebarRight')), which only
+// exist in the 0.1.5 family; 0.18.0 peers on the 0.1.2-rc.1 family and drives
+// the seams that family removed.
+registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-better-sidebar@0.19.0' });
 registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-find-plugin@0.3.7' });
-registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-subagent-model-picker@0.1.1' });
 registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-tool-git@0.1.3' });
-registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-browser-playwright@0.1.1' });
 registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-computer-use@0.2.0' });
 // Git worktree session targets (wloops/dsh-git-worktree v0.7.4): isolated
 // sessions per worktree with review checkpoints, human-confirmed delivery, and
-// safe recovery. npm-published, peers target the pinned dsh 0.1.2-rc.1 family
+// safe recovery. npm-published, peers target the older dsh 0.1.2-rc.1 family
 // exactly (@deepseek-ai/cordis ^4.0.2, dsh-agent/dsh-tools/dsh-session/… ^0.1.2-rc.1),
-// so it rides the same `dsh plugin add` path as the other npm built-ins.
+// so it rides the same `dsh plugin add` path as the other npm built-ins (the
+// profile's pnpm reports the peer mismatch as a warning, not an install error).
 registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-git-worktree@0.7.4' });
 
 // The skin is the `dsh-deep-whale` standalone distribution (`maid-atelier`
@@ -105,10 +109,13 @@ registerBuiltinPlugin({ kind: 'npm', spec: 'dsh-git-worktree@0.7.4' });
 // on the pinned rc.6 family), so its patch silently no-oped and the skin
 // never loaded. See `vendor/dsh-plugins/VENDOR.md`.
 //
-// The skin is OPTIONAL: a cosmetic theme (CC BY-NC-SA 4.0, non-commercial),
-// installed for a user only when their profile's `.uniterra.json` toggle
-// enables it — never forced on fresh installs, never removed from existing
-// ones (see reconcileOptionalPlugins).
+// The skin is OPTIONAL: a cosmetic theme, installed for a user only when
+// their profile's `.uniterra.json` toggle enables it — never forced on fresh
+// installs, never removed from existing ones (see reconcileOptionalPlugins).
+// Licence model at the pinned v0.1.2 tag: MIT for the CODE (`LICENSE`) plus
+// CC BY-NC-SA 4.0 for the ARTWORK (`LICENSE-ARTWORK`, non-commercial) — the
+// earlier v0.1.1 copy shipped one whole-project CC BY-NC-SA 4.0 `LICENSE`.
+// See vendor/dsh-plugins/VENDOR.md for the pin ledger.
 registerBuiltinPlugin({
   kind: 'optional',
   dir: 'dsh-deep-whale',
@@ -121,9 +128,9 @@ registerBuiltinPlugin({ kind: 'vendor', dir: 'dsh-shortcuts', package: 'dsh-shor
 // capsules and exposes workflow_list / run_workflow / workflow_manage, so the
 // bundled pipeline skills invoke a workflow by NAME (run_workflow('implement',
 // args)) instead of the model copying a large JS block into the native workflow
-// tool — the copy-failure failure mode. Vendored at the v0.1.3 tag (see
-// vendor/dsh-plugins/VENDOR.md); its peer ranges (^0.1.0-rc.5) are reported
-// unsatisfied (warn) against the pinned dsh 0.1.2-rc.1 pre-release family, so
+// tool — the copy-failure failure mode. Vendored at the v0.1.4 tag (see
+// vendor/dsh-plugins/VENDOR.md); its peer ranges (^0.1.3-alpha.1) are reported
+// unsatisfied (warn) against the pinned dsh 0.1.5-rc.2 pre-release family, so
 // it ships as a copy-based built-in (no pnpm install) and loads via
 // ctx.subagents + ctx.tools. The three pipeline capsules are provisioned from
 // the skills package into the profile's workflow dir by ensureWorkflowCapsules.
@@ -131,6 +138,29 @@ registerBuiltinPlugin({
   kind: 'vendor',
   dir: 'dsh-workflow',
   package: '@dsh-external/workflow',
+});
+
+// The ego-browser plugin (Fisfzy/dsh-ego-browser @ 6133edfb…, v0.8.3, MIT):
+// structured browser automation — 32 ego_* tools driving a VENDORED ego-lite
+// Chromium runtime through ctx.subprocess, plus a realtime watch panel in the
+// web shell. This is the deliberate, documented exception to AGENTS.md's
+// "vendor a plugin only to customize it" rule (issue #35): npm only ever
+// published dsh-ego-browser@0.8.0, whose peers target
+// @deepseek-ai/dsh-client-runtime — a package the pinned dsh family no longer
+// ships — so an npm import cannot resolve, while the pinned copy declares
+// dsh.engines.dsh ">=0.1.2-rc.1" and self-inserts its "ego-browser" Loader row
+// under its own package name (cordis.patch.yml), i.e. it works as shipped.
+// The copy is upstream VERBATIM — no local patch (see
+// vendor/dsh-plugins/VENDOR.md for the pin, the trimmed scope and the licence).
+//
+// Its one runtime dependency is a BARE "schemastery" (NOT the scoped
+// @deepseek-ai/schemastery the dsh family ships), imported statically at the
+// top of lib/index.js and used to build the Config schema at module scope, so
+// the profile cannot load the plugin without it — hence PROFILE_RUNTIME_DEPS.
+registerBuiltinPlugin({
+  kind: 'vendor',
+  dir: 'ego-browser',
+  package: 'dsh-ego-browser',
 });
 
 // In-house workspace built-ins ship built — the workspace build must have run
@@ -175,21 +205,43 @@ registerBuiltinPlugin({
   comment:
     'Standalone desktop notifier: its notifications overlap with dsh-better-sidebar Tasks and other dsh notification plugins; no longer bundled (user-installed copies preserved).',
 });
+registerBuiltinPlugin({
+  retired: true,
+  package: 'dsh-browser-playwright',
+  comment:
+    'Browser automation: replaced by the vendored dsh-ego-browser built-in above (32 ego_* tools over a vendored ego-lite Chromium runtime).',
+});
+registerBuiltinPlugin({
+  retired: true,
+  package: 'dsh-file-upload',
+  comment:
+    'File upload: @deepseek-ai/dsh-web-app@0.1.5-rc.2 ships its own client Loader row `id: file-upload` (@deepseek-ai/dsh-client-file-upload) and this npm plugin inserts the SAME loader id, so a freshly provisioned 0.1.5 profile FAILED TO BOOT with "failed to apply loader entry include (cordis:include): duplicate loader entry id: file-upload"; retiring it is the fix, and the web app row keeps the capability.',
+});
+registerBuiltinPlugin({
+  retired: true,
+  package: 'dsh-subagent-model-picker',
+  comment:
+    'Per-subagent model selection: covered natively by the subagent tool (provider + model parameters).',
+});
 
 /** Non-bundle npm dependencies a copy-based built-in needs at runtime but that
  * the copy mechanism cannot auto-install (the vendored @dsh-external/workflow
  * plugin runs workflows in a QuickJS sandbox and depends on
- * `quickjs-emscripten`, which is not part of the dsh profile). Installed with
- * `dsh plugin add` (a plain dependency, not a profile layer). */
-const PROFILE_RUNTIME_DEPS: readonly string[] = ['quickjs-emscripten@0.32.0'];
+ * `quickjs-emscripten`, which is not part of the dsh profile; the vendored
+ * dsh-ego-browser plugin statically imports a BARE `schemastery` — the scoped
+ * `@deepseek-ai/schemastery` the dsh family ships is a different package name —
+ * and builds its Config schema with it at module scope, so the profile cannot
+ * even evaluate the plugin without it). Installed with `dsh plugin add` (a
+ * plain dependency, not a profile layer), pinned exact like every other dep. */
+const PROFILE_RUNTIME_DEPS: readonly string[] = ['quickjs-emscripten@0.32.0', 'schemastery@3.18.0'];
 
 /**
  * The pnpm settings every profile needs for plugin installs. Settings keys are
  * camelCase (pnpm 11's pnpm-workspace.yaml accepts only those; kebab-case
  * names are silently ignored). autoInstallPeers is OFF: a plugin whose peer
- * ranges target an older dsh pre-release family (e.g. dsh-file-upload@0.4.3's
- * ^0.1.0-rc.6) cannot co-resolve with the pinned 0.1.2-rc.1 family in one
- * tree — pnpm 11 reports "No matching version found" for a satisfiable range
+ * ranges target an older dsh pre-release family (e.g. `^0.1.0-rc.6`) cannot
+ * co-resolve with the pinned 0.1.5-rc.2 family in one tree — pnpm 11 reports
+ * "No matching version found" for a satisfiable range
  * when auto-installing disjoint pre-release families. The dsh family is
  * already present from the profile's base bundles, so peers resolve at
  * runtime; the pnpm warning ("Issues with peer dependencies found") is the
@@ -578,6 +630,58 @@ export function reconcileOptionalPlugins(profileDirPath: string, vendorRoot: str
     writeOptionalState(profileDirPath, enabled);
   }
   return changed || !state.filePresent;
+}
+
+/**
+ * Let the CLI create a missing profile from its shipped template, so the
+ * provisioning pass below has a manifest to enrich.
+ *
+ * The app never writes that manifest itself: the CLI's own first boot
+ * initializes a missing `$DSH_HOME/profiles/<name>` from the shipped template
+ * (`@deepseek-ai/dsh-base` + the app bundle for the profile), and a manifest
+ * scaffolded here would shadow that template with an empty bundle list. A
+ * boot-free `--dump-config` runs the same `prepareProfile` initialization and
+ * exits, so no runtime is started and no port is bound.
+ *
+ * Fail-soft: a bootstrap that fails leaves the home as it was and returns
+ * false, so the boot continues exactly as it did before this pass existed —
+ * `startDsh` then surfaces the underlying cause with the child's own stderr.
+ *
+ * @param dshHome the home the running dsh uses (dev test home or ~/.dsh).
+ * @param profile the profile name (`web`).
+ * @param dshCli absolute path to the bundled dsh CLI (lib/bin.js).
+ * @param nodeExec the node executable to run the CLI with.
+ * @returns true when this call created the profile manifest.
+ */
+export function ensureProfileInitialized(
+  dshHome: string,
+  profile: string,
+  dshCli: string,
+  nodeExec: string,
+): boolean {
+  const dir = profileDir(dshHome, profile);
+  const manifestPath = path.join(dir, 'package.json');
+  if (existsSync(manifestPath)) {
+    return false;
+  }
+  try {
+    execFileSync(nodeExec, [dshCli, '--profile', profile, '--dump-config'], {
+      env: { ...process.env, DSH_HOME: dshHome, ELECTRON_RUN_AS_NODE: '1', NO_COLOR: '1' },
+      // The composed tree is diagnostic output; only its initialization side
+      // effect is wanted here, so stdout is discarded and stderr is captured
+      // for the failure diagnostic.
+      stdio: ['ignore', 'ignore', 'pipe'],
+    });
+  } catch (error) {
+    // execFileSync's message already carries the CLI's stderr, which is the
+    // diagnosis worth keeping; the raw error object would also dump its buffers.
+    console.warn(
+      '[uniterra] profile bootstrap failed; booting anyway:',
+      error instanceof Error ? error.message : String(error),
+    );
+    return false;
+  }
+  return existsSync(manifestPath);
 }
 
 /**

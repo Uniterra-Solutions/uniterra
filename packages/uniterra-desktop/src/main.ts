@@ -14,14 +14,34 @@
  *   4. Crash-restart the runtime with a bounded backoff.
  */
 
-import { app, BrowserWindow, dialog, shell } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  Menu,
+  Notification,
+  shell,
+  type MenuItemConstructorOptions,
+} from 'electron';
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startDsh, stopDsh, type DshRuntimeHandle } from './dsh-process.js';
 import { resolveDshCliPath } from './dsh-cli-path.js';
-import { ensureBuiltinPlugins, ensureWorkflowCapsules } from './builtin.js';
+import {
+  ensureBuiltinPlugins,
+  ensureProfileInitialized,
+  ensureWorkflowCapsules,
+} from './builtin.js';
 import { ensureAgentPresetCompatibility } from './preset-compat.js';
+import {
+  readTurnNotificationsEnabled,
+  turnNotification,
+  turnNotificationMenuItem,
+  writeTurnNotificationsEnabled,
+} from './notifications.js';
+import { startDshTurnObserver, type DshTurnObserverHandle } from './dsh-observer.js';
+import type { TurnNotice } from './turn-observer.js';
 import {
   resolveUniterraUpdateStatus,
   resolveUpdateAction,
@@ -327,6 +347,88 @@ function createWindow(url: string): BrowserWindow {
   return win;
 }
 
+// ── turn-completion notifications ─────────────────────────────────────────
+
+/** The profile dir this run uses — the home of `.uniterra.json`, the shared
+ * toggle file `ensureBuiltinPlugins` reconciles and the notification
+ * preference is stored in. */
+function profileDirPath(dshHome: string, profile: string): string {
+  return path.join(dshHome, 'profiles', profile);
+}
+
+/** The running turn observer, replaced on every (re)boot and stopped on quit. */
+let turnObserver: DshTurnObserverHandle | null = null;
+
+/** Install the application menu, whose Notifications checkbox mirrors the
+ * stored preference and writes it back when clicked — so the toggle survives
+ * the app restart rather than living in this process. */
+function installApplicationMenu(profileDir: string): void {
+  const template: MenuItemConstructorOptions[] = [
+    ...(process.platform === 'darwin' ? [{ role: 'appMenu' } as const] : []),
+    { role: 'fileMenu' },
+    { role: 'editMenu' },
+    { role: 'viewMenu' },
+    { role: 'windowMenu' },
+    {
+      label: 'Notifications',
+      submenu: [
+        turnNotificationMenuItem({
+          enabled: readTurnNotificationsEnabled(profileDir),
+          onToggle: (enabled: boolean): void => {
+            try {
+              writeTurnNotificationsEnabled(profileDir, enabled);
+            } catch (error) {
+              // A menu click must never take the app down with it.
+              console.warn('[uniterra] failed to persist the notification preference:', error);
+            }
+          },
+        }),
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+/** Raise the native OS notification for one finished turn. The observer already
+ * applied the profile toggle per event; the decision layer consults it again
+ * here, so the gate also holds at the point the notification is raised. */
+function showTurnNotification(notice: TurnNotice, profileDir: string): void {
+  try {
+    const payload = turnNotification({
+      enabled: readTurnNotificationsEnabled(profileDir),
+      sessionId: notice.sessionId,
+      title: notice.title,
+      event: { type: 'turn/end', data: { turn: notice.turn, reason: { kind: notice.reason } } },
+    });
+    if (payload === undefined || !Notification.isSupported()) {
+      return;
+    }
+    new Notification({ title: payload.title, body: payload.body }).show();
+  } catch (error) {
+    console.warn('[uniterra] failed to raise the turn notification:', error);
+  }
+}
+
+/** Watch the runtime that just became ready. Idempotent across crash restarts. */
+function startTurnObserver(readinessUrl: string, profileDir: string): void {
+  turnObserver?.stop();
+  turnObserver = startDshTurnObserver({
+    readinessUrl,
+    enabled: () => readTurnNotificationsEnabled(profileDir),
+    onTurnEnd: (notice) => {
+      showTurnNotification(notice, profileDir);
+    },
+    log: (message) => {
+      console.warn(`[uniterra] ${message}`);
+    },
+  });
+}
+
+function stopTurnObserver(): void {
+  turnObserver?.stop();
+  turnObserver = null;
+}
+
 /** The packaged app surfaces startup failures only to stderr, which no one
  * sees — the reported symptom was a ~60 s hang then a silent exit. Write the
  * failure (including the dsh child's captured stderr, which {@link startDsh}
@@ -366,12 +468,20 @@ async function boot(): Promise<void> {
     syncDevTestHome();
   }
 
+  const profile = 'web';
+  const effectiveHome = dshHome ?? realDshHome();
+
+  // A machine that never ran dsh has no profile directory, and provisioning can
+  // only enrich an existing profile (builtin.ts never scaffolds one). Let the
+  // CLI create it from its shipped template first — otherwise boot #1 runs the
+  // bare shipped web template with no built-ins, and only boot #2 is fully
+  // provisioned.
+  ensureProfileInitialized(effectiveHome, profile, dshCliPath(), process.execPath);
+
   // Ensure the company built-ins are present in the profile this run uses.
   // The vendored plugins, the workspace built-ins, and the bundled skills all
   // come from the source tree the app was built from (dev: the monorepo;
   // packaged: Resources/src).
-  const profile = 'web';
-  const effectiveHome = dshHome ?? realDshHome();
   ensureBuiltinPlugins(
     effectiveHome,
     profile,
@@ -405,9 +515,18 @@ async function boot(): Promise<void> {
   runtime = handle;
   restarts = 0;
 
-  void handle.exited.then((code: number | null) => {
-    void code;
+  // The notification surface, wired to the profile dir this run actually uses:
+  // the menu checkbox that gates the feature and the observer that watches the
+  // runtime we just started. `ensureBuiltinPlugins` above already reconciled
+  // that same profile dir's `.uniterra.json`, so creating the preference there
+  // is additive.
+  const profileDir = profileDirPath(effectiveHome, profile);
+  installApplicationMenu(profileDir);
+  startTurnObserver(handle.url, profileDir);
+
+  void handle.exited.then(() => {
     runtime = null;
+    stopTurnObserver();
     if (mainWindow !== null && !mainWindow.isDestroyed()) {
       // Runtime died under us: show a splash and restart with backoff.
       const backoff = Math.min(1000 * 2 ** restarts, 15_000);
@@ -452,6 +571,7 @@ if (!gotLock) {
   });
 
   app.on('before-quit', (event) => {
+    stopTurnObserver();
     if (runtime !== null) {
       event.preventDefault();
       const handle = runtime;

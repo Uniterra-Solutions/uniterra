@@ -1,25 +1,59 @@
 /**
- * Agent-preset compatibility layer for the dsh 0.1.2-rc.1 family migration.
+ * Agent-preset compatibility layer for the dsh 0.1.2-rc.1 family rename.
  *
  * The 0.1.2-rc.1 family renamed the shipped `code` agent preset (Code Mode,
  * the PTC-style TypeScript-program presentation) to `ptc`. dsh resolves
  * agent presets BY ID, so a profile that carries legacy state — the
- * `agent-presets: default: code` settings row, or every pre-upgrade session
- * log whose header records `agentPreset: "code"` — cannot resolve any
- * preset: session create/resume fails with
+ * `agent-presets: default: code` settings row, or a pre-upgrade session log
+ * whose header records `agentPreset: "code"` — cannot resolve any preset:
+ * session create/resume fails with
  * `agent-presets: preset "code" not found (available: standard, ptc,
  * minimal, cordis)`, and the web UI reports every session as unusable
  * ("session not found" / resume failed).
  *
- * This module provisions a USER preset named `code` into the harness-home
- * user root (`$DSH_HOME/.agent-presets` — the writable root
+ * That legacy state has two halves, and 0.1.5-rc.2 serves only one of them.
+ *
+ * SESSION HEADERS are migrated natively, so this module no longer serves
+ * them. The installed session-format chain rewrites the legacy id while
+ * migrating every older log: `migrateHeader` returns
+ * `{ ...header, version: 3, ...(header.agentPreset === 'code' ?
+ * { agentPreset: 'ptc' } : {}) }` and every `agent-preset/selected` event is
+ * rewritten the same way
+ * (`packages/session/session-format-v2-to-v3/src/migration.ts:16-18,140-144`),
+ * registered in the adjacent chain
+ * `[sessionFormatV0ToV1, sessionFormatV1ToV2, sessionFormatV2ToV3]`
+ * (`packages/session/session-format-catalog/src/generated.ts:18`) whose
+ * current version is 3 (`packages/core/session/src/types.ts:88`). A native v3
+ * header is deliberately left alone, so that id can still name a preset of
+ * the user's own.
+ *
+ * The SETTINGS DEFAULT is NOT migrated, so the shim stays. `agent-presets.
+ * default: code` is a settings-document row rather than a session log, and no
+ * 0.1.5-rc.2 code path rewrites it: `packages/settings/` holds no migration,
+ * and the roster reads the row verbatim as its default preset id
+ * (`packages/preset/agent-presets/src/index.ts:240-242`,
+ * `this.settings?.get().default ?? this.config.default`). Measured against the
+ * built 0.1.5-rc.2 packages with `$DSH_HOME/settings.yaml` holding
+ * `agent-presets: { default: code }`: the roster reports a `defaultId` of
+ * `code`, and `resolve()` — the call session create and resume make for a
+ * session that names no preset — throws
+ * `agent-presets: preset "code" not found (available: standard, ptc,
+ * minimal, cordis)`. Provisioning the row below makes that same call return
+ * the `code` user preset, byte-identical to the shipped `ptc` composition
+ * (command and output recorded in docs/modules/uniterra-desktop.md).
+ *
+ * This module therefore provisions a USER preset named `code` into the
+ * harness-home user root (`$DSH_HOME/.agent-presets` — the writable root
  * `dsh-agent-presets` scans by default) whose composition is a byte copy of
- * the shipped `ptc` preset, so the legacy id resolves to the PTC-mode
+ * the shipped `ptc` preset, so the legacy default resolves to the PTC-mode
  * successor. Provisioning is idempotent and never overwrites an existing
  * file: a preset the user authored (or later edits) is preserved.
  *
- * Removable when upstream re-releases a rename-bearing migration (or when
- * uniterra starts migrating stored settings/headers itself).
+ * Removal condition — delete this module when both hold: (a) the stored
+ * `agent-presets.default` no longer names `code`, migrated by a release or by
+ * uniterra itself; and (b) no session header and no `agent-preset/selected`
+ * event in the profile still records `code`, which the native migration does
+ * not clear for sessions it already wrote as v3.
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -103,6 +137,10 @@ export function compatPresetTargetDir(dshHome: string): string {
  * existing file is never overwritten; a pre-existing `code` directory is
  * left exactly as the user wrote it — it is the user's own preset then, and
  * dsh can still resolve it.
+ *
+ * Serves the one stored consumer the native session-format migration does not
+ * reach: the `agent-presets.default: code` settings row, which dsh reads
+ * verbatim as the preset new sessions compose from (module header).
  *
  * @param dshHome - the harness home the run uses (packaged: the default
  * `~/.dsh`; dev: the mirrored test home).
