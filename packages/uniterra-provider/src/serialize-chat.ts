@@ -10,13 +10,16 @@
  * `image_url` content-part form with a data URL, each preceded by its
  * model-facing handle; an image the request did not prepare is rejected
  * explicitly rather than silently erased, and images lifted out of a tool
- * result follow it on one user message. Unknown declaration-merged block types
+ * result follow it on one user message. A file is never sent as bytes: request
+ * assembly projects every file block to its handle text before dispatch, and a
+ * raw file block that bypassed that assembly is rendered with the same family
+ * handle here rather than dropped. Unknown declaration-merged block types
  * retain the adapter's documented extension fallback.
  *
  * @module @uniterra-solutions/uniterra-provider/serialize-chat
  */
 
-import { LlmError, requestImageHandleText } from '@deepseek-ai/dsh-llm';
+import { fileHandleText, LlmError, requestImageHandleText } from '@deepseek-ai/dsh-llm';
 import type { ContentBlock, GenerateOptions, Message } from '@deepseek-ai/dsh-llm';
 import type {
   ChatMessage,
@@ -112,6 +115,16 @@ function contentParts(
         break;
       case 'tool-result':
         parts.push(...contentParts(block.content, images));
+        break;
+      case 'file':
+        // Request assembly projects every file block to handle text before
+        // dispatch (projectFilesToText is unconditional for files — no provider
+        // receives file bytes), so one arriving here means the caller bypassed
+        // that assembly. The adapter holds no execution-world path resolver, so
+        // it renders the same family handle with the path unresolved: the model
+        // learns the file exists and that it cannot be read, instead of losing
+        // the user's upload silently.
+        parts.push({ type: 'text', text: fileHandleText(block.attachment, undefined) });
         break;
       case 'reasoning':
       case 'tool-call':
