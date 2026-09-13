@@ -2,9 +2,10 @@
 name: dsh-skill-creator
 description: >
   Create a dsh skill: freeze a reusable process into a SKILL.md the dsh registry
-  discovers and loads on trigger — where the file belongs (project / user /
-  bundled roots, duplicate-name precedence), the naming and frontmatter
-  contract, a body that changes behaviour, and how to verify it. LOAD when:
+  discovers and loads on trigger — it belongs in the USER root `~/.dsh/skills`
+  unless it is repository-bound (project / bundled roots, duplicate-name
+  precedence), naming + frontmatter, a body that changes behaviour, and how to
+  verify it. LOAD when:
   - User asks to create a dsh skill (建立技能 / 技能創建 / 新增 skill)
   - A repeated workflow should become a skill
   NOT for: executor prompts (use dsh-prompt-writer).
@@ -35,25 +36,29 @@ editing the prose of an existing skill (edit that file directly).
 ## 1. Decide where the skill lives
 
 The local provider scans roots in rank order, and the LOWEST rank wins a
-duplicate name. Write the skill into the narrowest root that matches who needs
-it.
+duplicate name. **Default target: the USER root `<dshHome>/skills`** — on a
+normal install that is `~/.dsh/skills`, the directory the `skill` tool reads
+and the user's own skill list shows. Reach for a project root only when the
+skill is bound to one repository.
 
-| Rank | Source           | Root                           | Use it for                                                                             |
-| ---- | ---------------- | ------------------------------ | -------------------------------------------------------------------------------------- |
-| 100  | `project-dsh`    | `<projectRoot>/.dsh/skills`    | A skill that only serves this repository                                               |
-| 200  | `project-agents` | `<projectRoot>/.agents/skills` | The same, when the repo already keeps agent files under `.agents/`                     |
-| 300  | `custom`         | the `customSkillDirs` config   | A deployment-supplied extra root                                                       |
-| 400  | `user-dsh`       | `<dshHome>/skills`             | A skill that follows the user across projects (packaged Uniterra app: `~/.dsh/skills`) |
-| 500  | `user-agents`    | `<agentsHome>/skills`          | The same, for the shared agents home (`DSH_AGENTS_HOME`, default `~/.agents`)          |
-| 600  | `bundled`        | `DSH_BUNDLED_SKILL_DIR`        | The app's built-in set — READ-ONLY, never author here                                  |
+| Rank | Source           | Root                           | Use it for                                                                                        |
+| ---- | ---------------- | ------------------------------ | ------------------------------------------------------------------------------------------------- |
+| 100  | `project-dsh`    | `<projectRoot>/.dsh/skills`    | A skill that only serves this repository                                                          |
+| 200  | `project-agents` | `<projectRoot>/.agents/skills` | The same, when the repo already keeps agent files under `.agents/`                                |
+| 300  | `custom`         | the `customSkillDirs` config   | A deployment-supplied extra root                                                                  |
+| 400  | `user-dsh`       | `<dshHome>/skills`             | **THE DEFAULT** — a skill that follows the user across projects (normal install: `~/.dsh/skills`) |
+| 500  | `user-agents`    | `<agentsHome>/skills`          | The same, for the shared agents home (`DSH_AGENTS_HOME`, default `~/.agents`)                     |
+| 600  | `bundled`        | `DSH_BUNDLED_SKILL_DIR`        | The app's built-in set — READ-ONLY, never author here                                             |
 
 `<projectRoot>` is the nearest ancestor containing `.git`; without one, the
 current working directory is used. The user root skips its `.system` child.
 
 Choosing:
 
-- Only this repository → a project root, preferring `.dsh/skills`.
-- The user wants it in every project → `<dshHome>/skills`.
+- The default, and the right answer unless the skill is repository-bound →
+  `<dshHome>/skills` (`~/.dsh/skills`), the user's own list.
+- Only this repository → a project root, preferring `.dsh/skills` (rank 100
+  shadows every later root of the same name, the user's included).
 - The bundled root ships with the application: a skill written there is
   overwritten by the next app update and is not the user's to create.
 
@@ -143,7 +148,8 @@ runnable with the runtime's own interpreter and documented by one usage line.
 
 ## 6. Verify discovery
 
-1. Write the file at the chosen root.
+1. Write the file at the chosen root — `~/.dsh/skills/<name>/SKILL.md`
+   unless the skill is repository-bound.
 2. Load it by name with the `skill` tool. A `<skill_content ...>` result proves
    the registry found the candidate, parsed the frontmatter and read the body.
 3. Trigger it in natural language WITHOUT naming the skill: phrase a request
@@ -177,3 +183,6 @@ never discovered.
    nothing to do with how the MODEL finds the skill.
 7. **Duplicating the body in the description.** The description is paid for on
    every turn; the body only when loaded.
+8. **Filing a personal habit in a project root.** The skill then exists only
+   inside that repository; a process the user repeats elsewhere belongs in
+   `~/.dsh/skills`.
