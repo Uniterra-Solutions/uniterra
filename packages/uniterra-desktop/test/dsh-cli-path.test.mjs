@@ -9,6 +9,12 @@
  *   inside the embedded source tree (Windows falls back to the physical
  *   `.pnpm` store location as defense-in-depth).
  *
+ *   The Windows `.pnpm` store keeps every dsh family it ever installed, so a
+ *   store holding both the pinned family and the previously pinned one must
+ *   resolve the NEWEST — a `readdir`-order pick boots the stale family beside
+ *   a current one (observed: `@deepseek-ai+dsh@0.1.2-rc.1_` sorted ahead of
+ *   `@deepseek-ai+dsh@0.1.5-rc.2_` after the family bump).
+ *
  * The order matters because it decides whether a dev source edit under
  * vendor/dsh-harness actually runs (the whole point of vendoring the source):
  * if packaged/dev reversed, the dev app would silently keep running compiled
@@ -17,7 +23,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { resolveDshCliPath } from '../dist/dsh-cli-path.js';
@@ -104,6 +110,56 @@ test('dsh CLI resolution order', async (t) => {
       assert.equal(resolved, storeCli(root, '@deepseek-ai+dsh@0.1.2-rc.1_xyz'));
     });
   });
+
+  await t.test(
+    'PACKAGED (win32): the NEWEST dsh family in the store wins, in either readdir order',
+    async () => {
+      await withRoot((root) => {
+        const stale = '@deepseek-ai+dsh@0.1.2-rc.1_stale';
+        const current = '@deepseek-ai+dsh@0.1.5-rc.2_current';
+        makeFile(storeCli(root, stale));
+        makeFile(storeCli(root, current));
+        for (const order of [
+          [stale, current],
+          [current, stale],
+        ]) {
+          assert.equal(
+            resolveDshCliPath(
+              { packaged: true, sourceRoot: root, platform: 'win32' },
+              existsSync,
+              () => order,
+            ),
+            storeCli(root, current),
+          );
+        }
+      });
+    },
+  );
+
+  await t.test(
+    'PACKAGED (win32): the newest family wins over unrelated store entries',
+    async () => {
+      await withRoot((root) => {
+        const stale = '@deepseek-ai+dsh@0.1.2-rc.1_stale';
+        const current = '@deepseek-ai+dsh@0.1.5-rc.2_current';
+        makeFile(storeCli(root, stale));
+        makeFile(storeCli(root, current));
+        assert.equal(
+          resolveDshCliPath(
+            { packaged: true, sourceRoot: root, platform: 'win32' },
+            existsSync,
+            () => [
+              '@deepseek-ai+dsh-agent@0.1.2-rc.1_peers',
+              stale,
+              '@deepseek-ai+dsh-web-app@0.1.5-rc.2_peers',
+              current,
+            ],
+          ),
+          storeCli(root, current),
+        );
+      });
+    },
+  );
 
   await t.test('PACKAGED (win32): no store entry falls back to the junction path', async () => {
     await withRoot((root) => {

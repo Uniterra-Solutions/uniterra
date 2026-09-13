@@ -20,7 +20,10 @@ export const FEATURE_USAGE = {
     { svc: 'sessions.scope.get', method: 'cancel' },
   ],
   toggleSidebar: [{ svc: 'layout', method: 'toggleSidebar' }],
-  toggleDetails: [{ svc: 'layout', method: 'openDetails' }],
+  // 0.1.5 moved the details column to ui-sidebar-right: ctx.layout no longer
+  // opens it (openDetails/closeDetails removed), so the toggle is the native
+  // collapse/expand face of the column's owner.
+  toggleDetails: [{ svc: 'sidebarRight', method: 'toggleExpanded' }],
   toggleTheme: [
     { svc: 'theme', method: 'getTheme' },
     { svc: 'theme', method: 'setTheme', args: ['light'] },

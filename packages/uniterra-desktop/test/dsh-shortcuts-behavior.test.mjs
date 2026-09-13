@@ -1,9 +1,10 @@
 /**
  * dsh-shortcuts behavior tests: white-box coverage of every feature, driven
- * against fixtures modelled on the pinned dsh family (dsh-v0.1.2-rc.1).
+ * against fixtures modelled on the pinned dsh family (dsh-v0.1.5-rc.2).
  * Tests are named after the guarantee they pin (including the deterministic
- * regressions for the four pinned-dsh breakages the suite found and the
- * local fixes that shipped 2026-09-05).
+ * regressions for the pinned-dsh breakages the suite found and the local fixes
+ * that shipped 2026-09-05 and 2026-09-13 — the 0.1.5 re-plant repaired the
+ * details-column toggle and the streaming copy fallback).
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -137,16 +138,53 @@ test('quick-switcher toggles the palette overlay without touching any service', 
   assert.equal(h.plugin.internals.paletteOpen, false);
 });
 
-test('sidebar/details/theme shortcuts drive the pinned layout and theme services', () => {
+test('sidebar/details/theme shortcuts drive the pinned layout, details-column owner and theme services', () => {
   const h = applyShortcutsPlugin();
   dispatch(h, 'keydown', { key: 'B', metaKey: true });
   assert.deepEqual(h.services.layout.calls, ['toggleSidebar']);
   dispatch(h, 'keydown', { key: 'D', metaKey: true, shiftKey: true });
-  assert.deepEqual(h.services.layout.calls, ['toggleSidebar', 'openDetails']);
+  assert.deepEqual(
+    h.services.sidebarRight.calls,
+    ['toggleExpanded'],
+    'the details column toggles through its 0.1.5 owner (ui-sidebar-right)',
+  );
+  assert.equal(h.services.sidebarRight.expanded, true);
   dispatch(h, 'keydown', { key: 'D', metaKey: true, shiftKey: true });
-  assert.deepEqual(h.services.layout.calls, ['toggleSidebar', 'openDetails', 'closeDetails']);
+  assert.deepEqual(h.services.sidebarRight.calls, ['toggleExpanded', 'toggleExpanded']);
+  assert.equal(h.services.sidebarRight.expanded, false, 'second press collapses the column');
+  assert.deepEqual(
+    h.services.layout.calls,
+    ['toggleSidebar'],
+    'ctx.layout is never asked for the removed openDetails/closeDetails seam',
+  );
   dispatch(h, 'keydown', { key: 'L', metaKey: true, shiftKey: true });
   assert.equal(h.themeState.active.id, 'light', 'dark -> light');
+});
+
+test('details-shortcut degrades quietly when no rightbar seat is mounted (0.1.5 loud-failure contract)', () => {
+  const h = applyShortcutsPlugin();
+  h.services.sidebarRight.mounted = false;
+  let threw = null;
+  try {
+    h.plugin.internals.FEATURE_BY_ID.toggleDetails.run();
+  } catch (err) {
+    threw = err;
+  }
+  assert.equal(threw, null, 'sidebarRight.toggleExpanded throws unmounted; the shortcut must not');
+  assert.deepEqual(h.services.sidebarRight.calls, [], 'nothing toggled without a mounted seat');
+  assert.deepEqual(h.services.layout.calls, [], 'no layout fallback is attempted');
+});
+
+test('details-shortcut survives a composition without the details-column service', () => {
+  const h = applyShortcutsPlugin();
+  h.services.sidebarRight = undefined;
+  let threw = null;
+  try {
+    h.plugin.internals.FEATURE_BY_ID.toggleDetails.run();
+  } catch (err) {
+    threw = err;
+  }
+  assert.equal(threw, null, 'a missing sidebarRight service is a no-op, not a crash');
 });
 
 test('toggle-theme keeps a non-base skin active instead of dropping it to the hardcoded base', () => {
@@ -184,6 +222,44 @@ test('focus-composer focuses the pinned composer seat (contenteditable role=text
     true,
     'the pinned composer is a contenteditable div (ComposerContentEditable); a textarea probe finds nothing',
   );
+});
+
+test('view/system shortcuts without a service seam drive their pinned DOM surfaces (fullscreen, scroll, cheatsheet)', () => {
+  const h = applyShortcutsPlugin();
+  const t = h.plugin.internals;
+  const fullscreenCalls = () => h.browser.usage.dom.filter((line) => line.includes('ullscreen'));
+  t.FEATURE_BY_ID.toggleFullscreen.run();
+  assert.deepEqual(fullscreenCalls(), ['requestFullscreen()'], 'enters fullscreen');
+  Object.defineProperty(h.browser.document, 'fullscreenElement', {
+    value: h.browser.document.documentElement,
+    configurable: true,
+  });
+  t.FEATURE_BY_ID.toggleFullscreen.run();
+  assert.deepEqual(
+    fullscreenCalls(),
+    ['requestFullscreen()', 'exitFullscreen()'],
+    'leaves fullscreen',
+  );
+
+  h.browser.document.documentElement.scrollHeight = 4200;
+  t.FEATURE_BY_ID.scrollToTop.run();
+  assert.deepEqual(JSON.parse(JSON.stringify(h.browser.window.scrollToCall)), [
+    { top: 0, behavior: 'smooth' },
+  ]);
+  t.FEATURE_BY_ID.scrollToBottom.run();
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(h.browser.window.scrollToCall)),
+    [{ top: 4200, behavior: 'smooth' }],
+    'scrolls to the document height',
+  );
+
+  t.FEATURE_BY_ID.quickSwitcher.run();
+  assert.equal(t.paletteOpen, true);
+  t.FEATURE_BY_ID.showCheatsheet.run();
+  assert.equal(t.cheatsheetOpen, true, 'cheatsheet overlay opens');
+  assert.equal(t.paletteOpen, false, 'opening the cheatsheet closes the palette');
+  t.FEATURE_BY_ID.showCheatsheet.run();
+  assert.equal(t.cheatsheetOpen, false, 'second press closes it');
 });
 
 test('open-settings clicks the pinned settings trigger button and closes it when expanded', () => {
@@ -270,7 +346,54 @@ test('copy-last-message copies the last assistant text from the pinned event win
   );
 });
 
-test('copy-last-message falls back to the pinned streaming chunk rows when no assembled message exists', async () => {
+test('copy-last-message falls back to the 0.1.5 transient assistant/live-chunk text deltas while streaming', async () => {
+  const h = applyShortcutsPlugin();
+  const live = (seq, text, chunk = { type: 'text-delta', index: 0, text }) => ({
+    type: 'transient',
+    event: {
+      type: 'assistant/live-chunk',
+      seq,
+      time: seq,
+      data: {
+        attemptId: 'a1',
+        turn: 1,
+        step: 3,
+        chunk,
+      },
+    },
+  });
+  h.sessions.eventWindow.entries = [
+    {
+      type: 'event',
+      event: {
+        type: 'user/message',
+        seq: 1,
+        time: 1,
+        data: {
+          turn: 1,
+          step: 1,
+          message: {
+            role: 'user',
+            content: [{ type: 'text', text: 'hello' }],
+            source: { kind: 'human' },
+          },
+        },
+      },
+    },
+    live(5, 'streaming '),
+    live(6, 'answer '),
+    live(7, 'here'),
+  ];
+  await h.plugin.internals.FEATURE_BY_ID.copyLastMessage.run();
+  await tick();
+  assert.deepEqual(
+    h.browser.navigator.clipboard.written,
+    ['streaming answer here'],
+    'the live text deltas of one streaming run join in window order',
+  );
+});
+
+test('copy-last-message never reads the removed chunkrow/text-chunks row (0.1.5 transient entries only)', async () => {
   const h = applyShortcutsPlugin();
   h.sessions.eventWindow.entries = [
     {
@@ -279,7 +402,7 @@ test('copy-last-message falls back to the pinned streaming chunk rows when no as
         type: 'chunkrow/text-chunks',
         seq: 5,
         time: 5,
-        data: { turn: 1, step: 3, index: 0, dt: [1, 1], texts: ['streaming ', 'answer ', 'here'] },
+        data: { turn: 1, step: 3, index: 0, dt: [1, 1], texts: ['removed ', 'seam'] },
       },
     },
   ];
@@ -287,8 +410,77 @@ test('copy-last-message falls back to the pinned streaming chunk rows when no as
   await tick();
   assert.deepEqual(
     h.browser.navigator.clipboard.written,
-    ['streaming answer here'],
-    'the last streaming text run joins',
+    [],
+    'the deleted chunkrow/text-chunks event carries no text for the plugin any more',
+  );
+});
+
+test('copy-last-message joins only the live run of the latest attempt/turn/step', async () => {
+  const h = applyShortcutsPlugin();
+  const live = (seq, text, data) => ({
+    type: 'transient',
+    event: {
+      type: 'assistant/live-chunk',
+      seq,
+      time: seq,
+      data: { ...data, chunk: { type: 'text-delta', index: 0, text } },
+    },
+  });
+  h.sessions.eventWindow.entries = [
+    live(1, 'older step ', { attemptId: 'a1', turn: 1, step: 1 }),
+    live(2, 'superseded', { attemptId: 'a1', turn: 1, step: 1 }),
+    live(3, 'current step', { attemptId: 'a1', turn: 1, step: 2 }),
+  ];
+  await h.plugin.internals.FEATURE_BY_ID.copyLastMessage.run();
+  await tick();
+  assert.deepEqual(
+    h.browser.navigator.clipboard.written,
+    ['current step'],
+    'a finished step is not concatenated into the streaming reply',
+  );
+});
+
+test('copy-last-message prefers the settled assistant/message over the transient live rows', async () => {
+  const h = applyShortcutsPlugin();
+  h.sessions.eventWindow.entries = [
+    {
+      type: 'transient',
+      event: {
+        type: 'assistant/live-chunk',
+        seq: 2,
+        time: 2,
+        data: {
+          attemptId: 'a1',
+          turn: 1,
+          step: 1,
+          chunk: { type: 'text-delta', index: 0, text: 'partial' },
+        },
+      },
+    },
+    {
+      type: 'event',
+      event: {
+        type: 'assistant/message',
+        seq: 3,
+        time: 3,
+        data: {
+          turn: 1,
+          step: 1,
+          message: {
+            role: 'assistant',
+            content: [{ type: 'text', text: 'settled reply' }],
+            source: { kind: 'model', provider: 'g1', model: 'm1' },
+          },
+        },
+      },
+    },
+  ];
+  await h.plugin.internals.FEATURE_BY_ID.copyLastMessage.run();
+  await tick();
+  assert.deepEqual(
+    h.browser.navigator.clipboard.written,
+    ['settled reply'],
+    'the durable settlement wins; the transient row is gone once settleAssistant ran',
   );
 });
 
@@ -737,6 +929,58 @@ test('PBT: any parseable combo matches its own event and rejects a single-bit ch
         const other = { ...event, key: 'Z' };
         if (key !== 'Z' && t.matchCombo(combo, other)) return false;
         return true;
+      },
+    ),
+  );
+});
+
+test('PBT: the streaming copy fallback equals the concatenated live text deltas of the last run', async () => {
+  await fc.assert(
+    fc.asyncProperty(
+      fc.array(fc.string({ minLength: 1, maxLength: 6 }), { minLength: 1, maxLength: 5 }),
+      fc.array(fc.constantFrom('usage', 'reasoning-delta', 'tool-call-delta'), { maxLength: 4 }),
+      async (deltas, noise) => {
+        const entries = [];
+        deltas.forEach((text, i) => {
+          entries.push({
+            type: 'transient',
+            event: {
+              type: 'assistant/live-chunk',
+              seq: i * 2 + 1,
+              time: i,
+              data: {
+                attemptId: 'a1',
+                turn: 1,
+                step: 1,
+                chunk: { type: 'text-delta', index: 0, text },
+              },
+            },
+          });
+          if (noise[i] !== undefined) {
+            entries.push({
+              type: 'transient',
+              event: {
+                type: 'assistant/live-chunk',
+                seq: i * 2 + 2,
+                time: i,
+                data: {
+                  attemptId: 'a1',
+                  turn: 1,
+                  step: 1,
+                  chunk: { type: noise[i], index: 1 },
+                },
+              },
+            });
+          }
+        });
+        const h = applyShortcutsPlugin();
+        h.sessions.eventWindow.entries = entries;
+        await h.plugin.internals.FEATURE_BY_ID.copyLastMessage.run();
+        await tick();
+        const expected = deltas.join('');
+        const written = h.browser.navigator.clipboard.written;
+        if (expected === '') return written.length === 0;
+        return written.length === 1 && written[0] === expected;
       },
     ),
   );

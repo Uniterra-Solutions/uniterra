@@ -1,10 +1,11 @@
 /**
  * dsh-api conformance: the other half of the dsh-shortcuts contract. The
  * plugin-side surface table (helpers/dsh-shortcuts-surface-table.mjs) is
- * verified against the PINNED dsh family (vendor/dsh-harness, dsh-v0.1.2-rc.1)
+ * verified against the PINNED dsh family (vendor/dsh-harness, dsh-v0.1.5-rc.2)
  * so every service / method / projection key / slot / protocol fact the
  * plugin relies on either exists (green) or is reported by name (red).
- * A change to dsh that renames or removes a seam fails here first.
+ * A change to dsh that renames or removes a seam fails here first: the oracle
+ * is updated to the pinned family's current names, never gutted.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -87,6 +88,16 @@ test('every client service the plugin declares/reads is provided by the pinned w
     'client conversation service',
   );
   present(
+    'packages/client/ui-sidebar-right/src/client/index.ts',
+    "reflect\\.provide\\('sidebarRight'",
+    'client sidebarRight service (the details column owner)',
+  );
+  present(
+    'packages/bundle/web-app/cordis.patch.yml',
+    'dsh-client-ui-sidebar-right',
+    'details-column owner mounted in the standard web app (the plugin reaches ctx.sidebarRight)',
+  );
+  present(
     'packages/client/ui-commands/src/client/index.ts',
     'remote\\.commands',
     'nested remote.commands face',
@@ -129,15 +140,38 @@ test('every method the plugin calls exists in the pinned client contracts', () =
     'toggleSidebar\\(\\): void',
     'layout.toggleSidebar',
   );
+  // 0.1.5 moved the details column's expanded state to its occupant and left
+  // ctx.layout reporting presentation only: the toggle seam is the column
+  // owner's native collapse/expand face, not a layout open/close notify.
   present(
+    'packages/client/ui-sidebar-right/src/client/service.ts',
+    'toggleExpanded\\(\\): void',
+    'sidebarRight.toggleExpanded (replaced layout.openDetails/closeDetails)',
+  );
+  present(
+    'packages/client/ui-sidebar-right/src/client/service.ts',
+    'isExpanded\\(\\): boolean',
+    'sidebarRight.isExpanded',
+  );
+  absent(
     'packages/client/ui-layout/src/client/service.ts',
-    'openDetails\\(\\): void',
-    'layout.openDetails',
+    'openDetails',
+    'layout.openDetails was removed in 0.1.5; the plugin must not read it',
+  );
+  absent(
+    'packages/client/ui-layout/src/client/service.ts',
+    'closeDetails',
+    'layout.closeDetails was removed in 0.1.5; the plugin must not read it',
   );
   present(
     'packages/client/ui-layout/src/client/service.ts',
-    'closeDetails\\(\\): void',
-    'layout.closeDetails',
+    'openRightbar\\(track: boolean, fullscreen: boolean\\): void',
+    'layout.openRightbar (presentation report that remains)',
+  );
+  present(
+    'packages/client/ui-layout/src/client/service.ts',
+    'closeRightbar\\(\\): void',
+    'layout.closeRightbar (presentation report that remains)',
   );
   present(
     'packages/client/ui-theme/src/client/index.ts',
@@ -195,10 +229,36 @@ test('every method the plugin calls exists in the pinned client contracts', () =
     "'assistant/message':",
     'assistant/message event (assembled assistant content)',
   );
+  // The client event window carries its own entry discriminant in 0.1.5: a
+  // durable entry is { type: 'event'; event }, a client-only streaming row is
+  // { type: 'transient'; event: AssistantLiveChunkEvent }. The chunkrow/* rows
+  // the plugin used as its streaming fallback were removed with that change.
+  present(
+    'packages/api/session-controller/src/client/contract/events.ts',
+    "readonly type: 'transient'",
+    'client window entry discriminant (transient streaming rows)',
+  );
+  present(
+    'packages/api/session-controller/src/client/contract/events.ts',
+    "readonly type: 'assistant/live-chunk'",
+    'assistant/live-chunk event (replaced the removed chunkrow/text-chunks row)',
+  );
+  present(
+    'packages/api/session-controller/src/client/contract/events.ts',
+    'readonly chunk: StreamChunk',
+    'live chunk carries the raw StreamChunk (text-delta deltas)',
+  );
+  // Anchored on a name the file still owns, so the absence below cannot pass
+  // by reading a missing file.
   present(
     'packages/api/session-controller/src/types.ts',
+    'sessionListMetadata: SessionListMetadata',
+    'client session-controller type home (anchor for the removed-seam check)',
+  );
+  absent(
+    'packages/api/session-controller/src/types.ts',
     'chunkrow/',
-    'chunkrow text runs reach the client window',
+    'chunkrow text runs no longer reach the client window; the plugin must not read them',
   );
   // Theme toggle sees the full registry, not a fixed light/dark pair.
   present(

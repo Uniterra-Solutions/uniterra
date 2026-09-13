@@ -6,9 +6,16 @@
  * protocol the catalog can declare. A text-only row must keep the harness's
  * deterministic text placeholder instead of silently losing the attachment.
  *
+ * The sibling attachment modality is the FILE block the 0.1.5 family adds: no
+ * provider ever receives file bytes, so a file must ride the wire as the
+ * family's deterministic handle text — the projection request assembly applies
+ * to every route, and the adapter's own fallback for a block that bypassed that
+ * assembly.
+ *
  * The property sweeps the catalog and the bytes; the deterministic cases pin
  * the exact wire shapes (chat `image_url` data URL, responses `input_image`,
- * and the text-only projection). All tests run on the built `lib/`.
+ * the text-only projection, and the file handle on both protocols). All tests
+ * run on the built `lib/`.
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -150,6 +157,7 @@ async function drive({
   model,
   protocol = 'chat-completions',
   images = new Map([[REF.attachmentId, IMAGE_BYTES]]),
+  messages = [USER_MESSAGE],
 }) {
   const ctx = new Context();
   await ctx.plugin(LlmRuntime);
@@ -161,7 +169,7 @@ async function drive({
     for await (const chunk of ctx.llm.stream({
       provider: 'uniterra',
       model,
-      messages: [USER_MESSAGE],
+      messages,
     })) {
       assert.notEqual(chunk.type, 'error', `stream failed: ${JSON.stringify(chunk)}`);
     }
@@ -314,4 +322,65 @@ test('regression: a model absent from the catalog stays text-only', async () => 
   assert.ok(
     JSON.stringify(calls[0].body).includes('[image omitted because this model accepts text only;'),
   );
+});
+
+/** The one durable file the file cases carry; its bytes never leave the harness. */
+const FILE_REF = {
+  attachmentId: 'sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210',
+  name: 'notes.md',
+  bytes: 42,
+};
+
+/** dsh's handle for a file whose execution-world read path is unresolvable. */
+const FILE_HANDLE =
+  '[File "notes.md" (42 bytes, sha256:fedcba98) was uploaded, but the current execution ' +
+  'environment cannot access a readable path. Report that limitation if its contents are ' +
+  'needed; do not claim to have read it.]';
+
+/** A user message whose content mixes text with the durable file reference. */
+const FILE_MESSAGE = {
+  id: 'm-file',
+  role: 'user',
+  source: { kind: 'user' },
+  content: [
+    { type: 'text', text: 'summarize this file' },
+    { type: 'file', attachment: FILE_REF },
+  ],
+};
+
+test('regression: an uploaded file reaches the gateway as the family file handle, not bytes', async () => {
+  // Request assembly projects every file block to handle text before any
+  // adapter is dispatched; the file the user attached must therefore reach the
+  // wire as that text — and never as an image part or encoded bytes.
+  const calls = await drive({
+    models: [{ id: 'plain', name: 'Plain', contextWindow: 8192 }],
+    model: 'plain',
+    messages: [FILE_MESSAGE],
+  });
+  assert.equal(calls.length, 1);
+  assert.deepEqual(
+    calls[0].body.messages.map((message) => message.content),
+    [`summarize this file${FILE_HANDLE}`],
+  );
+  assert.ok(!JSON.stringify(calls[0].body).includes('base64'));
+});
+
+test('regression: a file block the request assembly did not project rides as the family handle on both protocols', async () => {
+  // The serializers are public API as well: a caller that hands them a raw file
+  // block must not lose the user's upload. The adapter has no execution-world
+  // path resolver, so it renders the same family handle with the path
+  // unresolved.
+  const chat = plugin.serializeChatRequest({ model: 'plain', messages: [FILE_MESSAGE] });
+  assert.deepEqual(chat.messages, [{ role: 'user', content: `summarize this file${FILE_HANDLE}` }]);
+
+  const responses = plugin.serializeResponsesRequest({ model: 'plain', messages: [FILE_MESSAGE] });
+  assert.deepEqual(responses.input, [
+    {
+      role: 'user',
+      content: [
+        { type: 'input_text', text: 'summarize this file' },
+        { type: 'input_text', text: FILE_HANDLE },
+      ],
+    },
+  ]);
 });

@@ -17,6 +17,10 @@
  *    `ptc` source composition and metadata.
  *  - FAIL-SOFT: a source root without the vendored harness tree provisions
  *    nothing and reports no change.
+ *  - SCOPE: provisioning writes only the compat row. The settings document
+ *    and any session log are left byte-identical — the settings row is the one
+ *    consumer the dsh 0.1.5-rc.2 native migration does not reach (module
+ *    header), and session logs are the migration's job, not the shim's.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -27,6 +31,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
   AGENT_PRESET_FILES,
+  AGENT_PRESET_USER_ROOT,
   compatPresetSource,
   compatPresetWritePlan,
   compatPresetTargetDir,
@@ -130,6 +135,49 @@ test('FAIL-SOFT: a source root without the vendored harness tree provisions noth
   } finally {
     await rm(home, { recursive: true, force: true });
   }
+});
+
+// ---------------------------------------------------------------------------
+// SCOPE — provisioning touches nothing but the compat row
+// ---------------------------------------------------------------------------
+
+test('SCOPE: provisioning writes only the compat row, never the settings document or a session log', async () => {
+  const settingsYaml = 'agent-presets:\n  default: code\n';
+  await fc.assert(
+    fc.asyncProperty(fc.string({ maxLength: 128 }), async (sessionBytes) => {
+      const home = await mkdtemp(join(tmpdir(), 'dsh-preset-compat-'));
+      try {
+        // The two stored consumers of the legacy id: the settings row that
+        // still needs the shim, and a session log the native migration owns.
+        const settingsFile = join(home, 'settings.yaml');
+        const sessionDir = join(home, 'sessions');
+        const sessionFile = join(sessionDir, 'session-legacy.jsonl');
+        await mkdir(sessionDir, { recursive: true });
+        await writeFile(settingsFile, settingsYaml, 'utf8');
+        await writeFile(sessionFile, sessionBytes, 'utf8');
+
+        assert.equal(ensureAgentPresetCompatibility(home, SOURCE_ROOT), true);
+
+        assert.equal(
+          await readFile(settingsFile, 'utf8'),
+          settingsYaml,
+          'the settings document survived the provisioning byte-identical',
+        );
+        assert.equal(
+          await readFile(sessionFile, 'utf8'),
+          sessionBytes,
+          'the session log survived the provisioning byte-identical',
+        );
+        assert.deepEqual(
+          (await readdir(home)).sort(),
+          ['sessions', 'settings.yaml', AGENT_PRESET_USER_ROOT].sort(),
+          'the compat preset root is the only entry provisioning added',
+        );
+      } finally {
+        await rm(home, { recursive: true, force: true });
+      }
+    }),
+  );
 });
 
 test('ROSTER: the compat id does not collide with the shipped roster', async () => {

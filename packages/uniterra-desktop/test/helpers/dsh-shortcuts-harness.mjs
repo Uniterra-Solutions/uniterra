@@ -2,7 +2,7 @@
  * dsh-shortcuts test harness: evaluates the vendored client bundle
  * (vendor/dsh-plugins/dsh-shortcuts/lib/client.js) in a browser-shaped
  * sandbox, exposes its closure internals through an appended test face, and
- * ships fixtures modelled on the pinned dsh family (dsh-v0.1.2-rc.1,
+ * ships fixtures modelled on the pinned dsh family (dsh-v0.1.5-rc.2,
  * see vendor/dsh-harness) so contract tests can drive every feature against
  * the real service shapes.
  */
@@ -228,7 +228,7 @@ export function makeBrowserFixture() {
     },
   });
 
-  // Pinned dsh family DOM (dsh-v0.1.2-rc.1):
+  // Pinned dsh family DOM (dsh-v0.1.5-rc.2):
   // composer = contentEditable div with role textbox (ComposerContentEditable);
   // NO <textarea> exists in the conversation package.
   const composer = mkElement({
@@ -647,16 +647,37 @@ export function makePinnedContext({ recorder } = {}) {
     },
   };
 
+  // ctx.layout is the panel-action face only: 0.1.5 removed openDetails /
+  // closeDetails (the right column's expanded state belongs to its occupant)
+  // and left presentation reporting (openRightbar / closeRightbar).
   const layout = {
     calls: [],
     toggleSidebar() {
       layout.calls.push('toggleSidebar');
     },
-    openDetails() {
-      layout.calls.push('openDetails');
+    openRightbar(track, fullscreen) {
+      layout.calls.push('openRightbar');
+      layout.lastRightbarReport = { track, fullscreen };
     },
-    closeDetails() {
-      layout.calls.push('closeDetails');
+    closeRightbar() {
+      layout.calls.push('closeRightbar');
+    },
+  };
+
+  // ctx.sidebarRight (ui-sidebar-right) owns the details column in 0.1.5 and is
+  // the native toggle the plugin drives. mounted:false models the real
+  // contract's failure mode: toggleExpanded() throws with no mounted seat.
+  const sidebarRight = {
+    calls: [],
+    mounted: true,
+    expanded: false,
+    isExpanded() {
+      return sidebarRight.mounted ? sidebarRight.expanded : false;
+    },
+    toggleExpanded() {
+      if (!sidebarRight.mounted) throw new Error('sidebarRight: no mounted seat');
+      sidebarRight.calls.push('toggleExpanded');
+      sidebarRight.expanded = !sidebarRight.expanded;
     },
   };
 
@@ -670,7 +691,17 @@ export function makePinnedContext({ recorder } = {}) {
   };
 
   const convCancelCalls = [];
-  const services = { sessions, workspaces, layout, theme, locale, modelDirectories, remote, slots };
+  const services = {
+    sessions,
+    workspaces,
+    layout,
+    sidebarRight,
+    theme,
+    locale,
+    modelDirectories,
+    remote,
+    slots,
+  };
   services.conversation = {
     cancel: async () => {
       convCancelCalls.push('cancel');
@@ -709,6 +740,7 @@ export function makePinnedContext({ recorder } = {}) {
     slots,
     sessions,
     workspaces,
+    sidebarRight,
     convCancelCalls,
     projections,
   };

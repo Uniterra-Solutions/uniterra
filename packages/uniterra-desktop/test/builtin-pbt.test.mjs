@@ -5,7 +5,10 @@
  *  - REGISTRY: the single registerBuiltinPlugin registry is the source of
  *    truth — one representative entry per kind (npm / vendor / workspace /
  *    optional) flows into the expected bundles, and retired names never do.
- *    Optional entries never do either.
+ *    Optional entries never do either. The dsh 0.1.5 core covers three former
+ *    npm built-ins natively (dsh-file-upload, dsh-subagent-model-picker,
+ *    dsh-browser-playwright), so each is pinned BOTH as an npm-absent spec and
+ *    as a declared retirement that never re-enters the expected bundles.
  *  - EXTRACT: every built-in npm spec `<name>@<version>` contributes its
  *    package NAME to the expected bundles — including scoped names
  *    (`@scope/name@1.0.0` → `@scope/name`).
@@ -23,6 +26,10 @@
  *  - READY: awaitReadiness resolves with the first `http://127.0.0.1:<port>`
  *    seen, across arbitrary chunk boundaries, and rejects when the stream
  *    never carries one.
+ *  - BOOTSTRAP: a missing profile is initialized BY THE CLI — the shipped
+ *    template owns the initial bundle list, the app never writes that manifest,
+ *    an already-initialized profile is left to the provisioning pass, and a
+ *    bootstrap failure falls back to the pre-existing behaviour (boot anyway).
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -38,6 +45,7 @@ import {
   builtinPlugins,
   copyBuiltins,
   copyBuiltinsStale,
+  ensureProfileInitialized,
   ensureWorkflowCapsules,
   expectedBuiltinBundles,
   hasAllBuiltins,
@@ -54,6 +62,9 @@ const WORKSPACE = copyBuiltins('workspace');
 const OPTIONAL = copyBuiltins('optional');
 const RETIRED = retiredBuiltinNames();
 
+/** The built-ins the dsh 0.1.5 core covers natively — retired from the npm set. */
+const CORE_RETIRED = ['dsh-browser-playwright', 'dsh-file-upload', 'dsh-subagent-model-picker'];
+
 // ---------------------------------------------------------------------------
 // REGISTRY — one declarative entry per built-in, every consumer derived
 // ---------------------------------------------------------------------------
@@ -62,12 +73,24 @@ test('REGISTRY: one representative entry per kind flows into the expected bundle
   const expected = expectedBuiltinBundles();
   // Official dsh bundles always lead.
   assert.deepEqual(expected.slice(0, 2), ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']);
-  // npm kind.
-  assert.ok(NPM_SPECS.length >= 9, 'the full npm built-in set is registered');
+  // npm kind — the six remaining npm built-ins of the 0.1.5 set, with
+  // dsh-better-sidebar upgraded to the release built for that family.
+  assert.ok(NPM_SPECS.length >= 6, 'the full npm built-in set is registered');
+  assert.ok(
+    NPM_SPECS.includes('dsh-better-sidebar@0.19.0'),
+    'dsh-better-sidebar is pinned at the 0.1.5-family release',
+  );
   for (const spec of NPM_SPECS) {
     assert.ok(
       expected.includes(builtinPackageName(spec)),
       `npm spec ${spec} contributes its package name`,
+    );
+  }
+  // The three built-ins the dsh 0.1.5 core covers natively are NOT npm specs.
+  for (const name of CORE_RETIRED) {
+    assert.ok(
+      !NPM_SPECS.some((spec) => builtinPackageName(spec) === name),
+      `${name} is no longer an npm built-in`,
     );
   }
   // vendor kind.
@@ -88,12 +111,19 @@ test('REGISTRY: one representative entry per kind flows into the expected bundle
 });
 
 test('REGISTRY: retired names never enter the expected bundles', () => {
-  assert.equal(RETIRED.length, 6, 'the six retired built-ins stay declared');
+  assert.equal(RETIRED.length, 9, 'the nine retired built-ins stay declared');
   assert.ok(RETIRED.includes('dsh-notifier'), 'dsh-notifier stays declared retired');
+  // Each built-in the dsh 0.1.5 core now covers natively is pinned by name as
+  // retired — a retirement is never a silent deletion.
+  for (const name of CORE_RETIRED) {
+    assert.ok(RETIRED.includes(name), `${name} is pinned retired (the 0.1.5 core covers it)`);
+  }
   const expected = expectedBuiltinBundles();
   for (const name of RETIRED) {
     assert.ok(!expected.includes(name), `retired ${name} is not an expected bundle`);
   }
+  // dsh-browser-playwright's replacement is a vendored built-in, not a gap.
+  assert.ok(expected.includes('dsh-ego-browser'), 'the vendored ego-browser replaces it');
 });
 
 test('REGISTRY: every entry is declared exactly once', () => {
@@ -745,6 +775,71 @@ test('RETIRED regression: the dsh-notifier retirement heals the bundled row, dep
   }
 });
 
+test('RETIRED regression: the 0.1.5-core retirements heal row + dependency + installed copy, idempotently, touching nothing else', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'uniterra-core-retired-'));
+  try {
+    const profile = join(dir, 'profiles', 'web');
+    await mkdir(profile, { recursive: true });
+    const keepNames = [
+      '@deepseek-ai/dsh-web-app',
+      'dsh-better-sidebar',
+      'dsh-ego-browser',
+      'user-installed-plugin',
+    ];
+    for (const name of [...CORE_RETIRED, ...keepNames]) {
+      const dest = join(profile, 'node_modules', ...name.split('/'));
+      await mkdir(dest, { recursive: true });
+      await writeFile(join(dest, 'package.json'), `${JSON.stringify({ name })}\n`);
+    }
+    await writeFile(
+      join(profile, 'package.json'),
+      `${JSON.stringify({
+        dependencies: {
+          'dsh-file-upload': '0.4.3',
+          'dsh-subagent-model-picker': '0.1.1',
+          'dsh-browser-playwright': '0.1.1',
+          'dsh-better-sidebar': '0.19.0',
+          'user-installed-plugin': '1.0.0',
+        },
+        dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', ...CORE_RETIRED, ...keepNames] } },
+      })}\n`,
+    );
+
+    assert.equal(removeRetiredBuiltins(profile), true, 'an already-provisioned profile is healed');
+    assert.equal(removeRetiredBuiltins(profile), false, 'the heal is idempotent');
+
+    const manifest = JSON.parse(await readFile(join(profile, 'package.json'), 'utf8'));
+    for (const name of CORE_RETIRED) {
+      assert.ok(!manifest.dsh.profile.bundles.includes(name), `${name} bundle row removed`);
+      assert.ok(!(name in manifest.dependencies), `${name} dependency removed`);
+      assert.equal(
+        existsSync(join(profile, 'node_modules', ...name.split('/'))),
+        false,
+        `${name} installed copy removed`,
+      );
+    }
+    for (const name of keepNames) {
+      assert.ok(manifest.dsh.profile.bundles.includes(name), `${name} row untouched`);
+      assert.equal(
+        existsSync(join(profile, 'node_modules', ...name.split('/'))),
+        true,
+        `${name} installed copy untouched`,
+      );
+    }
+    assert.ok(
+      'dsh-better-sidebar' in manifest.dependencies,
+      'an unrelated pinned dependency is untouched',
+    );
+    assert.equal(
+      manifest.dependencies['user-installed-plugin'],
+      '1.0.0',
+      'a user-installed dependency is untouched',
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('RETIRED: an illegible manifest never throws — node_modules cleanup still runs', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'uniterra-retired-'));
   try {
@@ -932,5 +1027,124 @@ test('WORKFLOW CAPSULES: ensureWorkflowCapsules copies bundled capsules, is idem
   } finally {
     await rm(dshHome, { recursive: true, force: true });
     await rm(skills, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// BOOTSTRAP — a missing profile is created by the CLI, never by the app: the
+//             shipped template owns the initial bundle list, and a bootstrap
+//             failure falls back to the behaviour that predates the pass
+// ---------------------------------------------------------------------------
+
+/** Stub dsh CLI: record the invocation, then initialize the profile the way the
+ * real CLI's `--profile <name> --dump-config` does (copy the shipped template). */
+const BOOTSTRAP_STUB = [
+  "import { mkdirSync, writeFileSync } from 'node:fs';",
+  "import { join } from 'node:path';",
+  "import { fileURLToPath } from 'node:url';",
+  'const invocation = fileURLToPath(new URL("./invocation.json", import.meta.url));',
+  'writeFileSync(invocation, JSON.stringify({ argv: process.argv.slice(2), dshHome: process.env.DSH_HOME }));',
+  'const dir = join(String(process.env.DSH_HOME), "profiles", "web");',
+  'mkdirSync(dir, { recursive: true });',
+  'writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "dsh-profile-web", private: true, dependencies: {}, dsh: { profile: { bundles: ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app"], patchReload: "live" } } }, undefined, 2) + "\\n");',
+  '',
+].join('\n');
+
+/** Stub dsh CLI that refuses to initialize (the fail-soft case). */
+const BOOTSTRAP_FAILING_STUB = [
+  "process.stderr.write('dsh bootstrap stub: cannot initialize the profile\\n');",
+  'process.exit(2);',
+  '',
+].join('\n');
+
+/** Write one stub CLI into a fresh temp dir and point at its invocation record. */
+async function bootstrapStub(source) {
+  const dir = await mkdtemp(join(tmpdir(), 'uniterra-bootstrap-'));
+  const cli = join(dir, 'stub-dsh.mjs');
+  await writeFile(cli, source, 'utf8');
+  return { dir, cli, invocation: join(dir, 'invocation.json') };
+}
+
+test('BOOTSTRAP: a missing profile is initialized by the CLI, so provisioning has the shipped template to enrich', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'uniterra-bootstrap-home-'));
+  const stub = await bootstrapStub(BOOTSTRAP_STUB);
+  try {
+    assert.equal(
+      existsSync(join(home, 'profiles', 'web')),
+      false,
+      'the throwaway home starts with no profiles/ at all',
+    );
+    assert.equal(
+      ensureProfileInitialized(home, 'web', stub.cli, process.execPath),
+      true,
+      'the CLI created the profile manifest',
+    );
+    const invocation = JSON.parse(await readFile(stub.invocation, 'utf8'));
+    assert.deepEqual(invocation.argv, ['--profile', 'web', '--dump-config']);
+    assert.equal(invocation.dshHome, home, 'the CLI ran against the throwaway home');
+    const manifest = JSON.parse(
+      await readFile(join(home, 'profiles', 'web', 'package.json'), 'utf8'),
+    );
+    assert.deepEqual(
+      manifest.dsh.profile.bundles,
+      ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'],
+      'the shipped template bundle list is on disk for the provisioning pass',
+    );
+  } finally {
+    await rm(home, { recursive: true, force: true });
+    await rm(stub.dir, { recursive: true, force: true });
+  }
+});
+
+test('BOOTSTRAP: an already-initialized profile is left to the provisioning pass — the CLI is never re-run', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'uniterra-bootstrap-home-'));
+  const stub = await bootstrapStub(BOOTSTRAP_STUB);
+  try {
+    const profileDir = join(home, 'profiles', 'web');
+    await mkdir(profileDir, { recursive: true });
+    const manifestPath = join(profileDir, 'package.json');
+    const existing = JSON.stringify({
+      name: 'dsh-profile-web',
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'], patchReload: 'live' } },
+    });
+    await writeFile(manifestPath, existing);
+    assert.equal(
+      ensureProfileInitialized(home, 'web', stub.cli, process.execPath),
+      false,
+      'nothing was initialized',
+    );
+    assert.equal(
+      existsSync(stub.invocation),
+      false,
+      'an existing profile never triggers a CLI run',
+    );
+    assert.equal(
+      await readFile(manifestPath, 'utf8'),
+      existing,
+      'an existing manifest (user-owned bundle list included) is byte-identical',
+    );
+  } finally {
+    await rm(home, { recursive: true, force: true });
+    await rm(stub.dir, { recursive: true, force: true });
+  }
+});
+
+test('BOOTSTRAP: a failing CLI is swallowed — the boot falls back to the behaviour that predates the pass', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'uniterra-bootstrap-home-'));
+  const stub = await bootstrapStub(BOOTSTRAP_FAILING_STUB);
+  try {
+    assert.equal(
+      ensureProfileInitialized(home, 'web', stub.cli, process.execPath),
+      false,
+      'a failed bootstrap reports false instead of throwing',
+    );
+    assert.equal(
+      existsSync(join(home, 'profiles', 'web', 'package.json')),
+      false,
+      'no manifest was scaffolded by the app',
+    );
+  } finally {
+    await rm(home, { recursive: true, force: true });
+    await rm(stub.dir, { recursive: true, force: true });
   }
 });
