@@ -97,7 +97,7 @@
 - **理由**：#15 第 3.1／3.2／3.3 節的三個階段（issue 的 `[INFO]`／進行中／`[SUCCESS]` 對應物），以及第 2 節「Risk of Premature Termination」——使用者必須在 `pnpm install` 的數分鐘內持續看到進展（V-07 是目前做不到的原因）。
 - **In scope**：三個階段的可觀察保證（行數與時序語意），不規定字面文案。
 - **Out of scope**：文案潤飾、排版、顏色、動畫、i18n。
-- **可測性**：屬性測試 `PROGRESS-PHASES`（生成任意非空 stage 子序列 → 人類行中每個 stage 恰有一次「開始」與一次「結束」且順序正確；run 尾恰有一個總結行）。
+- **可測性**：屬性測試 `PROGRESS-PHASES`（生成任意非空 stage 子序列 → 人類行中每個 stage 恰有一次「開始」與一次「結束」且順序正確；run 尾恰有一個總結行）。終端上的「人眼看到進展」屬知覺項，見 `ACCEPTANCE.md` 的（非 PBT）替代證據 A-15-2。
 
 #### REQ-15-7 既有旗標的行為不得改變
 
@@ -159,7 +159,7 @@
 - **理由**：D3（使用者拍板）；#27 的「既有 profile 升級後也要長出 skill market」。
 - **In scope**：heal 的收斂性、冪等性、對外來列的不可侵犯性。
 - **Out of scope**：遷移/清理使用者既有的第三方 skill manager（見 OQ-27-3）。
-- **可測性**：屬性測試 `PROVISION-HEAL-IDEMPOTENT` 與 `PROVISION-FOREIGN-UNTOUCHED`——**只在 temp fixture 目錄**上跑，永不觸碰 `~/.dsh`。
+- **可測性**：屬性測試 `PROVISION-HEAL-IDEMPOTENT` 與 `PROVISION-FOREIGN-UNTOUCHED`——**只在 temp fixture 目錄**上跑，永不觸碰 `~/.dsh`。真實 profile 的 boot heal 面屬知覺項，見 `ACCEPTANCE.md` 的（非 PBT）替代證據 A-27-1。
 
 #### REQ-27-5 安裝目標是 dsh 的 user skill root
 
@@ -167,7 +167,7 @@
 - **理由**：#27 契約第 3 條、驗收 3、預期「一鍵安裝進 `~/.dsh/skills`（或 profile 對應的 skill root）」。
 - **In scope**：`installDir` 的**解析語意**（未設定 → `<DSH_HOME>/skills`；明確設定 → 以設定為準）、以及「模型 skill tool 讀得到」的可驗證路徑。
 - **Out of scope**：skill 內容格式驗證、搜尋結果的排序/分頁（上游職責）。
-- **可測性**：屬性測試 `SKILLROOT-DEFAULT`（生成 `home`/`dshHome`／明確設定 → C6 解析結果必須是絕對路徑、必須等於 `<DSH_HOME>/skills`（未設定時）、永不為 `/root/...`、永不為相對路徑）＋ live harness 輔助證據。
+- **可測性**：屬性測試 `SKILLROOT-DEFAULT`（生成 `home`/`dshHome`／明確設定 → C6 解析結果必須是絕對路徑、必須等於 `<DSH_HOME>/skills`（未設定時）、永不為 `/root/...`、永不為相對路徑）；模型 skill tool 實際讀取面屬知覺項，見 `ACCEPTANCE.md` 的（非 PBT）替代證據 A-27-2。
 
 #### REQ-27-6 不重造 `dshmarket`
 
@@ -243,7 +243,7 @@
 - **理由**：#28 約束「維持 desktop app 作為 dsh web UI 的唯一載入介面（BrowserWindow）」。
 - **In scope**：dsh URL 的載入者唯一性。
 - **Out of scope**：release 頁面 fallback 的既有行為。
-- **可測性**：`SURFACE-UNIQUE` 涵蓋「瀏覽器開啟數恰好 0」；`shell.openExternal` 的呼叫點集合以 artifact scan 作**輔助**證據（`OPENEXTERNAL-SCAN`，見 `ACCEPTANCE.md`），因為「呼叫點只有一個」不是生成式輸入的函數。
+- **可測性**：`SURFACE-UNIQUE` 涵蓋「瀏覽器開啟數恰好 0」；`shell.openExternal` 的呼叫點集合屬（非 PBT）的掃描面，見 `ACCEPTANCE.md` 的替代證據 A-28-2，因為「呼叫點只有一個」不是生成式輸入的函數。
 
 #### REQ-28-6 更新流程的其餘階段不得改變
 
