@@ -2,14 +2,12 @@
 name: dsh-prompt-writer
 description: >
   Write one complete, self-contained prompt (work order) for an executor agent:
-  recon with real tools, settle every decision, deliver the order as a single
-  copyable fenced block, then verify the result instead of trusting the report.
-  Covers the canonical order structure, the dsh specifics (a subagent sees no
-  conversation, so the prompt must carry everything; dispatch args stay tiny)
-  and the tests-first discipline for software orders. LOAD when:
+  recon with real tools, settle every decision, deliver it as one copyable
+  fenced block, then verify it with real tools. Covers the canonical order
+  structure, the dispatch specifics and the tests-first discipline software
+  orders carry. LOAD when:
   - User asks for a prompt / work order / task brief (寫 prompt / 工作單 / 任務書)
   - A vague request must become an executable instruction
-  NOT for: freezing a reusable process into a skill (use dsh-skill-creator).
 ---
 
 # dsh Prompt Writer

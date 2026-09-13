@@ -1,14 +1,13 @@
 ---
 name: dsh-skill-creator
 description: >
-  Create a dsh skill: freeze a reusable process into a SKILL.md the dsh skill
-  registry discovers and loads on trigger — where the file belongs (project /
-  user / bundled roots, and which one wins a duplicate name), the naming and
-  frontmatter contract, a body that changes behaviour, and how to verify the
-  registry picked it up. LOAD when:
-  - User asks to create or add a dsh skill (建立技能 / 技能創建 / 新增 skill)
-  - A repeated workflow should become a skill instead of being re-explained
-  NOT for: writing an executor prompt or work order (use dsh-prompt-writer).
+  Create a dsh skill: freeze a reusable process into a SKILL.md the dsh registry
+  discovers and loads on trigger — where the file belongs (project / user /
+  bundled roots, duplicate-name precedence), the naming and frontmatter
+  contract, a body that changes behaviour, and how to verify it. LOAD when:
+  - User asks to create a dsh skill (建立技能 / 技能創建 / 新增 skill)
+  - A repeated workflow should become a skill
+  NOT for: executor prompts (use dsh-prompt-writer).
 ---
 
 # dsh Skill Creator
