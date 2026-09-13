@@ -17,7 +17,7 @@
  */
 import { execFileSync } from 'node:child_process'
 import {
-  copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync,
+  copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync,
 } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -300,16 +300,24 @@ async function installRepo({ owner, repo, ref, installDir }) {
   }
 }
 
-/** Recursive copy without git metadata (files are small; sync is fine for UI ops). */
+/** Recursive copy without git metadata (files are small; sync is fine for UI ops).
+ *
+ * LOCAL PATCH (uniterra): entries are copied by their OWN kind — a symlink (or
+ * any other non-regular file) is SKIPPED, never followed. Upstream followed
+ * links (statSync + copyFileSync), so a repository shipping `leak ->
+ * ~/.ssh/id_ed25519` made a one-click install copy bytes from OUTSIDE the
+ * downloaded repository into the model-readable skill root, and a link to a
+ * directory walked that whole tree in. */
 function copyTree(src, dest) {
-  const st = statSync(src)
+  const st = lstatSync(src)
+  if (st.isSymbolicLink()) return
   if (st.isDirectory()) {
     mkdirSync(dest, { recursive: true })
     for (const entry of readdirSync(src)) {
       if (entry === '.git' || entry === '.gitignore') continue
       copyTree(join(src, entry), join(dest, entry))
     }
-  } else {
+  } else if (st.isFile()) {
     mkdirSync(join(dest, '..'), { recursive: true })
     // plain copy — small skill files
     copyFileSync(src, dest)
