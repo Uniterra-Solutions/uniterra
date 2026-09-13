@@ -1,7 +1,7 @@
 /**
  * Deterministic unit regression tests for the CONFIRMED counterexamples found
- * by the property-based adversarial review of the four dsh_workflow pipeline
- * capsules (implement / review / simplify).
+ * by the property-based adversarial review of the bundled `review` dsh_workflow
+ * capsule.
  *
  * `workflow-orchestration-pbt.test.mts` drives these same invariants over many
  * SEEDED generated inputs. This file pins each counterexample with a single
@@ -14,8 +14,6 @@
  *  1. REVIEW: a fixer that reports `status:'failed'` must surface as a `failed`
  *     capsule status (never a misleading `done`), while still returning the
  *     reports + fixes it produced.
- *  2. IMPLEMENT: the runner must never throw for an empty/absent `args` shape
- *     (no `tasks`/`batches`) — it degrades to a terminal object.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -155,65 +153,4 @@ test('REVIEW: a clean review is done and skips the fixer (single-pass control)',
   assert.equal((result.reports as unknown[]).length, 0);
   assert.equal((result.fixes as unknown[]).length, 0);
   assert.ok(!calls.some((c) => c.name === 'fix'), 'no fixer dispatched on a clean review');
-});
-
-// ---------------------------------------------------------------------------
-// 3. IMPLEMENT — empty / absent args must not crash the capsule.
-//    (Counterexample R-IMP-1.)
-// ---------------------------------------------------------------------------
-const IMPLEMENT = loadCapsule('uniterra-implement', 'implement.workflow.json');
-const IMPLEMENT_RUN = compileCapsule(IMPLEMENT.source);
-
-test('IMPLEMENT: the runner never throws when neither tasks nor batches are given and degrades to a terminal', async () => {
-  const ok = () => ({ changed_files: [], satisfied_requirements: [] });
-  // The minimal counterexample input: args = {} (no tasks, no batches).
-  const empty = await runCapsule(IMPLEMENT_RUN, {}, () => ok());
-  assert.equal(empty.result.status, 'done', 'empty args degrades to a terminal, not a crash');
-  assert.equal(empty.result.agents, 0);
-
-  // Empty-but-present batches/tasks must also be a graceful terminal.
-  for (const args of [{ tasks: [], batches: [] }, { tasks: [] }, { batches: [] }]) {
-    const res = await runCapsule(IMPLEMENT_RUN, args, () => ok());
-    assert.equal(res.result.status, 'done', `no crash for ${JSON.stringify(args)}`);
-  }
-});
-
-test('IMPLEMENT: a concrete task is dispatched and reported (positive control)', async () => {
-  const { result, calls } = await runCapsule(
-    IMPLEMENT_RUN,
-    {
-      tasks: [
-        { id: 'T1', name: 'T1', promptFile: '.dsh/tasks/T1.md' },
-        { id: 'T2', name: 'T2', promptFile: '.dsh/tasks/T2.md' },
-      ],
-    },
-    (name) => ({ changed_files: [], satisfied_requirements: [name] }),
-  );
-  assert.equal(result.status, 'done');
-  assert.equal(result.agents, 2);
-  assert.deepEqual(
-    calls
-      .filter((c) => c.name.startsWith('T'))
-      .map((c) => c.name)
-      .sort(),
-    ['T1', 'T2'],
-  );
-});
-
-test('IMPLEMENT: a failing child fails the run with the first failing batch (batch semantics control)', async () => {
-  const { result, calls } = await runCapsule(
-    IMPLEMENT_RUN,
-    {
-      batches: [
-        [{ id: 'A', name: 'A', promptFile: '.dsh/tasks/A.md' }],
-        [{ id: 'B', name: 'B', promptFile: '.dsh/tasks/B.md' }],
-        [{ id: 'C', name: 'C', promptFile: '.dsh/tasks/C.md' }],
-      ],
-    },
-    (name) => (name === 'B' ? null : { changed_files: [], satisfied_requirements: [name] }),
-  );
-  assert.equal(result.status, 'failed');
-  assert.equal(result.batch, 2, 'the first failing batch is reported');
-  // No batch after the failing one may dispatch.
-  assert.ok(!calls.some((c) => c.phase === 'batch-3'), 'no batch runs after the failing batch');
 });

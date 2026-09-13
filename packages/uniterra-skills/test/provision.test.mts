@@ -105,8 +105,9 @@ test('retired skills are removed while other skills and user edits stay untouche
   const agentDir = makeTmpAgentDir();
   try {
     await provisionBuiltinSkills(agentDir);
-    // Simulate a profile provisioned by the pre-rename cardo: the retired
-    // cardo-* and qa dirs are present alongside their uniterra replacements.
+    // Simulate an already-provisioned profile: the pre-rename cardo-* dirs and
+    // the retired plan → implement → simplify pipeline are present alongside
+    // their uniterra replacements.
     const retired = [
       'qa',
       'cardo-planmode',
@@ -116,6 +117,9 @@ test('retired skills are removed while other skills and user edits stay untouche
       'cardo-review',
       'cardo-pbt-debugging',
       'cardo-qa',
+      'uniterra-plan',
+      'uniterra-implement',
+      'uniterra-simplify',
     ];
     for (const name of retired) {
       const dir = path.join(agentDir, 'skills', name);
@@ -135,11 +139,12 @@ test('retired skills are removed while other skills and user edits stay untouche
     }
     assert.equal(readFileSync(keep, 'utf-8'), keepContent, 'other skills untouched');
     for (const name of [
-      'uniterra-plan',
-      'uniterra-implement',
-      'uniterra-simplify',
       'uniterra-review',
       'uniterra-qa',
+      'uniterra-pbt-debugging',
+      'manage-agents-md',
+      'manage-git-repo',
+      'project-documentation',
     ]) {
       assert.ok(
         existsSync(path.join(agentDir, 'skills', name, 'SKILL.md')),

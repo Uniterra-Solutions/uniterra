@@ -21,9 +21,6 @@ import { fileURLToPath } from 'node:url';
 
 const SKILL_NAMES = [
   'uniterra-pbt-debugging',
-  'uniterra-plan',
-  'uniterra-implement',
-  'uniterra-simplify',
   'uniterra-review',
   'manage-agents-md',
   'manage-git-repo',
@@ -41,6 +38,15 @@ export type BuiltinSkillName = (typeof SKILL_NAMES)[number];
  * the same skills under `uniterra-*`, and old profiles must not keep loading
  * both. */
 const RETIRED_SKILL_NAMES = [
+  // The `uniterra-plan` → `uniterra-implement` → `uniterra-simplify` pipeline
+  // retired as a unit: its phase skills were stages of ONE workflow rather
+  // than independently useful capabilities, and the work they carried is now
+  // covered by dsh's own authoring skills — `dsh-skill-creator` (turn a
+  // reusable process into a skill) and `dsh-prompt-writer` (write a complete
+  // executor order) — with `uniterra-review` left for reviewing changes.
+  'uniterra-plan',
+  'uniterra-implement',
+  'uniterra-simplify',
   'qa',
   'cardo-planmode',
   'cardo-plan',

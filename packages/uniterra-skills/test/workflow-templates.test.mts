@@ -1,29 +1,27 @@
 /**
- * Workflow-capsule contract tests for the bundled pipeline skills
- * (uniterra-implement / uniterra-review / uniterra-simplify).
+ * Workflow-capsule contract tests for the bundled review workflow
+ * (`uniterra-review`).
  *
- * After the workflow-builtin-rebuild milestone the pipeline workflows are
- * no longer JS blocks the model copies into the dsh `workflow` tool. They are
- * persisted `dsh.workflow` capsules the skill invokes by NAME via
+ * After the workflow-builtin-rebuild milestone the review workflow is no
+ * longer a JS block the model copies into the dsh `workflow` tool. It is a
+ * persisted `dsh.workflow` capsule the skill invokes by NAME via
  * `run_workflow(name, args)`. These tests lock that contract:
  *
- *  1. Every pipeline skill ships exactly one `workflows/<name>.workflow.json`
+ *  1. The review skill ships exactly one `workflows/review.workflow.json`
  *     capsule with `format: dsh.workflow`, `version: 1`, `workflowApiVersion: 1`,
  *     a valid manifest (name / phases / readOnly / maxAgents / maxConcurrency /
  *     patterns), and a `source` that defines `async function run(wf, args)` and
  *     compiles under Node's `vm.Script`.
- *  2. Each capsule's `source` executes to a terminal JSON result under stubbed
- *     `wf` hooks, proving the `wf.phase` / `wf.runAgent` / `wf.parallel` calls,
- *     the `outputSchema` structured results, and the terminal `return` all match
- *     the dsh_workflow engine contract (mirrors the old templates' behaviour:
- *     implement parallel + batched shapes, review
- *     single pass with a skipped fixer on a clean run, simplify pass-verdict
- *     early exit + cross-round skip accumulation).
- *  3. The SKILL.md call layer already invokes `run_workflow('<name>', args)` and
+ *  2. The capsule `source` executes to a terminal JSON result under stubbed
+ *     `wf` hooks, proving the `wf.phase` / `wf.runAgent` calls, the
+ *     `outputSchema` structured results, the standard-document injection and
+ *     the terminal `return` all match the dsh_workflow engine contract
+ *     (single pass, with the fixer skipped on a clean run).
+ *  3. The SKILL.md call layer already invokes `run_workflow('review', args)` and
  *     no longer instructs copying a script into the `workflow` tool (no
  *     "meta + script + args single call", no "copy verbatim").
- *  4. The legacy template/script files that used to embed the JS are flagged
- *     MIGRATED so a model never copies them back into a `workflow` tool call.
+ *  4. The legacy template file that used to embed the JS is flagged MIGRATED so
+ *     a model never copies it back into a `workflow` tool call.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -32,19 +30,13 @@ import * as path from 'node:path';
 import * as vm from 'node:vm';
 import { builtinSkillsDir } from '../dist/index.js';
 
-/** skill dir → its persisted capsule (from the C3–C6 build). */
+/** skill dir → its persisted capsule. */
 const CAPSULES: ReadonlyArray<{ skill: string; capsule: string; file: string }> = [
-  { skill: 'uniterra-implement', capsule: 'implement', file: 'implement.workflow.json' },
   { skill: 'uniterra-review', capsule: 'review', file: 'review.workflow.json' },
-  { skill: 'uniterra-simplify', capsule: 'simplify', file: 'simplify.workflow.json' },
 ];
 
-/** The legacy script/template files that used to embed the runnable JS. */
-const LEGACY_SCRIPTS: ReadonlyArray<string> = [
-  'uniterra-implement/assets/workflow-template.md',
-  'uniterra-review/assets/workflow-template.md',
-  'uniterra-simplify/assets/workflow-template.md',
-];
+/** The legacy template file that used to embed the runnable JS. */
+const LEGACY_SCRIPTS: ReadonlyArray<string> = ['uniterra-review/assets/workflow-template.md'];
 
 interface Capsule {
   readonly source: string;
@@ -63,7 +55,7 @@ function loadCapsule(root: string, { skill, file }: { skill: string; file: strin
   return capsule;
 }
 
-/** The default `wf.readFile` fixture (the inlined task brief). */
+/** The default `wf.readFile` fixture (any document the capsule asks for). */
 const DEFAULT_BRIEF =
   '# stub brief\n\nGoal: stub\nRequirements: REQ-1 (test: a)\nowned_files: a.js\nforbidden_files: b.js';
 
@@ -214,138 +206,32 @@ test('every pipeline workflow agent is write-capable (no readOnly:true runAgent)
 test('pipeline prompts embed the FULL fixed rules and require the structured_output tool', () => {
   // Regression: extractPrompt used to truncate a prompt body at the first
   // escaped backtick followed by `;` (e.g. `owned_files`;), silently dropping
-  // every rule after it. Pin that the embedded prompts are complete AND tell
-  // the subagent to report via dsh's built-in `structured_output` tool instead
-  // of printing a JSON string in its final message.
+  // every rule after it. The review capsule composes ONE prompt out of the
+  // reference files, so pin that the WHOLE composition is embedded (first and
+  // last block present) AND that it tells the subagent to report via dsh's
+  // built-in `structured_output` tool instead of printing a JSON string in its
+  // final message.
   const root = builtinSkillsDir();
-  const implement = loadCapsule(root, CAPSULES[0]!).source as string;
-  assert.ok(
-    implement.includes('structured_output'),
-    'implement agents are told to use structured_output',
-  );
-  assert.ok(
-    implement.includes('AGENTS.md / CLAUDE.md'),
-    'implement fixed rules embed the conventions rule (not truncated at `owned_files`)',
-  );
-  assert.ok(
-    implement.includes('STRENGTHENING'),
-    "implement fixed rules embed the strengthen-don't-rewrite rule (not truncated)",
-  );
-  for (const c of [CAPSULES[0]!, CAPSULES[1]!, CAPSULES[2]!]) {
+  for (const c of CAPSULES) {
     const source = loadCapsule(root, c).source as string;
     assert.ok(
       source.includes('structured_output'),
       `${c.capsule}: the agent prompt must require the structured_output tool`,
     );
-  }
-});
-
-test('implement capsule supports parallel tasks and serial batches', async () => {
-  const root = builtinSkillsDir();
-  const capsule = loadCapsule(root, CAPSULES[0]!);
-
-  {
-    // independent tasks → one parallel group, agents = count
-    const { result } = await runCapsule(
-      capsule,
-      {
-        tasks: [
-          { id: 'T1', name: 'T1', promptFile: '.dsh/tasks/T1.md' },
-          { id: 'T2', name: 'T2', promptFile: '.dsh/tasks/T2.md' },
-        ],
-      },
-      {
-        T1: () => ({
-          changed_files: [{ file: 'a', lines: '1' }],
-          satisfied_requirements: ['REQ-1'],
-        }),
-        T2: () => ({
-          changed_files: [{ file: 'b', lines: '2' }],
-          satisfied_requirements: ['REQ-2'],
-        }),
-      },
-    );
-    const r = result as Record<string, unknown>;
-    assert.equal(r.status, 'done');
-    assert.equal(r.agents, 2);
-    // The per-task reports are the reconciliation evidence: one entry per task,
-    // identified by its task id, carrying the child's structured output.
-    const reports = r.reports as Array<Record<string, unknown>>;
-    assert.equal(reports.length, 2, 'one report per dispatched task');
-    assert.deepEqual(
-      Array.from(reports, (x) => x.id),
-      ['T1', 'T2'],
-      'reports keep the dispatch order',
-    );
-    for (const report of reports) {
-      assert.equal(typeof report.id, 'string', 'every report carries its task id');
-      assert.ok(
-        Array.isArray(report.changed_files),
-        'every report carries the child structured output (changed_files)',
-      );
-    }
-  }
-
-  {
-    // overlapping tasks → serial batches, batch order preserved
-    const { result, calls } = await runCapsule(
-      capsule,
-      {
-        batches: [
-          [{ id: 'A', name: 'A', promptFile: '.dsh/tasks/A.md' }],
-          [{ id: 'B', name: 'B', promptFile: '.dsh/tasks/B.md' }],
-        ],
-      },
-      {
-        A: () => ({ changed_files: [], satisfied_requirements: ['A'] }),
-        B: () => ({ changed_files: [], satisfied_requirements: ['B'] }),
-      },
-    );
-    const r = result as Record<string, unknown>;
-    assert.equal(r.status, 'done');
-    assert.equal(r.agents, 2);
     assert.ok(
-      calls.indexOf('phase:batch-2') > calls.indexOf('phase:batch-1'),
-      'batches run serially',
+      source.includes('# Review Agent (operating manual'),
+      `${c.capsule}: the first composed prompt block is embedded`,
     );
-  }
-
-  {
-    // a failing child fails the whole (batched) run with the batch index
-    const { result } = await runCapsule(
-      capsule,
-      {
-        batches: [
-          [{ id: 'A', name: 'A', promptFile: '.dsh/tasks/A.md' }],
-          [{ id: 'B', name: 'B', promptFile: '.dsh/tasks/B.md' }],
-        ],
-      },
-      {
-        A: () => ({ changed_files: [], satisfied_requirements: ['A'] }),
-        // B absent → runAgent returns null (the engine's "child failed" signal).
-      },
+    assert.ok(
+      source.includes('# Security Checklist'),
+      `${c.capsule}: the last composed prompt block is embedded (nothing truncated)`,
     );
-    const r = result as Record<string, unknown>;
-    assert.equal(r.status, 'failed');
-    assert.equal(r.batch, 2);
-    // A failed run still returns its evidence: the batches that completed BEFORE the
-    // failing one, then the failing batch (the live children's reports plus a
-    // `failed: true` marker for every child that returned nothing).
-    const reports = r.reports as Array<Record<string, unknown>>;
-    assert.deepEqual(
-      Array.from(reports, (x) => x.id),
-      ['A', 'B'],
-      'reports carry the completed batch then the failing batch',
-    );
-    assert.equal(reports.length, 2, 'the completed child + the failed child are both reported');
-    assert.equal(reports[1]!.failed, true, 'the child that returned nothing is marked failed:true');
-    assert.ok(!('failed' in reports[0]!), 'a completed task is not marked failed');
   }
 });
 
 test('review capsule runs single-pass and skips the fixer on a clean review', async () => {
   const root = builtinSkillsDir();
-  const capsule = loadCapsule(root, CAPSULES[1]!);
+  const capsule = loadCapsule(root, CAPSULES[0]!);
   const args = { task: 'scope' };
 
   {
@@ -395,7 +281,7 @@ const STANDARD_HEADER = '## Standard (authoritative — the requirements + accep
 
 test('review capsule injects the authoritative standard documents into the review and fixer prompts', async () => {
   const root = builtinSkillsDir();
-  const capsule = loadCapsule(root, CAPSULES[1]!);
+  const capsule = loadCapsule(root, CAPSULES[0]!);
   const requirementsPath = '.plan/20260913/orders/prd.md';
   const acceptancePath = '.plan/20260913/orders/acceptance.md';
   // The standard reaches the agent as the DOCUMENT TEXT — never as the main
@@ -517,48 +403,6 @@ test('review capsule injects the authoritative standard documents into the revie
         `no standard block for an incomplete standard (${JSON.stringify(standard)})`,
       );
     }
-  }
-});
-
-test('simplify capsule ends on a pass verdict and accumulates skips across rounds', async () => {
-  const root = builtinSkillsDir();
-  const capsule = loadCapsule(root, CAPSULES[2]!);
-  const args = { goal: 'g', context: { requirements: '', design: '', acceptance: '' } };
-
-  {
-    // pass verdict → done early, trivial recommendations returned, no fix round
-    const { result, calls } = await runCapsule(capsule, args, {
-      'review-1': () => ({
-        verdict: 'pass',
-        recommendations: [{ id: 'r1', safetiness: 'safe', description: 'nit' }],
-      }),
-    });
-    const r = result as Record<string, unknown>;
-    assert.equal(r.status, 'done');
-    assert.equal(r.verdict, 'pass');
-    assert.equal((r.recommendations as unknown[]).length, 1);
-    assert.ok(!calls.some((c) => c.startsWith('agent:fix-')), `no fix round (${calls.join(', ')})`);
-  }
-
-  {
-    // fail → fix round; a pass on the next review round ends the loop
-    const { result } = await runCapsule(capsule, args, {
-      'review-1': () => ({
-        verdict: 'fail',
-        recommendations: [{ id: 'r1', safetiness: 'risky', description: 'x' }],
-      }),
-      'fix-1': () => ({
-        status: 'fixed',
-        applied_recommendations: ['r1'],
-        skipped: [],
-        summary: 'done',
-      }),
-      'review-2': () => ({ verdict: 'pass', recommendations: [] }),
-    });
-    const r = result as Record<string, unknown>;
-    assert.equal(r.status, 'done');
-    assert.equal(r.rounds, 2);
-    assert.equal(r.verdict, 'pass');
   }
 });
 

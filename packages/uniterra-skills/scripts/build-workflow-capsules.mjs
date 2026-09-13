@@ -1,24 +1,26 @@
 /**
- * Build the three dsh_workflow capsules that replace the dynamic workflow
- * scripts the bundled pipeline skills used to ask the model to copy into the
- * native `workflow` tool.
+ * Build the dsh_workflow `review` capsule that replaces the dynamic workflow
+ * script the bundled review skill used to ask the model to copy into the native
+ * `workflow` tool.
  *
- * The orchestration + the agent prompts are now packaged as `.workflow.json`
- * capsules (format `dsh.workflow`) so the model invokes them by NAME with
- * `run_workflow('name', args)` — no more "copy the JS block" step. Each
+ * The orchestration + the agent prompts are packaged as a `.workflow.json`
+ * capsule (format `dsh.workflow`) so the model invokes it by NAME with
+ * `run_workflow('name', args)` — no more "copy the JS block" step. The
  * capsule's `source` is a self-contained `async function run(wf, args)` that
- * uses the dsh_workflow `wf` API (wf.phase / wf.runAgent / wf.parallel) and
+ * uses the dsh_workflow `wf` API (wf.phase / wf.runAgent / wf.readFile) and
  * embeds the agent prompts as the `prompt` argument.
  *
- * The prompts are read from the canonical asset files under `src/skills/*` so
- * the prompt TEXT is never duplicated/edited here — only the orchestration is
- * new. The emitted capsules land in `dist/workflows/` for the test harness and
- * the desktop's capsule provisioning; this runs as part of `pnpm run build`.
+ * The prompts are read from the canonical reference files under `src/skills/*`
+ * so the prompt TEXT is never duplicated/edited here — only the orchestration
+ * is new. The emitted capsule is written next to its skill
+ * (`src/skills/uniterra-review/workflows/review.workflow.json`), mirrored to
+ * `dist/skills/` by copy-skills.mjs, and provisioned into the profile's
+ * workflow dir by the desktop; this runs as part of `pnpm run build`.
  *
  * Usage: node scripts/build-workflow-capsules.mjs [targetDir]
- *   - default target: dist/workflows (used by `pnpm run build`)
- *   - explicit target: used by the test harness to mirror capsules beside the
- *     compiled test fixtures.
+ *   - default target: src/skills (used by `pnpm run build`)
+ *   - explicit target: used by the test harness to mirror the capsule beside
+ *     the compiled test fixtures.
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import * as path from 'node:path';
@@ -27,10 +29,10 @@ import { format } from 'prettier';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const srcSkills = path.join(here, '..', 'src', 'skills');
-// The canonical capsules live next to each skill under `src/skills/<skill>/workflows/`
-// (they are copied to `dist/skills/<skill>/workflows/` by copy-skills.mjs, and the
-// desktop provisions them from there into the profile's workflow dir). Passing an
-// explicit target emits all three into one flat directory (used by the test harness).
+// The canonical capsule lives next to its skill under `src/skills/<skill>/workflows/`
+// (copied to `dist/skills/<skill>/workflows/` by copy-skills.mjs, and the
+// desktop provisions it from there into the profile's workflow dir). Passing an
+// explicit target emits it into one flat directory (used by the test harness).
 const explicitTarget = process.argv[2];
 const target = explicitTarget === undefined ? srcSkills : explicitTarget;
 
@@ -47,118 +49,6 @@ const CAPSULE_CREATED_AT = '2026-08-27T00:00:00.000Z';
  * prompt text must survive as literal text inside the capsule source. */
 function tmpl(text) {
   return text.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
-}
-
-/**
- * Extract one `const <NAME> = \`...\`;` prompt body from a template source,
- * tolerating ESCAPED backticks (\`) inside the body. A naive lazy
- * `[\s\S]*?` stops at the first backtick followed by `;` — which happens
- * mid-body whenever the doc writes an escaped backtick before a semicolon
- * (e.g. `\`owned_files\`; never modify …`), silently TRUNCATING the prompt.
- * Mask `\`` with a sentinel before the regex and restore it afterwards so the
- * body is captured verbatim.
- */
-function extractPrompt(source, name) {
-  const sentinel = '\u0000BT\u0000';
-  const masked = source.replace(/\\`/gu, sentinel);
-  const m = new RegExp(`const ${name} = \`([\\s\\S]*?)\`;`, 'u').exec(masked);
-  if (m === null) {
-    throw new Error(`build-workflow-capsules: "${name}" constant not found in template`);
-  }
-  return m[1].split(sentinel).join('\\`');
-}
-
-/** Build the implement capsule source. Mirrors the original fan-out: all tasks
- * in `args.tasks` run in parallel, or serial batches of parallel tasks when
- * `args.batches` is given; any failing child fails the whole run (batches are
- * dependent). Returns { status, agents, reports } on success and
- * { status, batch, reports } on failure — `reports` carries every per-task
- * { id, ...structured } report in dispatch order, so the main agent can
- * reconcile coverage against the requirements. */
-function implementSource() {
-  const fixedRules = readFileSync(
-    path.join(srcSkills, 'uniterra-implement', 'assets', 'workflow-template.md'),
-    'utf8',
-  );
-  // The fixed-rules block is the ```js FIXED_RULES content; extract it verbatim
-  // (tolerating escaped backticks mid-body — see extractPrompt).
-  const rules = extractPrompt(fixedRules, 'FIXED_RULES');
-
-  return `{
-  const { tasks, batches } = args ?? {};
-
-  const FIXED_RULES = \`${tmpl(rules)}\`;
-
-  const RETURN_SCHEMA = {
-    type: 'object',
-    required: ['changed_files', 'satisfied_requirements'],
-    properties: {
-      changed_files: { type: 'array', items: { type: 'object', required: ['file', 'lines'], properties: { file: { type: 'string' }, lines: { type: 'string' } } } },
-      satisfied_requirements: { type: 'array', items: { type: 'string' } },
-      deviations: { type: 'array', items: { type: 'string' } },
-    },
-  };
-
-  // Build a SMALL per-task prompt by inlining the task brief from promptFile
-  // (a repo-relative path) via wf.readFile, so run_workflow args stay tiny and
-  // the subagent does NOT read the file itself. Falls back to "read it yourself"
-  // if the inlined load fails (graceful degradation), and throws if a task is
-  // missing promptFile (a contract violation).
-  async function taskPrompt(t) {
-    if (t == null || typeof t !== 'object') throw new Error('implement task must be an object');
-    const id = t.id === undefined ? 'task' : String(t.id);
-    if (typeof t.promptFile !== 'string' || t.promptFile.trim().length === 0) {
-      throw new Error('implement task "' + id + '" is missing a promptFile path: write the task brief to a file and pass its repo-relative path (keep args small)');
-    }
-    let brief = '';
-    try {
-      brief = (await wf.readFile(t.promptFile)) || '';
-    } catch {
-      brief = '';
-    }
-    const briefBlock = brief.trim().length > 0
-      ? brief.trim()
-      : '! The task brief could not be loaded automatically — read the file at ' + t.promptFile + ' now with the read tool. It is your full brief (goal, owned/forbidden files, requirements + their allocated failing tests, conventions, constraints).';
-    return [
-      '## Task to implement',
-      '- task id: ' + id,
-      '- task name: ' + (t.name === undefined ? id : String(t.name)),
-      '- task file: ' + t.promptFile,
-      '',
-      briefBlock,
-    ].join('\\n');
-  }
-
-  const groups = batches ?? (tasks ? [tasks] : []);
-  const results = [];
-
-  for (let b = 0; b < groups.length; b++) {
-    const label = groups.length > 1 ? 'batch-' + (b + 1) : 'implement';
-    const batch = groups[b];
-    const done = await wf.phase(label, () => wf.parallel(
-      batch.map(t => async () => wf.runAgent({
-        name: String(t?.id ?? 'task'),
-        prompt: await taskPrompt(t) + '\\n\\n' + FIXED_RULES,
-        readOnly: false,
-        modelHint: 'balanced',
-        outputSchema: RETURN_SCHEMA,
-      })),
-    ));
-    // Identify every report by its task id so the main agent can reconcile the
-    // per-task reports against the requirements; the order is dispatch order.
-    // A null child (failed, or its return did not validate) stays visible as a
-    // { id, failed: true } entry instead of silently disappearing.
-    const batchEntries = done.map((r, i) => {
-      const id = String(batch[i]?.id ?? 'task');
-      return r === null ? { id, failed: true } : { id, ...(r.structured ?? {}) };
-    });
-    if (done.some(r => r === null)) {
-      return { status: 'failed', batch: b + 1, reports: [...results, ...batchEntries] };
-    }
-    results.push(...batchEntries);
-  }
-  return { status: 'done', agents: results.length, reports: results };
-}`;
 }
 
 /**
@@ -290,107 +180,6 @@ function reviewSource() {
   return { status: 'done', clean, reports, fixes, compliance };
 }`;
 }
-
-/** Build the simplify capsule source. Mirrors the original review → fix loop
- * with a hard round cap and cross-round skip accumulation. The design context
- * is authoritative; a verdict 'pass' or an empty recommendation list ends the
- * loop early. */
-function simplifySource() {
-  const template = readFileSync(
-    path.join(srcSkills, 'uniterra-simplify', 'assets', 'workflow-template.md'),
-    'utf8',
-  );
-  const reviewPrompt = extractPrompt(template, 'REVIEW_PROMPT');
-  const fixPrompt = extractPrompt(template, 'FIX_PROMPT');
-
-  return `{
-  const { goal, context } = args;
-
-  const REVIEW_PROMPT = \`${tmpl(reviewPrompt)}\`;
-
-  const FIX_PROMPT = \`${tmpl(fixPrompt)}\`;
-
-  const REVIEW_SCHEMA = {
-    type: 'object',
-    required: ['verdict', 'recommendations'],
-    properties: {
-      verdict: { type: 'string', enum: ['pass', 'fail'] },
-      recommendations: { type: 'array', items: { type: 'object', required: ['id', 'safetiness', 'description'], properties: { id: { type: 'string' }, safetiness: { type: 'string', enum: ['safe', 'risky'] }, description: { type: 'string' } } } },
-    },
-  };
-
-  const FIX_SCHEMA = {
-    type: 'object',
-    required: ['status'],
-    properties: {
-      status: { type: 'string', enum: ['fixed', 'failed'] },
-      applied_recommendations: { type: 'array', items: { type: 'string' } },
-      skipped: { type: 'array', items: { type: 'object', required: ['id', 'reason'], properties: { id: { type: 'string' }, reason: { type: 'string' } } } },
-      summary: { type: 'string' },
-    },
-  };
-
-  function contextBlock() {
-    return [
-      '## Context',
-      '### Requirements',
-      (context && context.requirements) || '(none)',
-      '### Design',
-      (context && context.design) || '(none)',
-      '### Acceptance',
-      (context && context.acceptance) || '(none)',
-    ].join('\\n');
-  }
-
-  const maxRounds = args.maxRounds ?? 8;
-  const accumulatedSkipped = [];
-
-  for (let round = 1; round <= maxRounds; round++) {
-    const skippedBlock = accumulatedSkipped.length
-      ? '\\n\\n## Previously skipped recommendations (from earlier fix rounds)\\n' +
-        'These were considered and deliberately NOT applied. Do NOT re-raise an item ' +
-        'unless its reason no longer holds — if the code has since changed so the ' +
-        'simplification is now safe, re-raise it with an updated safety rating and a ' +
-        'note that the previous reason no longer applies.\\n' +
-        JSON.stringify(accumulatedSkipped, null, 2)
-      : '';
-
-    const review = await wf.phase('round-' + round, () => wf.runAgent({
-      name: 'review-' + round,
-      prompt: REVIEW_PROMPT + '\\n\\n## Goal\\n' + goal + '\\n\\n' + contextBlock() + skippedBlock,
-      readOnly: false,
-      modelHint: 'deep',
-      outputSchema: REVIEW_SCHEMA,
-    }));
-    if (review === null) return { status: 'blocked', reason: 'review agent failed', round, skipped: accumulatedSkipped };
-
-    const recommendations = review.structured?.recommendations ?? [];
-    if (review.structured?.verdict === 'pass' || recommendations.length === 0) {
-      return { status: 'done', rounds: round, verdict: review.structured?.verdict, recommendations, skipped: accumulatedSkipped };
-    }
-
-    const fix = await wf.phase('fix-' + round, () => wf.runAgent({
-      name: 'fix-' + round,
-      prompt: FIX_PROMPT + '\\n\\n## Goal\\n' + goal + '\\n\\n' + contextBlock() + '\\n\\n## Recommendations\\n' + JSON.stringify(recommendations, null, 2),
-      readOnly: false,
-      modelHint: 'balanced',
-      outputSchema: FIX_SCHEMA,
-    }));
-    if (fix === null) return { status: 'blocked', reason: 'fix agent failed', round, recommendations, skipped: accumulatedSkipped };
-    if (fix.structured?.status === 'failed') return { status: 'failed', round, recommendations, skipped: accumulatedSkipped };
-
-    for (const s of (fix.structured?.skipped ?? [])) {
-      const entry = { round, id: s.id, reason: s.reason };
-      const existing = accumulatedSkipped.findIndex(e => e.id === s.id);
-      if (existing >= 0) accumulatedSkipped[existing] = entry;
-      else accumulatedSkipped.push(entry);
-    }
-  }
-
-  return { status: 'blocked', reason: 'max rounds reached', rounds: maxRounds, skipped: accumulatedSkipped };
-}`;
-}
-
 function manifest(name, description, phases, readOnly, patterns, inputSchema) {
   return {
     name,
@@ -412,17 +201,6 @@ function sourceOf(body) {
 
 const capsules = [
   {
-    file: 'implement',
-    skillDir: 'uniterra-implement',
-    name: 'implement',
-    description:
-      'Dispatch an approved task list to subagents — all task in parallel, or serial batches of parallel tasks — and collect each agent JSON report.',
-    phases: ['implement'],
-    readOnly: false,
-    patterns: ['fan-out-and-synthesize'],
-    source: sourceOf(implementSource()),
-  },
-  {
     file: 'review',
     skillDir: 'uniterra-review',
     name: 'review',
@@ -432,17 +210,6 @@ const capsules = [
     readOnly: false,
     patterns: ['adversarial-verification'],
     source: sourceOf(reviewSource()),
-  },
-  {
-    file: 'simplify',
-    skillDir: 'uniterra-simplify',
-    name: 'simplify',
-    description:
-      'Behaviour-preserving simplification: review → fix until simple, with a hard round cap and cross-round skip accumulation.',
-    phases: ['round-1'],
-    readOnly: false,
-    patterns: ['loop-until-done'],
-    source: sourceOf(simplifySource()),
   },
 ];
 

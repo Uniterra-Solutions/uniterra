@@ -30,14 +30,12 @@ description: >
   - User asks to review changes, hunt for bugs, or run the review phase
     (review / 審查 / code review)
   - User asks to verify business logic is invariant-correct
-  Use uniterra-simplify for simplification review, uniterra-plan for planning,
-  and uniterra-implement for implementing.
 ---
 
 # Uniterra Review — requirement as standard + three-layer property-based adversarial review
 
-Pipeline position: after `uniterra-implement`, or standalone. The review is
-driven by the **review scope** (what changed / what to review) and — when a plan
+Pipeline position: standalone — the review runs on any scope, with or without a
+plan. The review is driven by the **review scope** (what changed / what to review) and — when a plan
 exists — by the **standard**: the plan's `prd.md` + `acceptance.md` as their
 original text. It is NOT driven by `execution-plan.json`, and NOT by the main
 agent's reading of the requirements / acceptance.
