@@ -64,7 +64,7 @@ Protocol resolution: `protocolOf = models.find(id)?.api ?? connection.api` (`ada
 
 1. Resolve facts per request: `config.options()`, API key via credentials seam (ref `uniterra`), abort-signal union, idle watchdog.
 2. Pick protocol by model (`protocolOf`).
-3. Resolve images (only when a message carries one): collect every durable `attachmentId` (recursing into tool results), read each through the mounted attachment service (`readImageRequest`, 4 MP / 4 MiB budget), then serialize — `serializeResponses(options, images)` or `serializeChat(options, images)` → JSON body. An image with no attachment service mounted is refused (`UNSUPPORTED_CONTENT`), never silently dropped.
+3. Resolve images (only when a message carries one): collect every durable `attachmentId` (recursing into tool results), read each through the mounted attachment service (`readImageRequest`, 4 MP / 4 MiB budget), then serialize — `serializeResponses(options, images)` or `serializeChat(options, images)` → JSON body. An image with no attachment service mounted is refused (`UNSUPPORTED_CONTENT`), never silently dropped. Files need no preparation: dsh projects every `file` block to its deterministic handle text in request assembly (no provider ever receives file bytes), and a raw file block that reached a serializer anyway renders the same family handle (`fileHandleText`, path unresolved — the adapter holds no execution-world path resolver) rather than dropping the user's upload.
 4. HTTP POST `{baseURL}/chat/completions` or `{baseURL}/responses` (Bearer auth, `accept: text/event-stream`).
 5. Parse SSE (`parseSse`); Chat stops at `[DONE]`, Responses passes terminal events through.
 6. Translate back to harness `StreamChunk`s (block-start/delta/block-end/usage/finish).
@@ -99,6 +99,9 @@ Locked by `test/image-modality.test.mjs` + `test/provider-recognition.test.mjs` 
 
 - **Declared modalities reach the model directory verbatim**: a catalog row's `inputModalities` is what `listModels`/`resolveModel` report, so dsh's image preflight stops projecting images to `textOnlyImageText` for a declared vision model; an omitted row (and an unknown model id) stays `['text']`, keeping the harness's deterministic text placeholder. Locked end-to-end through `ctx.llm.stream` (chat `image_url` data URL / responses `input_image` carry the exact bytes; text-only models carry no image part).
 - **The `llm-uniterra` section registers under every mount order**: the plugin attaches the section through `ctx.inject(['settings'], …)` + `installSection`, so the settings page finds it whether the settings provider mounts before or after the plugin (the real dsh boot order mounts it after) — and `installSection` hands the composition entry back when the provider detaches. An apply-time `ctx.get('settings')` read would silently drop the namespace (and every settings-page surface reading it).
+- **A file rides the wire as its handle text, never as bytes**: dsh's request assembly projects every `file` block (the content variant the 0.1.5 family adds) to `fileHandleText` before any adapter is dispatched, so an uploaded file reaches the gateway as that text and no encoded bytes do — locked end-to-end through `ctx.llm.stream`; a raw `file` block handed straight to the public serializers is rendered with the same family handle instead of being silently dropped (`fileHandleText` with the path unresolved: the adapter has no execution-world path resolver).
+- **The model-row format is backward compatible**: the schema the settings section validates with still accepts every row an earlier dsh family persisted — only `id` is required — and resolves it to exactly the same facts (no field renamed, dropped, or newly required).
+- The two bullets above are locked by `test/image-modality.test.mjs` (file half) and `test/config-compatibility.test.mjs` (config half).
 
 ## Build / Packaging
 
@@ -108,7 +111,7 @@ Locked by `test/image-modality.test.mjs` + `test/provider-recognition.test.mjs` 
 
 ## Dependencies
 
-- Outbound (peers, all exact `@deepseek-ai/*@0.1.2-rc.1` + cordis 4.0.2): dsh-llm, dsh-credentials, dsh-settings, dsh-launch-environment, dsh-timeout, dsh-util-values, dsh-client-* (client half; the client wire face is the typed Remote namespaces of `ctx.remote`, replacing the old `dsh-client-runtime` / `connection.api` client); schemastery, react.
+- Outbound (peers, all exact `@deepseek-ai/*@0.1.5-rc.2` + cordis 4.0.2): dsh-llm, dsh-credentials, dsh-settings, dsh-launch-environment, dsh-timeout, dsh-util-values, dsh-client-* (client half; the client wire face is the typed Remote namespaces of `ctx.remote`, replacing the old `dsh-client-runtime` / `connection.api` client); schemastery, react.
 - Runtime deps: eventsource-parser, undici (inlined at build).
 - Inbound: `packages/uniterra-desktop` provisions it as a `kind: 'workspace'` built-in (`registerBuiltinPlugin`).
 

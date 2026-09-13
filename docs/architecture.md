@@ -39,6 +39,8 @@ graph TD
     end
     Main -->|spawn node dsh/bin.js --profile web| Dsh
     Main -->|ensureBuiltinPlugins + DSH_BUNDLED_SKILL_DIR| Profile
+    Main -->|session/list + session/follow (mux)| Dsh
+    Main -->|native notification on turn/end| User
     Main -->|loads readiness URL| UI
     Dsh -->|serves SPA on 127.0.0.1:port| UI
     Dsh -->|llm route| Adapter
@@ -46,13 +48,14 @@ graph TD
     Adapter -->|api.json download| ModelsDev[models.dev API]
 ```
 
-| Container         | Technology                       | Responsibility                                                        |
-| ----------------- | -------------------------------- | --------------------------------------------------------------------- |
-| Electron main     | Electron 37, Node 22             | Boot, supervision, built-in provisioning, update check, crash restart |
-| dsh CLI child     | @deepseek-ai/dsh 0.1.2-rc.1      | Agent runtime: agent loop, skills, plugin loader, web server          |
-| BrowserWindow     | Chromium, sandboxed              | dsh Web UI on a loopback origin                                       |
-| Profile           | ~/.dsh/profiles/web              | User's dsh config + plugin bundles + provisioned skills               |
-| uniterra-provider | in-house plugin (esbuild bundle) | LLM adapter: dual-protocol serialize/translate, models.dev lookup     |
+| Container         | Technology                       | Responsibility                                                                                  |
+| ----------------- | -------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Electron main     | Electron 37, Node 22             | Boot, supervision, built-in provisioning, update check, crash restart                           |
+| dsh CLI child     | @deepseek-ai/dsh 0.1.5-rc.2      | Agent runtime: agent loop, skills, plugin loader, web server                                    |
+| BrowserWindow     | Chromium, sandboxed              | dsh Web UI on a loopback origin                                                                 |
+| Profile           | ~/.dsh/profiles/web              | User's dsh config + plugin bundles + provisioned skills                                         |
+| uniterra-provider | in-house plugin (esbuild bundle) | LLM adapter: dual-protocol serialize/translate, models.dev lookup                               |
+| Turn observer     | Node WebSocket, no plugin        | Follows user-facing sessions over the Gateway Remote mux; one OS notification per finished turn |
 
 ## Data Flow
 
@@ -62,8 +65,9 @@ graph TD
 2. Dev: mirror `~/.dsh` → `userData/dsh-test-home` (config only). Packaged: real `~/.dsh`.
 3. `ensureBuiltinPlugins` — no-op if fresh; else `dsh plugin add` npm built-ins + copy vendored/workspace built-ins + bundle rows.
 4. `startDsh({ profile: 'web', dshBundledSkillDir })` → spawn → `awaitReadiness` (60 s) → URL.
-5. `createWindow(url)`; schedule update check (5 s delay); wire crash backoff.
-6. Boot failure → append to `userData/startup-error.log` + (first boot) `dialog.showErrorBox` → quit.
+5. Notification surface against the same profile dir: application menu (the Notifications toggle, read from `.uniterra.json`) + `startDshTurnObserver(url, profileDir)`, which returns synchronously and exchanges the readiness token for the auth cookie in the background.
+6. `createWindow(url)`; schedule update check (5 s delay); wire crash backoff (the observer stops with the runtime).
+7. Boot failure → append to `userData/startup-error.log` + (first boot) `dialog.showErrorBox` → quit.
 
 ### One agent turn
 
@@ -75,32 +79,34 @@ graph TD
 ### Install / update
 
 - `uniterra setup`: GitHub source archive (or `--source` checkout) → pnpm install → build → electron-builder `--mac` / `--win --dir` → embed source (`Contents/Resources/src` / `resources/src`) → install (`~/Applications/Uniterra.app` / `%LOCALAPPDATA%\Programs\Uniterra` + Start Menu shortcut). On Windows, after the install the CLI re-points pnpm junctions whose absolute targets still reference the staging tree, so the installed source is self-contained.
+- Upgrading an existing profile is one-way at the session layer: the first 0.1.5 launch migrates session logs to format v3 (`session.v3.jsonl.zstd`), which a 0.1.2-era app cannot read — back up `~/.dsh` first ([setup.md](setup.md#upgrading-a-012-era-profile-session-v3-is-one-way)).
 - Update check probes GitHub release + npm dist-tag; Update Now quits the app and runs `uniterra update` detached — `uniterra update` refreshes the CLI, rebuilds + reinstalls the app, and relaunches it when done; Skip persists to `userData/uniterra-update-state.json`.
 
 ## Key Decisions
 
-| Decision                                                                                            | Rationale                                                                                                      | Status |
-| --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------ |
-| Thin shell: Electron hosts the bundled dsh CLI instead of reimplementing                            | Uniterra IS the dsh desktop surface; user's normal dsh config, no app-owned home                               | Active |
-| Source is the artifact: build the app on the user's machine, no CI-built binaries                   | Reproducible from the release archive; future cross-platform packaging                                         | Active |
-| Whole source tree embedded under the app resources dir (`Contents/Resources/src` / `resources/src`) | Packaged app resolves CLI/skills/vendors from the embedded source; `process.resourcesPath` is platform-neutral | Active |
-| Dual-protocol provider plugin with per-model `api` override                                         | Gateways mix protocols per model; one adapter covers both wire shapes                                          | Active |
-| Built-ins ensured idempotently into the user's profile                                              | User-installed plugins and edits are never touched; missing/stale built-ins heal on next launch                | Active |
-| Vendored plugins pinned at commits (copied, not pnpm-installed)                                     | No version-lock surprise; peers not on npm                                                                     | Active |
-| Content-identity staleness (version compare), not bundle-list                                       | A fixed distribution can ship under the same package name                                                      | Active |
-| Skills ship as bundled provider (`DSH_BUNDLED_SKILL_DIR`) + pi-agent provisioning                   | Company workflow skills available to every session; user edits survive                                         | Active |
-| Dev mirrors `~/.dsh` to a test home                                                                 | Dev never touches the real user config                                                                         | Active |
-| PBT-first: business logic pinned as properties before fix/dev                                       | Bugs become machine-search problems; regressions locked                                                        | Active |
+| Decision                                                                                            | Rationale                                                                                                             | Status |
+| --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ------ |
+| Thin shell: Electron hosts the bundled dsh CLI instead of reimplementing                            | Uniterra IS the dsh desktop surface; user's normal dsh config, no app-owned home                                      | Active |
+| Source is the artifact: build the app on the user's machine, no CI-built binaries                   | Reproducible from the release archive; future cross-platform packaging                                                | Active |
+| Whole source tree embedded under the app resources dir (`Contents/Resources/src` / `resources/src`) | Packaged app resolves CLI/skills/vendors from the embedded source; `process.resourcesPath` is platform-neutral        | Active |
+| Dual-protocol provider plugin with per-model `api` override                                         | Gateways mix protocols per model; one adapter covers both wire shapes                                                 | Active |
+| Built-ins ensured idempotently into the user's profile                                              | User-installed plugins and edits are never touched; missing/stale built-ins heal on next launch                       | Active |
+| Vendored plugins pinned at commits (copied, not pnpm-installed)                                     | No version-lock surprise; peers not on npm                                                                            | Active |
+| Content-identity staleness (version AND shared-file fingerprint), not bundle-list                   | A fixed distribution can ship under the same package name, and a local patch can change under the same version        | Active |
+| Turn notifications owned by the shell, not a bundled plugin                                         | Replaced the retired `dsh-notifier`; the decision is pure/testable and `session/follow` never owes the host an answer | Active |
+| Skills ship as bundled provider (`DSH_BUNDLED_SKILL_DIR`) + pi-agent provisioning                   | Company workflow skills available to every session; user edits survive                                                | Active |
+| Dev mirrors `~/.dsh` to a test home                                                                 | Dev never touches the real user config                                                                                | Active |
+| PBT-first: business logic pinned as properties before fix/dev                                       | Bugs become machine-search problems; regressions locked                                                               | Active |
 
 ## Deployment Topology
 
-| Environment            | Shape                                                                                                                                                                                          |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| User machine (macOS)   | `~/Applications/Uniterra.app` — Electron + embedded source + `~/.dsh` profile with built-ins                                                                                                   |
-| User machine (Windows) | `%LOCALAPPDATA%\Programs\Uniterra\Uniterra.exe` — `win-unpacked` + embedded source + Start Menu shortcut + `~/.dsh` profile                                                                    |
-| npm                    | `@uniterra-solutions/uniterra` CLI (trusted publishing, OIDC provenance)                                                                                                                       |
-| GitHub                 | Release per `v*` tag; auto-generated source archive is the desktop artifact                                                                                                                    |
-| Verification           | `scripts/verify-cli-container` replays the setup flow in a clean Docker container; `scripts/verify-windows-install` replays the real Windows install on windows-latest — both gate the release |
+| Environment            | Shape                                                                                                                                                                                                                                                                                      |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| User machine (macOS)   | `~/Applications/Uniterra.app` — Electron + embedded source + `~/.dsh` profile with built-ins                                                                                                                                                                                               |
+| User machine (Windows) | `%LOCALAPPDATA%\Programs\Uniterra\Uniterra.exe` — `win-unpacked` + embedded source + Start Menu shortcut + `~/.dsh` profile                                                                                                                                                                |
+| npm                    | `@uniterra-solutions/uniterra` CLI (trusted publishing, OIDC provenance)                                                                                                                                                                                                                   |
+| GitHub                 | Release per `v*` tag; auto-generated source archive is the desktop artifact                                                                                                                                                                                                                |
+| Verification           | `scripts/verify-cli-container` replays the setup flow in a clean Docker container; `scripts/verify-windows-install` replays the real Windows install on windows-latest — both gate the release. `scripts/verify-turn-notification` drives a real dsh locally for the observer's wire seams |
 
 ## How to Update
 

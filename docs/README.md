@@ -6,22 +6,21 @@ Quick links: [Setup](setup.md) · [Architecture](architecture.md) · [Tech Stack
 
 ## I want to...
 
-| I want to...                                             | Read...                                                              |
-| -------------------------------------------------------- | -------------------------------------------------------------------- |
-| Set up / install the app or the dev repo                 | [setup.md](setup.md)                                                 |
-| Understand the system design                             | [architecture.md](architecture.md)                                   |
-| Know what technologies we use                            | [tech-stack.md](tech-stack.md)                                       |
-| Find where code lives                                    | [project-structure.md](project-structure.md)                         |
-| Know the code conventions                                | [conventions.md](conventions.md)                                     |
-| Understand the Electron shell / boot flow                | [modules/uniterra-desktop.md](modules/uniterra-desktop.md)           |
-| Understand the LLM provider (dual protocol + models.dev) | [modules/uniterra-provider.md](modules/uniterra-provider.md)         |
-| Understand the installer CLI (`uniterra setup`)          | [modules/uniterra-cli.md](modules/uniterra-cli.md)                   |
-| Understand the update check                              | [modules/uniterra-updater.md](modules/uniterra-updater.md)           |
-| Understand the built-in skills + workflows               | [modules/uniterra-skills.md](modules/uniterra-skills.md)             |
-| Understand the system-prompt working rules               | [modules/uniterra-systemprompt.md](modules/uniterra-systemprompt.md) |
-| Understand the built-in plugin set / vendoring policy    | [modules/vendor-plugins.md](modules/vendor-plugins.md)               |
-| Run the tests / verification                             | [testing.md](testing.md)                                             |
-| Do a common dev task                                     | [workflows.md](workflows.md)                                         |
+| I want to...                                             | Read...                                                      |
+| -------------------------------------------------------- | ------------------------------------------------------------ |
+| Set up / install the app or the dev repo                 | [setup.md](setup.md)                                         |
+| Understand the system design                             | [architecture.md](architecture.md)                           |
+| Know what technologies we use                            | [tech-stack.md](tech-stack.md)                               |
+| Find where code lives                                    | [project-structure.md](project-structure.md)                 |
+| Know the code conventions                                | [conventions.md](conventions.md)                             |
+| Understand the Electron shell / boot flow                | [modules/uniterra-desktop.md](modules/uniterra-desktop.md)   |
+| Understand the LLM provider (dual protocol + models.dev) | [modules/uniterra-provider.md](modules/uniterra-provider.md) |
+| Understand the installer CLI (`uniterra setup`)          | [modules/uniterra-cli.md](modules/uniterra-cli.md)           |
+| Understand the update check                              | [modules/uniterra-updater.md](modules/uniterra-updater.md)   |
+| Understand the built-in skills + workflows               | [modules/uniterra-skills.md](modules/uniterra-skills.md)     |
+| Understand the built-in plugin set / vendoring policy    | [modules/vendor-plugins.md](modules/vendor-plugins.md)       |
+| Run the tests / verification                             | [testing.md](testing.md)                                     |
+| Do a common dev task                                     | [workflows.md](workflows.md)                                 |
 
 ## Document Index
 
@@ -37,7 +36,6 @@ Quick links: [Setup](setup.md) · [Architecture](architecture.md) · [Tech Stack
 - [modules/uniterra-cli.md](modules/uniterra-cli.md) — `uniterra setup` / `uniterra update`, install flow, release
 - [modules/uniterra-updater.md](modules/uniterra-updater.md) — update-decision semantics, skip persistence
 - [modules/uniterra-skills.md](modules/uniterra-skills.md) — skill registry, provisioning, the 9 bundled skills
-- [modules/uniterra-systemprompt.md](modules/uniterra-systemprompt.md) — working-rule injection extension
 - [modules/vendor-plugins.md](modules/vendor-plugins.md) — npm/vendored/optional/workspace built-ins, pin ledger, update policy, customize-vs-bump rule
 
 Not present (do not apply): `api-reference.md` (no HTTP routes), `data-models.md` (no database — config schemas are documented in their module docs).

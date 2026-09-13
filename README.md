@@ -1,32 +1,32 @@
 # Uniterra
 
-A desktop app built on the DeepSeek Harness (dsh) agent runtime and community dsh plugins: an Electron shell launches the bundled dsh CLI, provisions built-in plugins and skills into the user's profile, and hosts the dsh Web UI in a window. **The goal is to let you build your own desktop agent app through plugins** — it ships 9 npm community plugins, 2 vendored community plugins (dsh-shortcuts, plus the dsh_workflow dynamic-workflow layer), 1 optional vendored plugin (the Deep Whale skin, opt-in), and 1 in-house provider plugin, and you can install more at any time.
+A desktop app built on the DeepSeek Harness (dsh) agent runtime and community dsh plugins: an Electron shell launches the bundled dsh CLI, provisions built-in plugins and skills into the user's profile, and hosts the dsh Web UI in a window. **The goal is to let you build your own desktop agent app through plugins** — it ships 6 npm community plugins, 3 vendored community plugins (dsh-shortcuts, the dsh_workflow dynamic-workflow layer, and the ego-browser browser-automation plugin), 1 optional vendored plugin (the Deep Whale skin, opt-in), and 1 in-house provider plugin, and you can install more at any time. A finished turn raises a native OS notification, so long agent runs do not need watching.
 
 **Docs: [Documentation](docs/README.md)** (architecture diagrams, module deep dives, setup, testing, workflows) · **Spec: [AGENTS.md](AGENTS.md)**
 
 ## Built-in Plugins
 
-The app ships 13 built-in plugins (9 npm community, 2 vendored, 1 optional, 1 in-house). Source and license:
+The app ships 11 built-in plugins (6 npm community, 3 vendored, 1 optional, 1 in-house). Source and license:
 
-| Plugin                                  | Type     | Source                                                                                                       | License         |
-| --------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------ | --------------- |
-| `dshmarket`                             | npm      | [dsh-market/dsh-market](https://github.com/dsh-market/dsh-market)                                            | MIT             |
-| `dsh-better-sidebar`                    | npm      | [omdsh-dev/DSH-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar)                              | MIT             |
-| `dsh-file-upload`                       | npm      | [HongMing-Huang/dsh-file-upload](https://github.com/HongMing-Huang/dsh-file-upload)                          | MIT             |
-| `dsh-find-plugin`                       | npm      | [awesome-dsh-plugin/dsh-find-plugin](https://github.com/awesome-dsh-plugin/dsh-find-plugin)                  | MIT             |
-| `dsh-subagent-model-picker`             | npm      | [npm package](https://www.npmjs.com/package/dsh-subagent-model-picker) (author ninjasln, no public repo)     | MIT             |
-| `dsh-tool-git`                          | npm      | [lxj808624/dsh-tool-git](https://github.com/lxj808624/dsh-tool-git)                                          | MIT             |
-| `dsh-browser-playwright`                | npm      | [ChenyuHeee/dsh-browser-playwright](https://github.com/ChenyuHeee/dsh-browser-playwright)                    | MIT             |
-| `dsh-computer-use`                      | npm      | [988hj7tczd-oss/dsh-computer-use](https://github.com/988hj7tczd-oss/dsh-computer-use)                        | MIT             |
-| `dsh-git-worktree`                      | npm      | [wloops/dsh-git-worktree](https://github.com/wloops/dsh-git-worktree)                                        | MIT             |
-| `dsh-deep-whale`                        | optional | [Small-tailqwq/dsh-deep-whale](https://github.com/Small-tailqwq/dsh-deep-whale)                              | CC BY-NC-SA 4.0 |
-| `dsh-shortcuts`                         | vendored | [Ricketts-Guo/dsh-shortcuts](https://github.com/Ricketts-Guo/dsh-shortcuts)                                  | MIT             |
-| `@dsh-external/workflow`                | vendored | [omdsh-dev/dsh_workflow](https://github.com/omdsh-dev/dsh_workflow)                                          | MIT             |
-| `@uniterra-solutions/uniterra-provider` | in-house | [Uniterra-Solutions/uniterra](https://github.com/Uniterra-Solutions/uniterra) (`packages/uniterra-provider`) | MIT             |
+| Plugin                                  | Type     | Source                                                                                                       | License                                |
+| --------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------- |
+| `dshmarket`                             | npm      | [dsh-market/dsh-market](https://github.com/dsh-market/dsh-market)                                            | MIT                                    |
+| `dsh-better-sidebar`                    | npm      | [omdsh-dev/DSH-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar)                              | MIT                                    |
+| `dsh-find-plugin`                       | npm      | [awesome-dsh-plugin/dsh-find-plugin](https://github.com/awesome-dsh-plugin/dsh-find-plugin)                  | MIT                                    |
+| `dsh-tool-git`                          | npm      | [lxj808624/dsh-tool-git](https://github.com/lxj808624/dsh-tool-git)                                          | MIT                                    |
+| `dsh-computer-use`                      | npm      | [988hj7tczd-oss/dsh-computer-use](https://github.com/988hj7tczd-oss/dsh-computer-use)                        | MIT                                    |
+| `dsh-git-worktree`                      | npm      | [wloops/dsh-git-worktree](https://github.com/wloops/dsh-git-worktree)                                        | MIT                                    |
+| `dsh-deep-whale`                        | optional | [Small-tailqwq/dsh-deep-whale](https://github.com/Small-tailqwq/dsh-deep-whale)                              | MIT (code) + CC BY-NC-SA 4.0 (artwork) |
+| `dsh-shortcuts`                         | vendored | [Ricketts-Guo/dsh-shortcuts](https://github.com/Ricketts-Guo/dsh-shortcuts)                                  | MIT                                    |
+| `@dsh-external/workflow`                | vendored | [omdsh-dev/dsh_workflow](https://github.com/omdsh-dev/dsh_workflow)                                          | MIT                                    |
+| `dsh-ego-browser`                       | vendored | [Fisfzy/dsh-ego-browser](https://github.com/Fisfzy/dsh-ego-browser)                                          | MIT                                    |
+| `@uniterra-solutions/uniterra-provider` | in-house | [Uniterra-Solutions/uniterra](https://github.com/Uniterra-Solutions/uniterra) (`packages/uniterra-provider`) | MIT                                    |
 
 Vendored plugins are pinned at fixed commits — see [vendor/dsh-plugins/VENDOR.md](vendor/dsh-plugins/VENDOR.md). We vendor a plugin **only because we customize it** (edit its copied source in place, recording the divergence + pending-upstream note in the `VENDOR.md` pin ledger); a plugin we do not modify stays a `node_modules`/npm import.
 
-`dsh-deep-whale` is an optional (opt-in) skin — not installed by default. It is licensed under CC BY-NC-SA 4.0 and is redistributed free of charge, unmodified, for non-commercial use. If you are its author and do not want it bundled, please open an issue and we will remove it.
+Three former npm built-ins are retired into the dsh 0.1.5 core instead of shipping twice: the file-upload plugin (the web app now carries its own native client row), the subagent model picker (the native `subagent` tool selects `provider`/`model` per delegation), and the browser-automation plugin (superseded by the vendored `dsh-ego-browser`). Each stays declared `retired: true` in the registry, so an already-provisioned profile is healed by removal on its next launch and user-installed plugins are never touched.
+
+`dsh-deep-whale` is an optional (opt-in) skin — not installed by default. At the pinned v0.1.2 tag its licence is split: **MIT for the code** (`LICENSE`) and **CC BY-NC-SA 4.0 for the artwork** (`LICENSE-ARTWORK`, non-commercial). It is redistributed free of charge, unmodified, for non-commercial use. If you are its author and do not want it bundled, please open an issue and we will remove it.
 
 ## Built-in Workflows
 
@@ -41,6 +41,12 @@ Workflow details: [docs/modules/uniterra-skills.md](docs/modules/uniterra-skills
 ## Built-in Provider Enhancement
 
 `@uniterra-solutions/uniterra-provider`: a dual-protocol (OpenAI chat completions + Responses API) LLM provider plugin that can be configured against any OpenAI-compatible external provider, with upstream model metadata (context window / output tokens / reasoning efforts) auto-detected via models.dev, and a Web settings page for managing the gateway and per-model protocol overrides. See [docs/modules/uniterra-provider.md](docs/modules/uniterra-provider.md).
+
+## Turn-Completion Notifications
+
+When a turn finishes, the app raises one native OS notification (session title + how the turn ended) so you do not have to watch a long run. It is **on by default** and toggled from the application menu's **Notifications** checkbox; the preference lives in `~/.dsh/.uniterra.json`.
+
+The shell owns the whole path — no notification plugin — and only user-facing sessions are followed (an intermediate subagent turn never notifies). A broken stream, a refused socket, or a dead runtime degrades to silence rather than an error. See [docs/modules/uniterra-desktop.md](docs/modules/uniterra-desktop.md#turn-completion-notifications).
 
 ## Quick Start
 
@@ -61,13 +67,13 @@ pnpm build:vendored-dsh                                   # build the vendored D
 pnpm --filter @uniterra-solutions/uniterra-desktop dev    # dev mode (does not touch the real ~/.dsh)
 ```
 
-The dsh runtime source is vendored at `vendor/dsh-harness` (pinned `dsh-v0.1.2-rc.1` — npm ships compiled `lib/` only). The dev app resolves its built CLI first, so a source edit there runs on the next dev boot; see `vendor/dsh-harness/VENDOR.md` and `pnpm run build:vendored-dsh` for the loop.
+The dsh runtime source is vendored at `vendor/dsh-harness` (pinned `dsh-v0.1.5-rc.2` — npm ships compiled `lib/` only). The dev app resolves its built CLI first, so a source edit there runs on the next dev boot; see `vendor/dsh-harness/VENDOR.md` and `pnpm run build:vendored-dsh` for the loop.
 
 Test commands and the verification matrix: [docs/testing.md](docs/testing.md) · environment variables: [docs/setup.md](docs/setup.md)
 
 ## Tech Stack
 
-Node ≥ 22 · Electron 37 · @deepseek-ai/dsh 0.1.2-rc.1 (pinned exact) · TypeScript ~5.9 (NodeNext ESM) · pnpm 11 · fast-check (PBT) · esbuild / electron-builder. Full list: [docs/tech-stack.md](docs/tech-stack.md)
+Node ≥ 22 · Electron 37 · @deepseek-ai/dsh 0.1.5-rc.2 (pinned exact) · TypeScript ~6.0.3 (NodeNext ESM) · pnpm 11 · fast-check (PBT) · esbuild / electron-builder. Full list: [docs/tech-stack.md](docs/tech-stack.md)
 
 ## Conventions
 

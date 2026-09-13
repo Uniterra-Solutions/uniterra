@@ -6,11 +6,13 @@ Directory map for the uniterra monorepo. Locate code by task, not by grepping.
 
 | Path                                                         | Responsibility                                                                                                                                                                                             |
 | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/*`                                                 | pnpm workspace packages (6 packages, see below)                                                                                                                                                            |
-| `vendor/dsh-plugins/`                                        | Pinned community dsh plugins not on npm (5 plugins; `VENDOR.md` pin ledger)                                                                                                                                |
+| `packages/*`                                                 | pnpm workspace packages (5 packages, see below)                                                                                                                                                            |
+| `vendor/dsh-plugins/`                                        | Pinned community dsh plugins not on npm (4 plugins; `VENDOR.md` pin ledger)                                                                                                                                |
 | `vendor/dsh-runtime/`                                        | LEGACY 0.5.0 runtime snapshot — not on the current boot path (the app resolves the dsh CLI from `packages/uniterra-desktop/node_modules`); keep for reference only                                         |
 | `scripts/verify-cli-container/`                              | Docker harness replaying the `uniterra setup` flow in a clean container                                                                                                                                    |
 | `scripts/verify-windows-install/`                            | PowerShell harness: real `uniterra setup --source --move-source` (closer-to-real flow: the source is move-embedded like a downloaded release) + `Uniterra.exe` boot smoke on windows-latest (release gate) |
+| `scripts/verify-turn-notification/`                          | Live harness: boots the bundled dsh in a throwaway `DSH_HOME` and asserts the turn observer's real transport (cookie exchange, `session/list`, `session/follow`)                                           |
+| `scripts/verify-dsh-shortcuts-smoke/`                        | Real dsh web boot smoke for the vendored `dsh-shortcuts` plugin                                                                                                                                            |
 | `AGENTS.md`                                                  | Company-standard agent rules (the coding rulebook)                                                                                                                                                         |
 | `CHANGELOG.md`                                               | Keep a Changelog + SemVer                                                                                                                                                                                  |
 | `eslint.config.mjs` / `tsconfig.base.json` / `tsconfig.json` | Shared lint / compile rules; every package extends them                                                                                                                                                    |
@@ -19,14 +21,13 @@ Directory map for the uniterra monorepo. Locate code by task, not by grepping.
 
 ## Workspace Packages
 
-| Package                          | Responsibility                                                                 | Key files                                                                                    |
-| -------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
-| `packages/uniterra-desktop`      | Electron shell: boots the bundled dsh CLI, hosts its Web UI, ensures built-ins | `src/main.ts`, `src/dsh-process.ts`, `src/builtin.ts`                                        |
-| `packages/uniterra-provider`     | In-house dual-protocol LLM provider plugin (chat completions + Responses API)  | `src/index.ts`, `src/adapter.ts`, `src/serialize-*.ts`, `src/translate-*.ts`, `src/client/*` |
-| `packages/uniterra-cli`          | Public npm installer (`uniterra` bin): `setup` / `update` — macOS + Windows    | `src/cli.ts`, `src/install-logic.ts`                                                         |
-| `packages/uniterra-updater`      | Pure update-check decision logic (no Electron imports)                         | `src/index.ts`, `src/decision.ts`                                                            |
-| `packages/uniterra-skills`       | Built-in skill registry (9 company skills) + provisioning                      | `src/index.ts`, `src/skills/*/SKILL.md`, `scripts/copy-skills.mjs`                           |
-| `packages/uniterra-systemprompt` | pi-agent extension appending app-wide working rules to every turn              | `src/index.ts`                                                                               |
+| Package                      | Responsibility                                                                                                | Key files                                                                                    |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `packages/uniterra-desktop`  | Electron shell: boots the bundled dsh CLI, hosts its Web UI, ensures built-ins, turn-completion notifications | `src/main.ts`, `src/dsh-process.ts`, `src/builtin.ts`, `src/dsh-observer.ts`                 |
+| `packages/uniterra-provider` | In-house dual-protocol LLM provider plugin (chat completions + Responses API)                                 | `src/index.ts`, `src/adapter.ts`, `src/serialize-*.ts`, `src/translate-*.ts`, `src/client/*` |
+| `packages/uniterra-cli`      | Public npm installer (`uniterra` bin): `setup` / `update` — macOS + Windows                                   | `src/cli.ts`, `src/install-logic.ts`                                                         |
+| `packages/uniterra-updater`  | Pure update-check decision logic (no Electron imports)                                                        | `src/index.ts`, `src/decision.ts`                                                            |
+| `packages/uniterra-skills`   | Built-in skill registry (9 company skills) + provisioning                                                     | `src/index.ts`, `src/skills/*/SKILL.md`, `scripts/copy-skills.mjs`                           |
 
 ## Built-in Skills (`packages/uniterra-skills/src/skills/`)
 
@@ -44,10 +45,12 @@ Directory map for the uniterra monorepo. Locate code by task, not by grepping.
 
 ## Vendored & Optional Plugins (`vendor/dsh-plugins/`)
 
-| Kind     | Dir              | Package name                                  | Purpose                                                                   |
-| -------- | ---------------- | --------------------------------------------- | ------------------------------------------------------------------------- |
-| optional | `dsh-deep-whale` | @dsh-external/dsh-client-ui-skin-maid-atelier | Whale-maid UI skin (standalone distribution; opt-in via `.uniterra.json`) |
-| vendored | `dsh-shortcuts`  | dsh-shortcuts                                 | 34 keyboard shortcuts, one-click recording, macOS-first                   |
+| Kind     | Dir              | Package name                                  | Purpose                                                                                                                                             |
+| -------- | ---------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| optional | `dsh-deep-whale` | @dsh-external/dsh-client-ui-skin-maid-atelier | Whale-maid UI skin (standalone distribution; opt-in via `.uniterra.json`; MIT code + CC BY-NC-SA 4.0 artwork)                                       |
+| vendored | `dsh-shortcuts`  | dsh-shortcuts                                 | 34 keyboard shortcuts, one-click recording, macOS-first                                                                                             |
+| vendored | `dsh-workflow`   | @dsh-external/workflow                        | Dynamic multi-agent workflow layer (`workflow_list` / `run_workflow` / `workflow_manage`); 5 content patches under one version                      |
+| vendored | `ego-browser`    | dsh-ego-browser                               | 32 `ego_*` browser-automation tools + realtime watch panel; upstream verbatim, vendored because npm's only release peers on a retired package (MIT) |
 
 ## Build Outputs (gitignored)
 
