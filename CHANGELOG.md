@@ -7,7 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.1] — 2026-09-13
+
+The v0.18.0 tag never published: its release gate failed on two suite defects that only the Linux runners expose, so **this is the release that carries the 0.18.0 content** — the entries below are unchanged apart from these fixes, and 0.18.0 is skipped on npm.
+
+### Fixed
+
+- **The desktop updater-spawn test can no longer cancel its neighbours** (`packages/uniterra-desktop/test/update-progress-pbt.test.mjs`). `spawnUpdater` unrefs the child ON PURPOSE (the app quits right after the spawn), so awaiting its `exit` let the event loop drain first: the runner cancelled that test — and the two after it — with "Promise resolution is still pending but the event loop has already resolved". The test now keeps the child referenced and kills it in a `finally`; the macOS run had merely been lucky.
+- **The container PBT models a real installed copy** (`scripts/verify-cli-container/pbt/provisioning-pbt.test.mjs`). Its `STALE_DETECTION` fixture wrote a `package.json`-only stub for every built-in, which the strengthened staleness rule (every implementation file the SOURCE ships must exist in the copy, or the copy is stale) correctly reads as drift — so the property could never observe the matching-copy case. The fixture now materializes a copy of the source and damages only the generated target.
+
 ## [0.18.0] — 2026-09-13
+
+_Tagged, never published — its release gate failed on the two suite defects fixed in 0.18.1 above, so nothing reached npm or the GitHub releases. The 0.18.1 release ships exactly the content below._
 
 ### Added
 
