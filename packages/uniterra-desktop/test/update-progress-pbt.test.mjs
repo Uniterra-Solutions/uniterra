@@ -48,7 +48,7 @@ const STAGES = ['update-cli', 'build-install-app', 'launch-app'];
 /** One event line exactly as the CLI writes it: sentinel, then the 8 keys in
  * `PROGRESS_EVENT_KEYS` order. */
 function encode(event) {
-  return `@uniterra ${JSON.stringify({
+  return `@@uniterra ${JSON.stringify({
     v: event.v,
     run: event.run,
     seq: event.seq,
@@ -384,10 +384,10 @@ const GOLDEN_EVENTS = [
 ];
 
 const GOLDEN_LINES = [
-  '@uniterra {"v":1,"run":"b7f3c0d2-0000-4000-8000-000000000001","seq":0,"at":"2026-09-13T00:00:00.000Z","event":"run-start","stage":null,"status":null,"message":"updating: CLI, then app rebuild + reinstall, then relaunch"}',
-  '@uniterra {"v":1,"run":"b7f3c0d2-0000-4000-8000-000000000001","seq":1,"at":"2026-09-13T00:00:01.000Z","event":"stage-start","stage":"update-cli","status":null,"message":""}',
-  '@uniterra {"v":1,"run":"b7f3c0d2-0000-4000-8000-000000000001","seq":2,"at":"2026-09-13T00:00:02.000Z","event":"stage-end","stage":"update-cli","status":"ok","message":"CLI updated"}',
-  '@uniterra {"v":1,"run":"b7f3c0d2-0000-4000-8000-000000000001","seq":3,"at":"2026-09-13T00:00:03.000Z","event":"run-end","stage":null,"status":"ok","message":"the app was relaunched"}',
+  '@@uniterra {"v":1,"run":"b7f3c0d2-0000-4000-8000-000000000001","seq":0,"at":"2026-09-13T00:00:00.000Z","event":"run-start","stage":null,"status":null,"message":"updating: CLI, then app rebuild + reinstall, then relaunch"}',
+  '@@uniterra {"v":1,"run":"b7f3c0d2-0000-4000-8000-000000000001","seq":1,"at":"2026-09-13T00:00:01.000Z","event":"stage-start","stage":"update-cli","status":null,"message":""}',
+  '@@uniterra {"v":1,"run":"b7f3c0d2-0000-4000-8000-000000000001","seq":2,"at":"2026-09-13T00:00:02.000Z","event":"stage-end","stage":"update-cli","status":"ok","message":"CLI updated"}',
+  '@@uniterra {"v":1,"run":"b7f3c0d2-0000-4000-8000-000000000001","seq":3,"at":"2026-09-13T00:00:03.000Z","event":"run-end","stage":null,"status":"ok","message":"the app was relaunched"}',
 ];
 
 test('PROGRESS-SCHEMA regression: the shared golden vector decodes to the same events', () => {

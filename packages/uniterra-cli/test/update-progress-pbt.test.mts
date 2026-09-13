@@ -27,7 +27,7 @@ import assert from 'node:assert/strict';
 import * as fc from 'fast-check';
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -439,6 +439,125 @@ test('PROGRESS-SINK: unset or dry-run leaves zero file side effects', async () =
   });
 });
 
+/** The shapes of a record path a write cannot reach: the parent is a regular
+ * file, the record path itself is a directory, or the parent is a directory
+ * the user may not write into (the acceptance's degenerate input). */
+const unwritableShapeArb = fc.constantFrom(
+  'parent-is-a-file',
+  'record-is-a-directory',
+  'read-only-directory',
+);
+
+test('PROGRESS-SINK: an unwritable record path warns and never interrupts the stream', async () => {
+  await fc.assert(
+    fc.asyncProperty(
+      fc.array(stageArb, { maxLength: 4 }),
+      unwritableShapeArb,
+      async (stages, shape) => {
+        await withTempRoot(async (root) => {
+          const target =
+            shape === 'parent-is-a-file'
+              ? join(root, 'blocker', 'progress.ndjson')
+              : shape === 'record-is-a-directory'
+                ? join(root, 'adir')
+                : join(root, 'read-only', 'progress.ndjson');
+          if (shape === 'parent-is-a-file') {
+            await writeFile(join(root, 'blocker'), 'not a directory\n');
+          } else if (shape === 'record-is-a-directory') {
+            await mkdir(target, { recursive: true });
+          } else {
+            const readOnly = join(root, 'read-only');
+            await mkdir(readOnly, { recursive: true });
+            await chmod(readOnly, 0o500);
+            let locked = false;
+            try {
+              await writeFile(join(readOnly, 'probe'), 'x');
+            } catch {
+              locked = true;
+            }
+            // Running as root there is no unwritable directory to test; the
+            // other two shapes stay in the domain either way.
+            fc.pre(locked);
+          }
+
+          const warnings: string[] = [];
+          const captured = makeRecorder(
+            'run-unwritable',
+            createProgressFileSink(target, (message) => {
+              warnings.push(message);
+            }),
+          );
+          assert.doesNotThrow(() => {
+            driveRun(captured, stages);
+          }, `a record path of ${shape} must never fail the run`);
+          // The stream is untouched: every event still reaches stdout, and the
+          // human lines still bracket every stage.
+          assert.equal(
+            captured.eventLines.length,
+            captured.recorder.events.length,
+            'the event stream is not interrupted by the write failure',
+          );
+          assert.equal(
+            captured.humanLines.length,
+            captured.recorder.events.length,
+            'the human stream keeps flowing too',
+          );
+          assert.ok(
+            warnings.length >= 1,
+            `a failing append warns instead of failing the run (${shape})`,
+          );
+          assert.ok(
+            warnings.every((message) => message.includes(target)),
+            'the warning names the record it could not write',
+          );
+
+          if (shape === 'read-only-directory') {
+            await chmod(join(root, 'read-only'), 0o700);
+          }
+        });
+      },
+    ),
+    { numRuns: 12 },
+  );
+});
+
+test('PROGRESS-SINK regression: a blocker file and a directory as the record path warn and keep streaming', async () => {
+  await withTempRoot(async (root) => {
+    // The two minimal inputs the counterexample shrank to: a record path whose
+    // parent is a regular file, and a record path that IS a directory.
+    const targets = [join(root, 'blocker', 'progress.ndjson'), join(root, 'adir')];
+    await writeFile(join(root, 'blocker'), 'not a directory\n');
+    await mkdir(join(root, 'adir'), { recursive: true });
+
+    for (const target of targets) {
+      const warnings: string[] = [];
+      const captured = makeRecorder(
+        'run-unwritable-regression',
+        createProgressFileSink(target, (message) => {
+          warnings.push(message);
+        }),
+      );
+      driveRun(captured, ['update-cli', 'build-install-app']);
+      // run-start + two stages × (start, end) + run-end.
+      assert.equal(captured.recorder.events.length, 6, 'the whole run still ran');
+      assert.equal(
+        captured.eventLines.length,
+        captured.recorder.events.length,
+        `every event still reaches stdout for ${target}`,
+      );
+      assert.equal(
+        captured.humanLines.length,
+        captured.recorder.events.length,
+        'the human stream keeps flowing too',
+      );
+      assert.ok(
+        warnings.length >= 1,
+        `a write failure warns instead of failing the run for ${target}`,
+      );
+    }
+  });
+});
+
 // ---------------------------------------------------------------------------
 // PROGRESS-PHASES
 // ---------------------------------------------------------------------------
@@ -554,10 +673,10 @@ const GOLDEN_EVENTS: readonly ProgressEvent[] = [
 ];
 
 const GOLDEN_LINES: readonly string[] = [
-  '@uniterra {"v":1,"run":"b7f3c0d2-0000-4000-8000-000000000001","seq":0,"at":"2026-09-13T00:00:00.000Z","event":"run-start","stage":null,"status":null,"message":"updating: CLI, then app rebuild + reinstall, then relaunch"}',
-  '@uniterra {"v":1,"run":"b7f3c0d2-0000-4000-8000-000000000001","seq":1,"at":"2026-09-13T00:00:01.000Z","event":"stage-start","stage":"update-cli","status":null,"message":""}',
-  '@uniterra {"v":1,"run":"b7f3c0d2-0000-4000-8000-000000000001","seq":2,"at":"2026-09-13T00:00:02.000Z","event":"stage-end","stage":"update-cli","status":"ok","message":"CLI updated"}',
-  '@uniterra {"v":1,"run":"b7f3c0d2-0000-4000-8000-000000000001","seq":3,"at":"2026-09-13T00:00:03.000Z","event":"run-end","stage":null,"status":"ok","message":"the app was relaunched"}',
+  '@@uniterra {"v":1,"run":"b7f3c0d2-0000-4000-8000-000000000001","seq":0,"at":"2026-09-13T00:00:00.000Z","event":"run-start","stage":null,"status":null,"message":"updating: CLI, then app rebuild + reinstall, then relaunch"}',
+  '@@uniterra {"v":1,"run":"b7f3c0d2-0000-4000-8000-000000000001","seq":1,"at":"2026-09-13T00:00:01.000Z","event":"stage-start","stage":"update-cli","status":null,"message":""}',
+  '@@uniterra {"v":1,"run":"b7f3c0d2-0000-4000-8000-000000000001","seq":2,"at":"2026-09-13T00:00:02.000Z","event":"stage-end","stage":"update-cli","status":"ok","message":"CLI updated"}',
+  '@@uniterra {"v":1,"run":"b7f3c0d2-0000-4000-8000-000000000001","seq":3,"at":"2026-09-13T00:00:03.000Z","event":"run-end","stage":null,"status":"ok","message":"the app was relaunched"}',
 ];
 
 test('PROGRESS-SCHEMA regression: the shared golden vector is byte-exact', () => {

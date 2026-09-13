@@ -19,7 +19,7 @@ import type { InstallStage } from './install-logic.js';
 /** The sentinel every event line starts with (trailing space included). No
  * human-readable line may start with it; a line starting with the sentinel IS
  * an event line, byte for byte. */
-export const PROGRESS_PREFIX = '@uniterra ';
+export const PROGRESS_PREFIX = '@@uniterra ';
 
 /** The exact key set of an encoded event: the schema is CLOSED — an encoder
  * that adds a key, or drops one, breaks the round trip. */

@@ -25,7 +25,7 @@ import { join } from 'node:path';
  * human-readable line starts with it. Mirrors the CLI's `PROGRESS_PREFIX` — the
  * two packages share the wire format (pinned by the byte-exact golden vector in
  * both suites), not a module. */
-export const UPDATE_PROGRESS_PREFIX = '@uniterra ';
+export const UPDATE_PROGRESS_PREFIX = '@@uniterra ';
 
 /** The stage names the CLI emits (kept in lockstep with the CLI event schema by
  * a byte-exact golden vector in `test/update-progress-pbt.test.mjs`). */
