@@ -126,7 +126,16 @@ export async function startDsh(options: DshRuntimeOptions): Promise<DshRuntimeHa
   // readiness (observed on 0.1.5-rc.2, and present in 0.1.2-rc.1 too). URL
   // printing and the browser handoff are independent switches, so the
   // readiness line this module parses is unaffected.
-  const args = ['--profile', options.profile, '--no-open'];
+  // The profile is an option VALUE, but it lands in the same argv this contract
+  // is about: a caller passing a leading-dash profile (e.g. `--open`) would have
+  // the child parse it as a FLAG, re-enabling the very handoff this module
+  // suppresses. Such a value is attached to its option instead
+  // (`--profile=--open`), which every parser reads as a value: no bare
+  // auto-open token can ever reach the child, and the profile name itself is
+  // preserved rather than silently replaced.
+  const args = AUTO_OPEN_ARGUMENT.test(options.profile)
+    ? [`--profile=${options.profile}`, '--no-open']
+    : ['--profile', options.profile, '--no-open'];
   if (options.port !== undefined) {
     args.push('--port', String(options.port));
   }

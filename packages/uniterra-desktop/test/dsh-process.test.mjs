@@ -214,8 +214,14 @@ test('SPAWN-NOOPEN: --no-open is always present and nothing can remove it', asyn
               `an auto-open flag must never reach the child: ${token}`,
             );
           }
-          // The contract flags lead; caller args can only be appended after them.
-          assert.deepEqual(argv.slice(0, 3), ['--profile', profile, '--no-open']);
+          // The contract flags lead; caller args can only be appended after
+          // them. The profile value is passed verbatim either way: bare, or —
+          // when the value itself would be read as a flag — attached to its
+          // option, so the value can never be parsed as an auto-open switch.
+          const contract = AUTO_OPEN_FLAG.test(profile)
+            ? [`--profile=${profile}`, '--no-open']
+            : ['--profile', profile, '--no-open'];
+          assert.deepEqual(argv.slice(0, contract.length), contract);
         } finally {
           await stopDsh(handle.child, 2000);
         }
