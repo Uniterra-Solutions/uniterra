@@ -30,9 +30,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fc from 'fast-check';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 /** The pristine source tree this suite runs against (verify.sh exports it). */
@@ -205,24 +213,32 @@ test('STALE_DETECTION: a missing or version-mismatched copy of any built-in is s
         // Baseline: EVERY copy built-in gets a version-matching installed copy.
         // The unified staleness check scans all of them (any drift ⇒ stale), so
         // only the damaged target may differ from the source versions.
+        //
+        // A matching copy means a COPY OF THE SOURCE — the check compares the
+        // implementation files the source ships, so a `package.json`-only stub
+        // is drift by definition and could never model the matching case.
         for (const entry of copyEntries()) {
-          const sourcePkg =
-            entry.kind === 'vendor'
-              ? readJson(join(root, 'vendor', 'dsh-plugins', entry.dir, 'package.json'))
-              : readJson(join(root, entry.dir, 'package.json'));
-          if (entry.kind === target.kind && entry.dir === target.dir && damage === 'missing') {
+          const isTarget = entry.kind === target.kind && entry.dir === target.dir;
+          if (isTarget && damage === 'missing') {
             continue; // the damaged target's installed copy stays absent
           }
+          const sourceDir =
+            entry.kind === 'vendor'
+              ? join(root, 'vendor', 'dsh-plugins', entry.dir)
+              : join(root, entry.dir);
           const dest = installedCopyDir(profileDir, entry.package);
-          mkdirSync(dest, { recursive: true });
-          const version =
-            entry.kind === target.kind && entry.dir === target.dir && damage === 'version-bump'
-              ? '999.0.0'
-              : sourcePkg.version;
-          writeFileSync(
-            join(dest, 'package.json'),
-            `${JSON.stringify({ name: entry.package, version })}\n`,
-          );
+          mkdirSync(dirname(dest), { recursive: true });
+          cpSync(sourceDir, dest, {
+            recursive: true,
+            filter: (src) => !src.includes(`${sep}node_modules`),
+          });
+          if (isTarget && damage === 'version-bump') {
+            const manifest = readJson(join(dest, 'package.json'));
+            writeFileSync(
+              join(dest, 'package.json'),
+              `${JSON.stringify({ ...manifest, version: '999.0.0' })}\n`,
+            );
+          }
         }
         const stale = copyBuiltinsStale(profileDir, join(root, 'vendor', 'dsh-plugins'), root);
         assert.equal(

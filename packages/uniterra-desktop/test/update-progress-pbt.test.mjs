@@ -319,7 +319,18 @@ test('PROGRESS-SINK: the updater spawn carries the progress file under userData'
       process.platform,
       () => undefined,
     );
-    await once(child, 'exit');
+    // `spawnUpdater` unref's the child ON PURPOSE (the app quits right after the
+    // spawn), so the TEST has to hold the event loop open: without this the loop
+    // can drain before the child exits and the runner cancels this test — and
+    // every test after it — with "Promise resolution is still pending but the
+    // event loop has already resolved". Reproduced on the Linux CI runner; the
+    // macOS run was merely lucky.
+    child.ref();
+    try {
+      await once(child, 'exit');
+    } finally {
+      child.kill();
+    }
     const seen = JSON.parse(await readFile(record, 'utf8'));
     assert.equal(
       seen.progress,
