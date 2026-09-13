@@ -26,6 +26,8 @@ const SKILL_NAMES = [
   'manage-git-repo',
   'project-documentation',
   'uniterra-qa',
+  'dsh-skill-creator',
+  'dsh-prompt-writer',
 ] as const;
 
 export type BuiltinSkillName = (typeof SKILL_NAMES)[number];

@@ -145,6 +145,8 @@ test('retired skills are removed while other skills and user edits stay untouche
       'manage-agents-md',
       'manage-git-repo',
       'project-documentation',
+      'dsh-skill-creator',
+      'dsh-prompt-writer',
     ]) {
       assert.ok(
         existsSync(path.join(agentDir, 'skills', name, 'SKILL.md')),
