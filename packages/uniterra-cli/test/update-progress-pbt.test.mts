@@ -10,9 +10,9 @@
  *    exactly, and no human line this module renders can be mistaken for one.
  *  - PROGRESS-NOANSI: no escape byte is emitted, whatever the TTY/NO_COLOR
  *    state says, and the bytes do not depend on it.
- *  - PROGRESS-SINK: the durable record is line-for-line the event stream, an
- *    unset variable or a dry run leaves zero file side effects, and a replayed
- *    (run, seq) is never written twice.
+ *  - PROGRESS-SINK: the durable record is line-for-line the event stream, and an
+ *    unset variable or a dry run leaves zero file side effects.
+ *  - PROGRESS-SINK-IDEMPOTENT: a replayed (run, seq) is never written twice.
  *  - PROGRESS-PHASES: every executed stage brackets itself once, the run ends
  *    with exactly one summary line, and a failed run names its stage.
  *
@@ -375,7 +375,7 @@ test('PROGRESS-SINK: the durable record is line-for-line the event stream', asyn
   );
 });
 
-test('PROGRESS-SINK: a replayed (run, seq) is never written twice', async () => {
+test('PROGRESS-SINK-IDEMPOTENT: a replayed (run, seq) is never written twice', async () => {
   await fc.assert(
     fc.asyncProperty(fc.array(stageArb, { maxLength: 4 }), async (stages) => {
       await withTempRoot(async (root) => {
