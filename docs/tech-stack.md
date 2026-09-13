@@ -27,7 +27,7 @@ All versions are the spec ranges from `package.json` / `pnpm-workspace.yaml`; th
 | @uniterra-solutions/uniterra-desktop  | 0.17.0  | Electron shell over the bundled dsh CLI; built-in provisioning |
 | @uniterra-solutions/uniterra          | 0.17.0  | Public npm installer CLI (bin `uniterra`)                      |
 | @uniterra-solutions/uniterra-provider | 0.1.4   | In-house dual-protocol LLM provider plugin                     |
-| @uniterra-solutions/uniterra-skills   | 0.5.1   | Built-in skill registry (9 company skills)                     |
+| @uniterra-solutions/uniterra-skills   | 0.5.1   | Built-in skill registry (8 company skills)                     |
 | @uniterra-solutions/uniterra-updater  | 0.5.0   | Update decision + action mapping (pure, no Electron)           |
 
 ## dsh Client Peer Packages (uniterra-provider)

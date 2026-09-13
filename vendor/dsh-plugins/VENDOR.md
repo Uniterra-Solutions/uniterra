@@ -86,15 +86,17 @@ engine.
    sandbox mode (or when DSH ships an upstream-adopted preset helper).
 
 4. **`wf.readFile` bridge** (`lib/engine.js`, `lib/runtime.js`,
-   `lib/types.d.ts`). The `uniterra-implement` capsule inlines each task's
-   `promptFile` brief into the subagent prompt through `wf.readFile`, so the
-   subagent does not read it itself (see AGENTS.md). The host method resolves a
-   repo-relative path against the parent session's cwd, reads it as UTF-8, and
-   rejects workspace escapes (absolute or `..`) and missing files; the QuickJS
-   runtime bridge exposes the same method inside workflow scripts. Pinned by
+   `lib/types.d.ts`). The `uniterra-review` capsule reads the standard's
+   requirements / acceptance documents through `wf.readFile` (the repo-relative
+   paths in `args.standard`) and inlines their original text into the review and
+   fixer prompts, so the documents reach the agents as text rather than as the
+   main agent's summary. The host method resolves a repo-relative path against
+   the parent session's cwd, reads it as UTF-8, and rejects workspace escapes
+   (absolute or `..`) and missing files; the QuickJS runtime bridge exposes the
+   same method inside workflow scripts. Pinned by
    `workflow-engine-readfile.test.mjs`.
    *Removal condition:* drop when upstream ships `wf.readFile`, or when the
-   `uniterra-implement` capsule stops inlining the brief.
+   review capsule stops reading documents through it.
 
 5. **Raised token/wall defaults** (`lib/index.js` schema + `resolveConfig`,
    `docs/CONFIGURATION.md`). The per-tier output ceilings default to 384_000

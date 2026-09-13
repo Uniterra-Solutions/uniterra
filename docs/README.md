@@ -1,6 +1,6 @@
 # Uniterra Documentation
 
-Uniterra is a desktop app built on the DeepSeek Harness (dsh) agent runtime and community dsh plugins: an Electron shell boots a bundled dsh CLI, provisions built-in plugins + skills into the user's profile, and hosts dsh's Web UI. Its goal is to let users quickly build their own desktop agent app through plugins. Built-in workflows: a four-phase TDD development pipeline (`uniterra-plan` → `uniterra-implement` → `uniterra-simplify` / `uniterra-review`), an invariant-first debugging workflow (`uniterra-pbt-debugging`), and project-documentation management skills. Built-in provider enhancement: freely configure external OpenAI-compatible providers and fetch upstream model metadata (models.dev).
+Uniterra is a desktop app built on the DeepSeek Harness (dsh) agent runtime and community dsh plugins: an Electron shell boots a bundled dsh CLI, provisions built-in plugins + skills into the user's profile, and hosts dsh's Web UI. Its goal is to let users quickly build their own desktop agent app through plugins. Built-in workflows: an adversarial review workflow (`uniterra-review` — requirement-as-standard, three-layer property-based review driven by the persisted `review` capsule), an invariant-first debugging workflow (`uniterra-pbt-debugging`), project-documentation management skills, and two authoring skills (`dsh-skill-creator` for creating dsh skills, `dsh-prompt-writer` for writing executor orders). Built-in provider enhancement: freely configure external OpenAI-compatible providers and fetch upstream model metadata (models.dev).
 
 Quick links: [Setup](setup.md) · [Architecture](architecture.md) · [Tech Stack](tech-stack.md) · [Root README](../README.md)
 
@@ -30,12 +30,12 @@ Quick links: [Setup](setup.md) · [Architecture](architecture.md) · [Tech Stack
 - [conventions.md](conventions.md) — code style, dependencies, testing, build/distribution rules
 - [setup.md](setup.md) — end-user install, developer setup, env vars, verify
 - [testing.md](testing.md) — per-package lanes, PBT invariants, container harness
-- [workflows.md](workflows.md) — task recipes (feature, debug, skill, plugin, release, docs)
+- [workflows.md](workflows.md) — task recipes (review, debug, skill, plugin, release, docs)
 - [modules/uniterra-desktop.md](modules/uniterra-desktop.md) — Electron shell, boot flow, path resolution, update check
 - [modules/uniterra-provider.md](modules/uniterra-provider.md) — dual-protocol adapter, config, wire invariants, settings page
 - [modules/uniterra-cli.md](modules/uniterra-cli.md) — `uniterra setup` / `uniterra update`, install flow, release
 - [modules/uniterra-updater.md](modules/uniterra-updater.md) — update-decision semantics, skip persistence
-- [modules/uniterra-skills.md](modules/uniterra-skills.md) — skill registry, provisioning, the 9 bundled skills
+- [modules/uniterra-skills.md](modules/uniterra-skills.md) — skill registry, provisioning, the 8 bundled skills
 - [modules/vendor-plugins.md](modules/vendor-plugins.md) — npm/vendored/optional/workspace built-ins, pin ledger, update policy, customize-vs-bump rule
 
 Not present (do not apply): `api-reference.md` (no HTTP routes), `data-models.md` (no database — config schemas are documented in their module docs).

@@ -2,65 +2,44 @@
 
 Task recipes. Each links to the module/skill that owns the details.
 
-## Develop a Feature (company standard)
+## Review Changes (company standard)
 
-1. Load the `uniterra-plan` skill: read the request, **reconnoitre the repo read-only**
-   (relevant modules, existing tests, conventions — the evidence a plan cites must be real),
-   then clarify with the user ONLY the requirements, the acceptance criteria, and the
-   facts/constraints the repo cannot answer (external-system behavior, compatibility,
-   organizational conventions, irreversible choices). Never co-design the implementation, and
-   never ask what the repo can answer. Scaffold the run dir
-   (`node "<skill_base>/scripts/init_plan.mjs" <name>`) and fill `prd.md` + `acceptance.md`
-   under `<repo>/.plan/<YYYYMMDD>/<name>/` — the plan is the requirements list plus the
-   acceptance criteria that verify it (no architecture design). Anything in
-   **Assumptions & Constraints** lands as a requirement or an acceptance row.
-2. Confirm the plan with the user — read the two docs back with a short summary and ask
-   (`ask_user_question`) whether the content is broadly correct and matches their needs; apply
-   the edits they raise and show the result again until they confirm.
-3. Load `uniterra-implement`: write the red suite first — **test as spec**, every acceptance
-   line mapped to at least one test and every test traced back to a requirement — then **freeze
-   the seams** (each cross-task interface/shape/event must already be pinned by a test, or be
-   promoted to a requirement or acceptance line; tasks sharing a seam go in the same batch
-   mocking it, or in separate batches with the provider first). Decompose into a task list where
-   each task carries only its own requirements + acceptance + tests — scaffold each brief with
-   `node "<skill_base>/scripts/init_task.mjs" <project-name> <task-id> <task-name>"` (writes
-   `.dsh/<YYYYMMDD-HHmmss>/<project-name>/<task-name>.md` + that project's `task.json` manifest
-   — one manifest per project, so multiple projects under one timestamp never overwrite each
-   other) and pass `{ id, name, promptFile }` per task — call
-   `run_workflow('implement', { tasks })` for independent tasks (full-parallel) or
-   `run_workflow('implement', { batches })` for overlapping ones (serial batches of parallel
-   tasks); the capsule inlines each brief into the subagent prompt and returns
-   `{ status, agents, reports }` / `{ status, batch, reports }` (subagents report via
-   `structured_output`, never a plain-text JSON string). **Reconcile** the returned reports:
-   every REQ must appear in some report's `satisfied_requirements` (a gap → dispatch a
-   follow-up), and every `deviations` line is adjudicated — a spec problem goes back to the
-   user and into `acceptance.md`, an interface change is checked against the affected tasks'
-   tests. A fully green suite is the handoff gate. Leave the plan as it is — author tests and
-   tasks, not a new plan document.
-4. Run `uniterra-review` (**requirement as standard** when a plan exists: pass
-   `standard: { requirements, acceptance }` — the repo-relative paths to `prd.md` +
-   `acceptance.md` — so the review agent receives those documents AS THEIR ORIGINAL TEXT, never
-   your summary; property-based adversarial: the review agent reads every business module in
-   scope in one pass and models the WHOLE business logic + lifecycle — every operation, every
-   state, happy paths included, not just the paths that look suspicious — into a formal spec
-   table of state / transition / lifecycle / data / security invariants, AND derives security
-   invariants from the security checklist so logic security is PBT-verified too, writes
-   state-machine property tests that brute-force random operation sequences (plus
-   input-generating properties) in one pass then runs them together in a background job with more than 10,000 iterations, and
-   shrinks each counterexample into a structured error report — file,
-   line, input or operation sequence, expected/actual; on the standard axis it also audits every
-   requirement line against its acceptance evidence and returns the compliance rows, reporting
-   the three instrument findings — coverage gap, hollow test, spec contradiction; the fixer
-   repairs each counterexample (never in a direction that contradicts a requirement or
-   acceptance line), pins it with a deterministic unit regression test (concrete minimal input —
-   no RNG), and names every test after the TEST PURPOSE it pins (never a finding id), and reports
-   back to the main agent, which aggregates by severity critical/medium/low plus the compliance
-   summary (requirements X/Y, acceptance M/N), stating which logic is wrong, why, and the user
-   impact — without ever re-running the tests) and/or `uniterra-simplify` (over-engineering
-   checklist, behaviour-preserving; the requirements + acceptance are the authoritative
-   constraint, with the legacy design block optional). The review is proven sound when no
-   counterexample remains.
-   Details: [modules/uniterra-skills.md](modules/uniterra-skills.md#uniterra-plan).
+1. Load the `uniterra-review` skill and assemble the review scope: what changed / what to
+   review (default: the uncommitted diff), stated as a pointer — e.g. "review the changed
+   modules in packages/uniterra-provider (the diff)". Hand the review agent no summary of your
+   own; it reads the code and the documents itself.
+2. When requirements of record exist, add the **standard**: pass
+   `standard: { requirements, acceptance }` — repo-relative paths to the requirement and
+   acceptance documents (e.g. `.plan/20260913/orders/prd.md` +
+   `.plan/20260913/orders/acceptance.md`). Both must exist and carry content; the capsule
+   reads them with `wf.readFile` and inlines them VERBATIM into the review AND the fixer
+   prompt (documents in, main-agent narrative out). With no plan, omit it — the review then
+   runs standalone as pure code modelling.
+3. Call `run_workflow('review', { task, standard })` as ONE call. It orchestrates two
+   subagents in a single pass. The **review agent** models and PROVES three layers by
+   property-based testing (>10,000 runs per invariant, one pass, background job): (1)
+   intra-module — the module's own business logic + lifecycle, every operation and state,
+   happy paths included; (2) interaction — the module × each counterpart contract, with the
+   counterpart mocked to its contract and its states injected; (3) integration — the system
+   slices involving the module with the external world mocked (fs/network/env/clock), failures
+   injected at any point. Security invariants come from the security checklist and are
+   PBT-proven too. On the standard axis it audits every requirement line → its acceptance line
+   → the test that evidence names (exists / passes / non-hollow) and returns one `compliance`
+   row per requirement, reporting the three instrument findings — coverage gap, hollow test,
+   spec contradiction. Every counterexample is shrunk into a structured report (file, line,
+   input, expected/actual).
+4. The **fixer agent** receives the same standard, repairs each counterexample so its property
+   test passes, re-runs it green, and adds a DETERMINISTIC unit regression test per
+   counterexample (one concrete minimal input + the outcome the invariant requires, named
+   after the TEST PURPOSE it pins — never a finding id). It never repairs against a
+   requirement: a report that conflicts with the standard is refused and reported as `failed`.
+   It leaves changes UNCOMMITTED.
+5. The run returns `{ status, clean, reports, fixes, compliance }`. **You (the main agent)
+   aggregate**: group the counterexamples + fixes by severity (critical / medium / low), say
+   which layer each came from, which logic is wrong and the user impact, and — when a standard
+   was supplied — report the compliance summary (requirements X/Y, acceptance M/N) with every
+   non-`pass` row. Do NOT dispatch a summarizer agent and do NOT re-run the property tests.
+   Details: [modules/uniterra-skills.md](modules/uniterra-skills.md#uniterra-review).
 
 ## Debug a Bug (PBT-first)
 
@@ -75,6 +54,8 @@ Task recipes. Each links to the module/skill that owns the details.
 2. Add the name to `SKILL_NAMES` in `packages/uniterra-skills/src/index.ts`.
 3. `pnpm run build` (copy-skills refreshes `dist/skills/`).
 4. Extend `packages/uniterra-skills/test/provision.test.mts`.
+
+Creating a dsh **user** skill — one that belongs to the user or their project rather than to this bundled set — is a different job: load the `dsh-skill-creator` skill, which covers the roots a skill can live in, the naming + frontmatter contract and how to verify discovery.
 
 ## Bump a Vendored Plugin
 

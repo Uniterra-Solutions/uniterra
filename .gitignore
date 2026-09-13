@@ -20,6 +20,6 @@ dist/
 .codegraph/
 vendor/dsh-runtime/
 
-# uniterra-implement run directory (transient per-run task briefs)
+# transient agent run directory (per-run task briefs, workflow scripts)
 .dsh/
 .pnpm-store/
