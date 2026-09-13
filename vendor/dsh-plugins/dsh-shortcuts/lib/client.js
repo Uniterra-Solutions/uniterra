@@ -39,7 +39,6 @@ window.__ModuleLoader__.load({
 		const listeners = new Set();
 		let paletteOpen = false;
 		let cheatsheetOpen = false;
-		let detailsOpen = false;
 		let recordingAction = null; // 设置页录制期间暂停全局快捷键
 		let currentSessionId = null; // 由 apply 中的 sessions.list 订阅维护
 		let pluginCtx = null; // apply 时注入的 client runtime ctx
@@ -137,13 +136,44 @@ window.__ModuleLoader__.load({
 		}
 
 		// 从会话事件窗口提取最后一条助手可见文本：优先最后一条已组装的
-		// assistant/message（content 的 text 块），只有流式历史时回退到最近的
-		// chunkrow/text-chunks 行。窗口是 pinned binding.eventSource 的会话载体
-		// —— 该家族没有 conversation 投影。
+		// assistant/message（content 的 text 块），只有流式历史时回退到最近一段
+		// 流式文本增量。窗口条目是 pinned binding.eventSource 的会话载体（没有
+		// conversation 投影）：0.1.5 的条目联合带自己的判别字段 —— 持久条目
+		// { type: 'event', event }，客户端本地流式条目 { type: 'transient', event }
+		// 且 event.type === 'assistant/live-chunk'；该家族的 chunkrow/text-chunks
+		// 行已删除，流式文本改由 data.chunk 的原始 StreamChunk 承载。
+		function isLiveChunkEntry(entry) {
+			return !!entry && entry.type === 'transient'
+				&& !!entry.event && entry.event.type === 'assistant/live-chunk';
+		}
+
+		// 一段流式文本 = 同一次 attempt/turn/step 的 text-delta 增量按窗口顺序拼接
+		// （ui-chat 的 AssistantStreamAccumulator 在 turn/step 变化时 flush，所以同一
+		// 段增量才属于同一条正在生成的回复）。索引 i 不是 text-delta 时返回空串。
+		function liveChunkTextRunAt(entries, i) {
+			const live = entries[i];
+			if (!isLiveChunkEntry(live)) return '';
+			const data = live.event.data;
+			const chunk = data && data.chunk;
+			if (!chunk || chunk.type !== 'text-delta') return '';
+			const texts = [];
+			for (let j = 0; j <= i; j++) {
+				const entry = entries[j];
+				if (!isLiveChunkEntry(entry)) continue;
+				const d = entry.event.data;
+				const c = d && d.chunk;
+				if (!c || c.type !== 'text-delta') continue;
+				if (d.attemptId !== data.attemptId || d.turn !== data.turn || d.step !== data.step) continue;
+				if (typeof c.text === 'string') texts.push(c.text);
+			}
+			return texts.join('');
+		}
+
 		function lastAssistantTextFromWindow(entries) {
 			if (!Array.isArray(entries)) return '';
 			for (let i = entries.length - 1; i >= 0; i--) {
-				const ev = entries[i] && entries[i].event;
+				const entry = entries[i];
+				const ev = entry && entry.event;
 				if (!ev || typeof ev.type !== 'string') continue;
 				if (ev.type === 'assistant/message') {
 					const content = ev.data && ev.data.message && Array.isArray(ev.data.message.content)
@@ -155,11 +185,8 @@ window.__ModuleLoader__.load({
 						.join('\n');
 					if (text) return text;
 				}
-				if (ev.type === 'chunkrow/text-chunks') {
-					const texts = ev.data && Array.isArray(ev.data.texts) ? ev.data.texts : [];
-					const joined = texts.filter((t) => typeof t === 'string').join('');
-					if (joined) return joined;
-				}
+				const live = liveChunkTextRunAt(entries, i);
+				if (live) return live;
 			}
 			return '';
 		}
@@ -288,11 +315,14 @@ window.__ModuleLoader__.load({
 				if (svc) svc.toggleSidebar();
 			} },
 			{ id: 'toggleDetails', group: '视图', label: '切换详情面板', description: '打开或关闭右侧详情栏', defaultCombo: lead + '+Shift+D', run: () => {
-				const svc = pluginCtx && pluginCtx.get('layout');
-				if (svc) {
-					detailsOpen = !detailsOpen;
-					if (detailsOpen) svc.openDetails(); else svc.closeDetails();
-				}
+				// 0.1.5：详情列（rightbar）的展开状态归其占用方 ui-sidebar-right 所有，
+				// ctx.layout 只剩 presentation 上报（openRightbar/closeRightbar 报告轨道与
+				// 全屏，不再展开面板；openDetails/closeDetails 已删除）。原生开关是
+				// ctx.sidebarRight.toggleExpanded() —— 未挂载 seat 时它 loud 抛错（没有
+				// 会话可作用），此处按视图动作的惯例吞掉并保持原状。
+				const svc = pluginCtx && pluginCtx.get('sidebarRight');
+				if (!svc || typeof svc.toggleExpanded !== 'function') return;
+				try { svc.toggleExpanded(); } catch (err) { /* 右侧栏 seat 未挂载：没有可切换的面板 */ }
 			} },
 			{ id: 'toggleTheme', group: '视图', label: '切换明暗主题', description: '在浅色与深色主题之间切换', defaultCombo: lead + '+Shift+L', run: () => {
 				const svc = pluginCtx && pluginCtx.get('theme');

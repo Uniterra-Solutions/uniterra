@@ -24,7 +24,7 @@
     "build": "tsdown && node ../scripts/write-skin-build.mjs . Small-tailqwq/dsh-deep-whale",
     "test": "vitest run"
   },
-  "license": "CC-BY-NC-SA-4.0",
+  "license": "SEE LICENSE IN LICENSE",
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1"
   },
@@ -42,9 +42,11 @@
     "skin.json",
     "skin.build.json",
     "preview",
+    "assets/icons",
     "src",
     "tests",
     "LICENSE",
+    "LICENSE-ARTWORK",
     "NOTICE",
     "README.md"
   ]

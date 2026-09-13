@@ -7,6 +7,7 @@ DeepSeek Harness Web GUI 的深海女仆工坊皮肤：双女仆背景、深海�
 - 双女仆工坊场景对话背景(亮/暗自动切换)
 - 深海蓝、陶瓷白、长春花蓝、柔金构成的可热切换 UI 覆盖层
 - Q 版侧栏角色与视口装饰、favicon
+- 启动插件加载失败时，默认以左右独立的双女仆立绘装饰原生错误报告，支持窄屏重排，遵循现有立绘显示与时段设置。此效果依赖皮肤已成功执行；皮肤自身或内核尚未加载时保留原生页面。
 - 双女仆与宫殿背景整层挂在**对话区(centerCol)内部**:随聊天区域尺寸自适应(右/下工作台推开聊天区时背景与女仆同步收缩,不再固定于视口),左女仆贴聊天区左下、右女仆贴右下,均位于聊天记录与输入器之下;聊天态与着陆页按比例切换构图
 - 素材内嵌于 client bundle(数据 URI),激活不依赖任何临时文件/远程 URL/资源服务器
 
@@ -22,9 +23,15 @@ PowerShell 版本（`#` 是注释起始，spec 必须单引号包裹）见仓库
 
 加载即生效、卸载即复原(与皮肤中心/dsh-skin 的互斥切换兼容,`wiring.id` 为 `ui-skin-maid-atelier`)。
 
+## 网页与应用图标
+
+标签页在每次加载皮肤模块时从三种表情中随机选择图标，本次加载内保持不变。安装为 Web App 时固定使用托腮图，任务栏图标由浏览器和系统据此生成；已安装或已固定的应用可能需要重新安装或固定才能更新。关闭女仆皮肤时恢复宿主的 favicon 和 manifest 声明。
+
+Windows 快捷方式可下载独立 ICO：[困困](assets/icons/sleepy.ico)、[托腮](assets/icons/delighted.ico)、[认真](assets/icons/determined.ico)。每份包含 16、24、32、48、64、128、256 像素尺寸。
+
 ## 素材来源与许可
 
-本皮肤整体以 **CC BY-NC-SA 4.0**(署名-非商业性使用-相同方式共享)发布,**禁止任何商业性使用**。
+本皮肤代码采用 **MIT**；全部美术资源（包括 AI 生成及加工的图片）**禁止商业性使用**，保留相应权利人的版权及既有 **CC BY-NC-SA 4.0** 授权（署名、非商业、相同方式共享）。内嵌于代码或构建产物中的图片同样遵守美术许可。
 
 皮肤素材为衍生创作,署名链(详见 `NOTICE`):
 
@@ -32,7 +39,7 @@ PowerShell 版本（`#` 是注释起始，spec 必须单引号包裹）见仓库
 2. **二创 ZipZipPipe**（[Pixiv](https://www.pixiv.net/users/18604994) · [Bilibili：ZipZipPipe](https://b23.tv/Pnw6nG8)）—— 在其形象上加入 DeepSeek 元素的女仆鲸鱼娘二次设计(生成模型 GPT Image 2)
 3. **三创(本皮肤)Small-tailqwq** —— DeepSeek 元素再设计
 
-完整许可文本见 `LICENSE`;素材源文件在 `assets/`。
+许可范围与 MIT 正文见 [LICENSE](LICENSE)，美术许可正文见 [LICENSE-ARTWORK](LICENSE-ARTWORK)，署名链见 [NOTICE](NOTICE)。
 
 ## 开发与构建
 
@@ -48,4 +55,4 @@ pnpm test           # apply.spec.ts 行为测试
 
 ## 许可
 
-CC BY-NC-SA 4.0。见 `LICENSE` 与 `NOTICE`。
+许可范围与 MIT 正文见 [LICENSE](LICENSE)，美术许可正文见 [LICENSE-ARTWORK](LICENSE-ARTWORK)，署名链见 [NOTICE](NOTICE)。
