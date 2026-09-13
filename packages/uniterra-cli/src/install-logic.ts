@@ -337,21 +337,22 @@ export interface LaunchSurface {
 
 /** The surfaces one CLI run launches, in launch order: the Electron app exactly
  * once iff the run was asked to open it and is not a dry run, and nothing else
- * ever. Pure so the launch cardinality is property-testable. */
+ * ever. Pure so the launch cardinality is property-testable.
+ *
+ * The command does not enter the decision: `setup` and `update` both end by
+ * launching the same installed app, and neither ever opens a web UI — a browser
+ * surface is the second surface of issue #28, not a legitimate outcome. */
 export function planSurfaces(
-  command: 'setup' | 'update',
+  _command: 'setup' | 'update',
   open: boolean,
   dryRun: boolean,
   platform: InstallPlatform,
   destination: string,
 ): readonly LaunchSurface[] {
-  // STUB: hands the Web UI URL to a browser instead of launching the app.
-  return [
-    {
-      kind: 'browser',
-      target: `http://127.0.0.1:3080/?command=${command}&open=${String(open)}&dryRun=${String(dryRun)}&platform=${platform}&destination=${destination}`,
-    },
-  ];
+  if (dryRun || !open) {
+    return [];
+  }
+  return [{ kind: 'electron-app', target: launchTarget(platform, destination) }];
 }
 
 export interface ParsedArgs {

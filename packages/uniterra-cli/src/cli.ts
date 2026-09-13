@@ -41,6 +41,7 @@
  */
 
 import { execFile, spawn, type ExecFileException } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { createWriteStream, existsSync, type Dirent } from 'node:fs';
 import {
   mkdir,
@@ -72,6 +73,7 @@ import {
   installPlan,
   launchTarget,
   parseArgs,
+  planSurfaces,
   pnpmInvocation,
   pnpmVersionFromPackageJson,
   readVersion,
@@ -79,8 +81,16 @@ import {
   sourceDownloadUrl,
   startMenuShortcut,
   type InstallPlatform,
+  type InstallStage,
+  type LaunchSurface,
   type ReleaseAsset,
 } from './install-logic.js';
+import {
+  createProgressFileSink,
+  createProgressRecorder,
+  progressFilePath,
+  type ProgressRecorder,
+} from './update-progress.js';
 
 const PACKAGE_NAME = '@uniterra-solutions/uniterra';
 const MAX_BUFFER_BYTES = 50 * 1024 * 1024;
@@ -463,11 +473,12 @@ async function createStartMenuShortcutBestEffort(destination: string): Promise<v
   }
 }
 
-async function openApp(destination: string, platform: InstallPlatform): Promise<void> {
+/** Launch one surface target the plan produced — macOS hands the `.app` to the
+ * system opener, Windows spawns the `.exe` detached (`/usr/bin/open`-style: the
+ * CLI must not wait for the GUI app to exit). */
+async function openApp(target: string, platform: InstallPlatform): Promise<void> {
   if (platform === 'windows') {
-    // Launch detached: `/usr/bin/open`-style, the CLI must not wait for the
-    // GUI app to exit.
-    const child = spawn(launchTarget(platform, destination), {
+    const child = spawn(target, {
       detached: true,
       stdio: 'ignore',
     });
@@ -477,7 +488,26 @@ async function openApp(destination: string, platform: InstallPlatform): Promise<
     child.unref();
     return;
   }
-  await run('/usr/bin/open', [destination]);
+  await run('/usr/bin/open', [target]);
+}
+
+/** Launch the surfaces the run's plan asks for. The PLAN decides — never an
+ * ad-hoc branch — so a suppressed launch (`--no-open`) or a dry run can never
+ * be replaced by another surface (issue #28). */
+async function launchSurfaces(
+  surfaces: readonly LaunchSurface[],
+  platform: InstallPlatform,
+): Promise<void> {
+  for (const surface of surfaces) {
+    switch (surface.kind) {
+      case 'electron-app':
+        await openApp(surface.target, platform);
+        break;
+      case 'browser':
+        // Never planned: a browser surface IS the defect of issue #28.
+        break;
+    }
+  }
 }
 
 /**
@@ -561,46 +591,132 @@ async function buildInstallApp(options: InstallOptions): Promise<string | undefi
   }
 }
 
-/** Execute the command's stage plan (`installPlan`). `uniterra update` runs
- * `update-cli` first so npm/permission problems surface before the long
- * build; `launch-app` is the relaunch after an update (the desktop quits
+/** The per-run progress recorder: the event stream and the human lines both go
+ * to stdout (issue #15), and — unless this is a dry run or the desktop did not
+ * ask for one — the same event lines are appended to the durable record the
+ * desktop reads on its next boot. A dry run must leave no file and no
+ * directory behind, so its sink is never even constructed. */
+function createRunRecorder(options: InstallOptions): ProgressRecorder {
+  const recordPath = options.dryRun ? undefined : progressFilePath(process.env);
+  const sink = recordPath === undefined ? undefined : createProgressFileSink(recordPath);
+  return createProgressRecorder({
+    run: randomUUID(),
+    at: () => new Date().toISOString(),
+    emit: (line) => {
+      process.stdout.write(`${line}\n`);
+    },
+    emitHuman: (text) => {
+      process.stdout.write(`${text}\n`);
+    },
+    ...(sink === undefined ? {} : { sink }),
+  });
+}
+
+/** The initialization notice (#15): what runs, that it takes minutes, and that
+ * the app is closed while it does. */
+function startMessage(command: 'setup' | 'update'): string {
+  return command === 'update'
+    ? 'updating: the CLI, then a rebuild + reinstall of the desktop app, then the ' +
+        'relaunch (this takes several minutes; the app is closed until it finishes)'
+    : 'installing: a rebuild + reinstall of the desktop app from source ' +
+        '(this takes several minutes)';
+}
+
+/** What one stage's completion line says. */
+function stageDoneMessage(stage: InstallStage, destination: string | undefined): string {
+  switch (stage) {
+    case 'update-cli':
+      return 'the CLI is up to date';
+    case 'build-install-app':
+      return destination === undefined
+        ? 'the app was built and installed'
+        : `installed to ${destination}`;
+    case 'launch-app':
+      return 'the app was launched';
+  }
+}
+
+/** The single closing summary (#15): a success says the app is (or will be)
+ * running again, a run that was told not to launch says so instead. */
+function endMessage(command: 'setup' | 'update', open: boolean): string {
+  const what = command === 'update' ? 'update' : 'install';
+  if (!open) {
+    return `the ${what} is complete — the app was not launched (--no-open)`;
+  }
+  return `the ${what} is complete and the app was ${command === 'update' ? 'relaunched' : 'launched'}`;
+}
+
+/** Execute the command's stage plan (`installPlan`), bracketing every executed
+ * stage with progress events and closing the run exactly once (#15). `uniterra
+ * update` runs `update-cli` first so npm/permission problems surface before the
+ * long build; `launch-app` is the relaunch after an update (the desktop quits
  * itself before running `uniterra update`, so launching the installed app is
- * the restart). */
+ * the restart) and goes through `planSurfaces`, so the plan — not this loop —
+ * decides what may be launched (#28). */
 async function runInstallPlan(command: 'setup' | 'update', options: InstallOptions): Promise<void> {
-  const plan = installPlan(command, options.open, options.dryRun);
-  if (plan.length === 0) {
-    if (command === 'update') {
-      // The plan report is complete on its own — no source resolution, no
-      // downloads (keeps `uniterra update --dry-run` deterministic and offline).
-      process.stdout.write(
-        '[dry-run] Would update the CLI, then rebuild + reinstall the desktop app and relaunch it\n',
+  const platform = currentPlatform();
+  const recorder = createRunRecorder(options);
+  recorder.runStart(startMessage(command));
+  let failedStage: InstallStage | null = null;
+  try {
+    const plan = installPlan(command, options.open, options.dryRun);
+    if (plan.length === 0) {
+      if (command === 'update') {
+        // The plan report is complete on its own — no source resolution, no
+        // downloads (keeps `uniterra update --dry-run` deterministic and offline).
+        process.stdout.write(
+          '[dry-run] Would update the CLI, then rebuild + reinstall the desktop app and relaunch it\n',
+        );
+      } else {
+        // Setup dry-run: resolve the source for the report only (prints and returns).
+        const tmpRoot = await mkdtemp(join(tmpdir(), 'uniterra-'));
+        try {
+          await resolveInstallSource(options, tmpRoot);
+        } finally {
+          await rm(tmpRoot, { recursive: true, force: true });
+        }
+      }
+      recorder.runEnd(
+        'dry-run',
+        null,
+        `dry run: nothing was ${command === 'update' ? 'updated' : 'installed'}`,
       );
       return;
     }
-    // Setup dry-run: resolve the source for the report only (prints and returns).
-    const tmpRoot = await mkdtemp(join(tmpdir(), 'uniterra-'));
-    try {
-      await resolveInstallSource(options, tmpRoot);
-    } finally {
-      await rm(tmpRoot, { recursive: true, force: true });
+    let destination: string | undefined;
+    for (const stage of plan) {
+      failedStage = stage;
+      recorder.stageStart(stage);
+      switch (stage) {
+        case 'update-cli':
+          await updateCli();
+          break;
+        case 'build-install-app':
+          destination = await buildInstallApp(options);
+          break;
+        case 'launch-app':
+          if (destination !== undefined) {
+            await launchSurfaces(
+              planSurfaces(command, options.open, options.dryRun, platform, destination),
+              platform,
+            );
+          }
+          break;
+      }
+      recorder.stageEnd(stage, 'ok', stageDoneMessage(stage, destination));
+      failedStage = null;
     }
-    return;
-  }
-  let destination: string | undefined;
-  for (const stage of plan) {
-    switch (stage) {
-      case 'update-cli':
-        await updateCli();
-        break;
-      case 'build-install-app':
-        destination = await buildInstallApp(options);
-        break;
-      case 'launch-app':
-        if (destination !== undefined) {
-          await openApp(destination, currentPlatform());
-        }
-        break;
+    recorder.runEnd('ok', null, endMessage(command, options.open));
+  } catch (error) {
+    // The run died inside `failedStage`: bracket that stage as failed, close the
+    // run out naming it, then rethrow so the existing stderr message and exit
+    // code are unchanged.
+    const message = error instanceof Error ? error.message : String(error);
+    if (failedStage !== null) {
+      recorder.stageEnd(failedStage, 'failed', message);
     }
+    recorder.runEnd('failed', failedStage, message);
+    throw error;
   }
 }
 
