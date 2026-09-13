@@ -189,7 +189,14 @@ test('PROVISION-HEAL-IDEMPOTENT: an existing profile converges in one pass and s
     fc.asyncProperty(scenarioArb, async (scenario) => {
       await withFixture(scenario, async ({ vendor, source, profile, bundles }) => {
         const first = ensureCopiedBuiltins(profile, vendor, source);
-        assert.equal(first, true, 'the first pass heals the profile');
+        // The verdict reports a CHANGE: a profile that already carries the row
+        // and a faithful copy is left alone and says so.
+        const alreadyConverged = scenario.rowPresent && scenario.copyState === 'faithful';
+        assert.equal(
+          first,
+          !alreadyConverged,
+          'the first pass reports a change exactly when it had to heal something',
+        );
 
         const manifest = readManifest(profile);
         assert.ok(

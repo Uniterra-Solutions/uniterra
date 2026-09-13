@@ -1222,11 +1222,22 @@ test('REGISTRY-VENDOR: exactly one skill-market vendor declaration enters the ex
     fc.property(fc.array(registryEntryArb, { maxLength: 8 }), (entries) => {
       const rows = bundlesForEntries(entries);
       assert.deepEqual(rows, modelBundleRows(entries));
+      /** How many ACTIVE entries of this snapshot contribute that package. */
+      const activeContributions = (name) =>
+        entries.filter(
+          (entry) =>
+            entry.retired !== true &&
+            entry.kind !== 'optional' &&
+            (entry.kind === 'npm' ? packageNameOf(entry.spec) : entry.package) === name,
+        ).length;
       for (const entry of entries) {
         if (entry.retired === true) {
-          assert.ok(
-            !rows.includes(entry.package),
-            `retired ${entry.package} never enters the expected bundles`,
+          // A retirement contributes nothing of its own — but an ACTIVE entry
+          // in the same snapshot may legitimately carry the same name.
+          assert.equal(
+            rows.filter((row) => row === entry.package).length,
+            activeContributions(entry.package),
+            `retired ${entry.package} contributes no row of its own`,
           );
         }
         if (entry.kind === 'optional') {

@@ -138,14 +138,18 @@ test('VENDOR-PIN: the vendored tree is exactly the pinned runtime set', () => {
 // ---------------------------------------------------------------------------
 
 const LEDGER_ELEMENTS = [
-  ['pin', new RegExp(PIN, 'u')],
-  ['trim', /trim(med)?\b/iu],
-  ['local patch', /LOCAL PATCH/u],
-  ['pending upstream', /pending[- ]upstream/iu],
-  ['removal condition', /REMOVAL CONDITION/u],
+  ['pin', new RegExp(PIN, 'u'), `pinned at ${PIN}`],
+  ['trim', /trim(med)?\b/iu, 'Trimmed to its runtime files'],
+  ['local patch', /LOCAL PATCH/u, 'LOCAL PATCH: the client-runtime inject row was dropped'],
+  [
+    'pending upstream',
+    /pending[- ]upstream/iu,
+    'Pending upstream: republish against the pinned dsh family',
+  ],
+  ['removal condition', /REMOVAL CONDITION/u, 'REMOVAL CONDITION: the upstream republish lands'],
 ];
 
-/** Which of the four required elements a ledger row text carries. */
+/** Which of the required elements a ledger row text carries. */
 function ledgerRowVerdict(row) {
   return LEDGER_ELEMENTS.filter(([, pattern]) => pattern.test(row)).map(([name]) => name);
 }
@@ -173,17 +177,24 @@ test('VENDOR-LEDGER: the skill-market row carries pin, trim, pending-upstream an
 
   // The verdict above is not vacuous: each element missing is judged red.
   fc.assert(
-    fc.property(fc.subset(fc.constantFrom(...LEDGER_ELEMENTS.map(([name]) => name))), (kept) => {
-      const synthetic = LEDGER_ELEMENTS.filter(([name]) => kept.includes(name))
-        .map(([, pattern]) => pattern.source)
-        .join(' ');
-      const verdict = ledgerRowVerdict(synthetic);
-      assert.deepEqual([...verdict].sort(), [...kept].sort());
-      assert.equal(
-        verdict.length === LEDGER_ELEMENTS.length,
-        kept.length === LEDGER_ELEMENTS.length,
-      );
-    }),
+    fc.property(
+      fc.uniqueArray(fc.constantFrom(...LEDGER_ELEMENTS.map(([name]) => name)), {
+        maxLength: LEDGER_ELEMENTS.length,
+      }),
+      (kept) => {
+        // A row written the way the real one is: the phrases of the kept
+        // elements, and nothing that resembles the omitted ones.
+        const synthetic = LEDGER_ELEMENTS.filter(([name]) => kept.includes(name))
+          .map(([, , sample]) => sample)
+          .join('; ');
+        const verdict = ledgerRowVerdict(synthetic);
+        assert.deepEqual([...verdict].sort(), [...kept].sort());
+        assert.equal(
+          verdict.length === LEDGER_ELEMENTS.length,
+          kept.length === LEDGER_ELEMENTS.length,
+        );
+      },
+    ),
     { numRuns: 100 },
   );
 });
@@ -237,11 +248,17 @@ function pinnedFamilyNames() {
     if (!existsSync(dir)) {
       return;
     }
-    for (const entry of readdirSync(dir)) {
-      const full = join(dir, entry);
-      if (statSync(full).isDirectory()) {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      // The harness workspace links CYCLE (a package's node_modules links back
+      // into sibling workspace packages), so the walk must never descend into a
+      // link or a node_modules tree — the package NAMES live in the sources.
+      if (entry.isSymbolicLink() || entry.name === 'node_modules') {
+        continue;
+      }
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
         walk(full);
-      } else if (entry === 'package.json') {
+      } else if (entry.name === 'package.json') {
         try {
           const parsed = JSON.parse(readFileSync(full, 'utf8'));
           if (typeof parsed.name === 'string') {

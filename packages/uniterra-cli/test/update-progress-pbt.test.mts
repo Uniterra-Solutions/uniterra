@@ -55,7 +55,8 @@ const runFile = promisify(execFile);
 // Generators
 // ---------------------------------------------------------------------------
 
-const stageArb = fc.constantFrom<InstallStage>('update-cli', 'build-install-app', 'launch-app');
+const PLAN_ORDER: readonly InstallStage[] = ['update-cli', 'build-install-app', 'launch-app'];
+const stageArb = fc.constantFrom<InstallStage>(...PLAN_ORDER);
 const statusArb = fc.constantFrom<ProgressOutcome>('ok', 'failed', 'dry-run');
 
 /** Messages are the point of a closed schema: empty, huge, multi-line, JSON
@@ -184,7 +185,10 @@ test('PROGRESS-SCHEMA: encoding is decoded back to the same event with an exact 
       assert.ok(!line.includes('\n'), 'an event line is exactly one line');
       const decoded = decodeProgressEvent(line);
       assert.notEqual(decoded, undefined, `decoding must succeed for ${line.slice(0, 60)}`);
-      assert.deepEqual(decoded, event);
+      // Spread the generator's object: fast-check hands back null-prototype
+      // objects for roughly half its samples, and deepEqual compares
+      // [[Prototype]] — which a JSON line cannot carry either way.
+      assert.deepEqual(decoded, { ...event });
       assert.deepEqual(Object.keys(decoded ?? {}).sort(), [...PROGRESS_EVENT_KEYS].sort());
       assert.deepEqual(Object.keys(event).sort(), [...PROGRESS_EVENT_KEYS].sort());
     }),
@@ -306,22 +310,29 @@ test('PROGRESS-NOANSI: no escape byte is ever emitted, TTY or not', () => {
   fc.assert(
     fc.property(fc.array(eventArb, { maxLength: 8 }), (events) => {
       const rendered = combos.map((combo) =>
-        withProcessStyle(combo.isTTY, combo.noColor, () =>
-          events
-            .map(
-              (event) => `${encodeProgressEvent(event)}\n${formatHumanLine(humanLineFor(event))}`,
-            )
-            .join('\n'),
-        ),
+        withProcessStyle(combo.isTTY, combo.noColor, () => {
+          const lines = events.flatMap((event) => [
+            encodeProgressEvent(event),
+            formatHumanLine(humanLineFor(event)),
+          ]);
+          return { lines, stream: lines.join('\n') };
+        }),
       );
       assert.equal(
-        new Set(rendered).size,
+        new Set(rendered.map((renderedCombo) => renderedCombo.stream)).size,
         1,
         'the emitted bytes must not depend on isTTY or NO_COLOR',
       );
-      for (const text of rendered) {
-        assert.ok(!text.includes('\u001b'), 'no ANSI escape byte may reach the stream');
-        assert.ok(!CONTROL_BYTE.test(text), 'no control byte may reach the stream');
+      for (const { lines, stream } of rendered) {
+        assert.ok(!stream.includes('\u001b'), 'no ANSI escape byte may reach the stream');
+        // The separators belong to the stream; every LINE it is made of must be
+        // free of C0 bytes and DEL.
+        for (const line of lines) {
+          assert.ok(
+            !CONTROL_BYTE.test(line),
+            `no control byte may reach a line: ${JSON.stringify(line.slice(0, 60))}`,
+          );
+        }
       }
     }),
     { numRuns: 150 },
@@ -432,63 +443,65 @@ test('PROGRESS-SINK: unset or dry-run leaves zero file side effects', async () =
 // PROGRESS-PHASES
 // ---------------------------------------------------------------------------
 
+/** One run's stages: a non-empty SUBSET of the plan, in plan order — the CLI
+ * runs each stage at most once (installPlan emits distinct stages). */
+const plannedStagesArb: fc.Arbitrary<readonly InstallStage[]> = fc
+  .uniqueArray(stageArb, { minLength: 1, maxLength: PLAN_ORDER.length })
+  .map((executed) => PLAN_ORDER.filter((stage) => executed.includes(stage)));
+
 test('PROGRESS-PHASES: every executed stage brackets itself and the run ends once', () => {
   fc.assert(
-    fc.property(
-      fc.array(stageArb, { minLength: 1, maxLength: 6 }),
-      fc.boolean(),
-      (stages, fails) => {
-        const captured = makeRecorder('run-phases');
-        driveRun(captured, stages, fails ? 'failed' : 'ok');
-        const lines = captured.humanLines;
-        assert.ok(lines.length > 0);
-        assert.equal(lines[0]?.kind, 'init', 'the run announces itself before any stage');
+    fc.property(plannedStagesArb, fc.boolean(), (stages, fails) => {
+      const captured = makeRecorder('run-phases');
+      driveRun(captured, stages, fails ? 'failed' : 'ok');
+      const lines = captured.humanLines;
+      assert.ok(lines.length > 0);
+      assert.equal(lines[0]?.kind, 'init', 'the run announces itself before any stage');
+      assert.equal(
+        lines.filter((line) => line.kind === 'init').length,
+        1,
+        'exactly one initialization line',
+      );
+      const summaries = lines.filter((line) => line.kind === 'summary');
+      assert.equal(summaries.length, 1, 'exactly one summary line per run');
+      assert.equal(lines[lines.length - 1]?.kind, 'summary', 'the summary closes the run');
+      assert.equal(summaries[0]?.status, fails ? 'failed' : 'ok');
+      if (fails) {
         assert.equal(
-          lines.filter((line) => line.kind === 'init').length,
-          1,
-          'exactly one initialization line',
+          summaries[0]?.stage,
+          stages[stages.length - 1],
+          'a failed run names the stage it died in',
         );
-        const summaries = lines.filter((line) => line.kind === 'summary');
-        assert.equal(summaries.length, 1, 'exactly one summary line per run');
-        assert.equal(lines[lines.length - 1]?.kind, 'summary', 'the summary closes the run');
-        assert.equal(summaries[0]?.status, fails ? 'failed' : 'ok');
-        if (fails) {
-          assert.equal(
-            summaries[0]?.stage,
-            stages[stages.length - 1],
-            'a failed run names the stage it died in',
-          );
-        }
+      }
 
-        for (const stage of stages) {
-          const forStage = lines.filter((line) => line.stage === stage);
-          assert.equal(
-            forStage.filter((line) => line.kind === 'stage-start').length,
-            1,
-            `${stage} starts exactly once`,
-          );
-          assert.equal(
-            forStage.filter((line) => line.kind === 'stage-end').length,
-            1,
-            `${stage} ends exactly once`,
-          );
-          const start = lines.findIndex(
-            (line) => line.stage === stage && line.kind === 'stage-start',
-          );
-          const end = lines.findIndex((line) => line.stage === stage && line.kind === 'stage-end');
-          assert.ok(start < end, `${stage} is bracketed in order`);
-        }
+      for (const stage of stages) {
+        const forStage = lines.filter((line) => line.stage === stage);
+        assert.equal(
+          forStage.filter((line) => line.kind === 'stage-start').length,
+          1,
+          `${stage} starts exactly once`,
+        );
+        assert.equal(
+          forStage.filter((line) => line.kind === 'stage-end').length,
+          1,
+          `${stage} ends exactly once`,
+        );
+        const start = lines.findIndex(
+          (line) => line.stage === stage && line.kind === 'stage-start',
+        );
+        const end = lines.findIndex((line) => line.stage === stage && line.kind === 'stage-end');
+        assert.ok(start < end, `${stage} is bracketed in order`);
+      }
 
-        const bracketed = lines
-          .filter((line) => line.kind === 'stage-start')
-          .map((line) => line.stage);
-        assert.deepEqual(bracketed, [...stages], 'the brackets follow the executed stages');
-        assert.equal(captured.humanText.length, lines.length, 'every human line was written');
-        for (const text of captured.humanText) {
-          assert.ok(!text.startsWith(PROGRESS_PREFIX));
-        }
-      },
-    ),
+      const bracketed = lines
+        .filter((line) => line.kind === 'stage-start')
+        .map((line) => line.stage);
+      assert.deepEqual(bracketed, [...stages], 'the brackets follow the executed stages');
+      assert.equal(captured.humanText.length, lines.length, 'every human line was written');
+      for (const text of captured.humanText) {
+        assert.ok(!text.startsWith(PROGRESS_PREFIX));
+      }
+    }),
     { numRuns: 150 },
   );
 });
