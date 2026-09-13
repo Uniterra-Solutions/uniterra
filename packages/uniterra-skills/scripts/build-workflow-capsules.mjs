@@ -34,8 +34,8 @@ const srcSkills = path.join(here, '..', 'src', 'skills');
 const explicitTarget = process.argv[2];
 const target = explicitTarget === undefined ? srcSkills : explicitTarget;
 
-const DSH_VERSION = '0.1.2-rc.1'; // the uniterra-pinned dsh family (see VENDOR.md)
-const PLUGIN_VERSION = '0.1.3'; // the pinned dsh_workflow tag (v0.1.3)
+const DSH_VERSION = '0.1.5-rc.2'; // the uniterra-pinned dsh family (see VENDOR.md)
+const PLUGIN_VERSION = '0.1.4'; // the pinned dsh_workflow tag (v0.1.4)
 // Deterministic provenance timestamp so re-running the builder is byte-idempotent
 // (a `new Date()` here would make `pnpm run build` dirty the committed capsules
 // every run — the provenance is informational, not a real clock).

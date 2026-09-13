@@ -632,6 +632,7 @@ async function updateCli(): Promise<void> {
     throw new Error(
       `Failed to update the CLI: ${error instanceof Error ? error.message : String(error)} ` +
         '(if this is a permissions error, use a user-level npm prefix or a Node version manager, or rerun with elevated permissions)',
+      { cause: error },
     );
   }
 }
