@@ -106,6 +106,7 @@ Vendor it because we need to modify it, then edit the copied source in place and
 1. Edit `packages/uniterra-cli` or `packages/uniterra-desktop`; extend the PBT lanes (platform branches included).
 2. `pnpm run build && pnpm run lint && pnpm run typecheck`; per-package tests.
 3. Installer/root-script changes additionally: `scripts/verify-cli-container/run.sh` (clean-container replay); Windows branches are exercised by `scripts/verify-windows-install/verify.ps1` in the release gate (windows-latest).
+4. Bumping the dsh pin additionally: rebuild the vendored CLI (`pnpm run build:vendored-dsh`) and re-run the LIVE harnesses — `scripts/verify-turn-notification/run.sh` (the observer's cookie/unary/mux seams) and `scripts/verify-dsh-shortcuts-smoke/run.sh` (a real dsh web boot with the vendored plugin). A new family can move any of them, and the fakes in the suites cannot see that.
 
 ## Release a Version
 
