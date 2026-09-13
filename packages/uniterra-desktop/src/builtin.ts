@@ -302,6 +302,51 @@ function writeJson(file: string, value: unknown): void {
   writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
 }
 
+/** One parsed JSON object, or undefined for anything else (null, a list, a
+ * scalar) — the shape guard every manifest level goes through, so a manifest
+ * written by another tool is read fail-soft instead of throwing. */
+function jsonObject(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+/** Every bundle-row name a `bundles` value carries, in order and de-duplicated,
+ * whatever shape the value has: the flat list this pass writes, the name→flag
+ * map and the nested list other tools write. A row switched off (`false`) is
+ * not a row. Reading the foreign shapes is what keeps a malformed list from
+ * being a silent reset: the names it carries are preserved when the pass has to
+ * rewrite the list to add a row of its own. */
+function bundleRowNames(value: unknown): string[] {
+  const names: string[] = [];
+  const visit = (node: unknown): void => {
+    if (typeof node === 'string') {
+      if (!names.includes(node)) {
+        names.push(node);
+      }
+      return;
+    }
+    if (Array.isArray(node)) {
+      for (const item of node) {
+        visit(item);
+      }
+      return;
+    }
+    const record = jsonObject(node);
+    if (record === undefined) {
+      return;
+    }
+    for (const [name, flag] of Object.entries(record)) {
+      if (flag !== false && !names.includes(name)) {
+        names.push(name);
+      }
+      visit(flag);
+    }
+  };
+  visit(value);
+  return names;
+}
+
 /** The profile directory under one dsh home. */
 function profileDir(dshHome: string, profile: string): string {
   return path.join(dshHome, 'profiles', profile);
@@ -403,16 +448,11 @@ function contentFingerprint(relPaths: string[], baseDir: string): string {
   return hash.digest('hex');
 }
 
-/** The relative implementation paths present in BOTH dirs, sorted (excluding
- * `package.json`, `node_modules`, `.git`). Comparing only shared files keeps
- * the oracle honest: `package.json` is handled by the explicit version check
- * (its `name` legitimately equals the package name on both sides), and a file
- * on ONLY one side is not a staleness signal — the installed copy is a
- * faithful copy in practice, but a profile may legitimately differ in either
- * direction (a partial fixture, a plugin-generated file), while a customized
- * built-in is hand-edited in files that exist on BOTH sides (e.g.
- * `lib/engine.js`). */
-function sharedFiles(sourceDir: string, destDir: string): string[] {
+/** The relative implementation paths one side ships, sorted (excluding
+ * `package.json`, `node_modules`, `.git`). `package.json` is handled by the
+ * explicit version check (its `name` legitimately equals the package name on
+ * both sides), so only the implementation files are fingerprinted. */
+function implementationFiles(dir: string): string[] {
   const files: string[] = [];
   const walk = (current: string, rel: string): void => {
     for (const name of readdirSync(current)) {
@@ -424,25 +464,26 @@ function sharedFiles(sourceDir: string, destDir: string): string[] {
       if (statSync(absolute).isDirectory()) {
         walk(absolute, relative);
       } else {
-        const dest = path.join(destDir, relative);
-        if (existsSync(dest) && statSync(dest).isFile()) {
-          files.push(relative);
-        }
+        files.push(relative);
       }
     }
   };
-  walk(sourceDir, '');
+  walk(dir, '');
   return files.sort();
 }
 
 /** Whether the installed copy under `dest` matches the source package dir.
  * Staleness is content identity: the `package.json` `version` field is the
  * bundle-level signal (a fixed distribution can ship under the SAME package
- * name, so a bundle list can never tell staleness), AND the bytes of the
- * implementation files shared by both sides — so a customized (locally
- * patched) copy that changed under the SAME version is caught, otherwise a
- * hand edit to the source would never propagate to an already-provisioned
- * profile. A missing or illegible copy on either side is stale. */
+ * name, so a bundle list can never tell staleness), AND the bytes of every
+ * implementation file the SOURCE ships — so a customized (locally patched) copy
+ * that changed under the SAME version is caught, otherwise a hand edit to the
+ * source would never propagate to an already-provisioned profile. A file the
+ * source ships that the copy LOST also makes it stale: an interrupted copy that
+ * carries none of the source's files has an empty fingerprint on both sides,
+ * and would otherwise be judged fresh and never healed. A file only the
+ * INSTALLED copy carries stays ignored (a profile may hold plugin-generated
+ * files). A missing or illegible copy on either side is stale. */
 function copyEntryStale(sourceDir: string, destDir: string): boolean {
   try {
     const sourceVersion = (readJson(path.join(sourceDir, 'package.json')) as { version?: string })
@@ -452,8 +493,14 @@ function copyEntryStale(sourceDir: string, destDir: string): boolean {
     if (sourceVersion !== installedVersion) {
       return true;
     }
-    const shared = sharedFiles(sourceDir, destDir);
-    return contentFingerprint(shared, sourceDir) !== contentFingerprint(shared, destDir);
+    const files = implementationFiles(sourceDir);
+    for (const relative of files) {
+      const installed = path.join(destDir, relative);
+      if (!existsSync(installed) || !statSync(installed).isFile()) {
+        return true;
+      }
+    }
+    return contentFingerprint(files, sourceDir) !== contentFingerprint(files, destDir);
   } catch {
     return true;
   }
@@ -808,11 +855,18 @@ export function ensureBuiltinPlugins(
  * (vendor + workspace) into the profile's `node_modules` and make sure its
  * Loader bundle row is present in the profile manifest.
  *
- * Idempotent by construction: a copy whose `package.json` version and shared
- * file bytes already match the source is left alone, and the manifest is only
- * rewritten when a row was actually added — so a second pass over an
- * up-to-date profile changes nothing. Rows, dependencies and copies that are
- * not in this registry are never touched.
+ * Idempotent by construction: a copy whose `package.json` version and
+ * implementation file bytes already match the source is left alone, and the
+ * manifest is only rewritten when a row was actually added — so a second pass
+ * over an up-to-date profile changes nothing. Rows, dependencies and copies
+ * that are not in this registry are never touched: the rows are read out of
+ * whatever shape the `bundles` value has, so a list written by another tool is
+ * merged rather than reset.
+ *
+ * Fail-soft: a manifest that is not a legible OBJECT (unreadable, `null`, a
+ * list, a scalar), or one whose `dsh`/`profile` level is not an object, is left
+ * exactly as it is — this pass never throws and never overwrites a value it
+ * cannot read.
  *
  * @returns true when the profile (manifest or a copy) was changed.
  */
@@ -822,17 +876,32 @@ export function ensureCopiedBuiltins(
   sourceRoot: string,
 ): boolean {
   const manifestPath = path.join(profileDirPath, 'package.json');
-  let manifest: { dsh?: { profile?: { bundles?: string[] } } };
+  let manifest: Record<string, unknown>;
   try {
-    manifest = readJson(manifestPath) as { dsh?: { profile?: { bundles?: string[] } } };
+    const record = jsonObject(readJson(manifestPath));
+    if (record === undefined) {
+      return false; // not a manifest object — nothing to ensure, and never a throw
+    }
+    manifest = record;
   } catch {
     return false; // no legible manifest — nothing to ensure, and never a throw
   }
 
-  // The rows this pass owns; a malformed list is rebuilt only when a row of
-  // ours is actually missing (never a throw, never a silent reset).
-  const rows = manifest.dsh?.profile?.bundles;
-  const bundles = Array.isArray(rows) ? rows : [];
+  // Where the rows live. A level that is PRESENT but not an object is a
+  // manifest this pass cannot read: the rows are not touched at all, so a
+  // foreign shape is never reset (the copies still heal).
+  const rawDsh = manifest.dsh;
+  const dsh = jsonObject(rawDsh);
+  const rawProfile = dsh === undefined ? undefined : dsh.profile;
+  const profile = jsonObject(rawProfile);
+  const rowsWritable =
+    (rawDsh === undefined || dsh !== undefined) &&
+    (rawProfile === undefined || profile !== undefined);
+
+  // The rows this pass owns, read out of whatever shape the value has; the
+  // list is rewritten only when a row of ours is actually missing (never a
+  // throw, never a silent reset).
+  const bundles = bundleRowNames(profile === undefined ? undefined : profile.bundles);
 
   let changed = false;
   let addedRow = false;
@@ -849,10 +918,12 @@ export function ensureCopiedBuiltins(
       addedRow = true;
     }
   }
-  if (addedRow) {
-    manifest.dsh ??= {};
-    manifest.dsh.profile ??= {};
-    manifest.dsh.profile.bundles = bundles;
+  if (addedRow && rowsWritable) {
+    const targetDsh: Record<string, unknown> = dsh ?? {};
+    const targetProfile: Record<string, unknown> = profile ?? {};
+    targetProfile.bundles = bundles;
+    targetDsh.profile = targetProfile;
+    manifest.dsh = targetDsh;
     writeJson(manifestPath, manifest);
     changed = true;
   }
