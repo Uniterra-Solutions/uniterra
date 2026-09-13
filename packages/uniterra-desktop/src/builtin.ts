@@ -126,14 +126,15 @@ registerBuiltinPlugin({ kind: 'vendor', dir: 'dsh-shortcuts', package: 'dsh-shor
 // The dynamic workflow layer (@dsh-external/workflow): a KodaX-parity
 // multi-agent workflow engine that persists workflows as `.workflow.json`
 // capsules and exposes workflow_list / run_workflow / workflow_manage, so the
-// bundled pipeline skills invoke a workflow by NAME (run_workflow('implement',
-// args)) instead of the model copying a large JS block into the native workflow
-// tool — the copy-failure failure mode. Vendored at the v0.1.4 tag (see
+// bundled review skill invokes a workflow by NAME (run_workflow('review', args))
+// instead of the model copying a large JS block into the native workflow tool —
+// the copy-failure failure mode. Vendored at the v0.1.4 tag (see
 // vendor/dsh-plugins/VENDOR.md); its peer ranges (^0.1.3-alpha.1) are reported
 // unsatisfied (warn) against the pinned dsh 0.1.5-rc.2 pre-release family, so
 // it ships as a copy-based built-in (no pnpm install) and loads via
-// ctx.subagents + ctx.tools. The three pipeline capsules are provisioned from
-// the skills package into the profile's workflow dir by ensureWorkflowCapsules.
+// ctx.subagents + ctx.tools. The review capsule is provisioned from the skills
+// package into the profile's workflow dir by ensureWorkflowCapsules — which also
+// removes the retired pipeline capsules from an already-provisioned profile.
 registerBuiltinPlugin({
   kind: 'vendor',
   dir: 'dsh-workflow',
@@ -785,33 +786,72 @@ export function builtinSkillsDir(
   return existsSync(candidate) ? candidate : undefined;
 }
 
+/** Retired workflow capsules: capsule files uniterra itself provisioned into a
+ * profile whose skill has since left the bundle (symmetric with
+ * RETIRED_SKILL_NAMES). They are uniterra's own replaced artifacts, not user
+ * files, so a same-named file is removed on every boot instead of lingering as a
+ * runnable workflow. */
+export const RETIRED_WORKFLOW_CAPSULES = [
+  'implement.workflow.json',
+  'simplify.workflow.json',
+] as const;
+
+const retiredWorkflowCapsules: ReadonlySet<string> = new Set(RETIRED_WORKFLOW_CAPSULES);
+
 /**
- * Provision the three persisted pipeline workflow capsules (implement / review /
- * simplify) into the profile's dsh_workflow personal
- * directory (`$DSH_HOME/workflows`, the `personalDirectory` the
- * @dsh-external/workflow plugin scans). The capsules ride the bundled skills
- * package (`<skillsDir>/<skill>/workflows/*.workflow.json`); the desktop copies
- * them so a fresh profile can `run_workflow('<name>', args)` them by name.
+ * Provision the persisted `review` workflow capsule into the profile's
+ * dsh_workflow personal directory (`$DSH_HOME/workflows`, the
+ * `personalDirectory` the @dsh-external/workflow plugin scans). The capsule
+ * rides the bundled skills package
+ * (`<skillsDir>/<skill>/workflows/*.workflow.json`); the desktop copies it so a
+ * fresh profile can `run_workflow('review', args)` it by name.
+ *
+ * Post-conditions:
+ *  - no RETIRED_WORKFLOW_CAPSULES name exists in the target dir afterwards —
+ *    the removal runs unconditionally, before the `skillsDir` check, so a
+ *    profile heals even when the bundle no longer resolves;
+ *  - every bundled, non-retired capsule is present byte-identically;
+ *  - every other file in the target dir is left untouched;
+ *  - re-running against unchanged sources is a no-op returning false.
  *
  * Idempotent: a target capsule is only (over)written when missing or when its
  * content differs from the bundled source — a user's own edit to a same-named
  * workflow is never clobbered.
  *
- * @returns true when any capsule was written.
+ * @returns true when any capsule was written or any retired capsule was removed.
  */
 export function ensureWorkflowCapsules(dshHome: string, skillsDir: string | undefined): boolean {
-  if (skillsDir === undefined || !existsSync(skillsDir)) {
-    return false;
-  }
   let changed = false;
   const targetDir = path.join(dshHome, 'workflows');
+
+  // Retired capsules are uniterra's own replaced artifacts, not user files:
+  // remove them unconditionally, BEFORE the skillsDir check, so a profile whose
+  // bundle no longer resolves still heals.
+  for (const file of RETIRED_WORKFLOW_CAPSULES) {
+    try {
+      const retired = path.join(targetDir, file);
+      if (existsSync(retired)) {
+        rmSync(retired, { force: true });
+        changed = true;
+      }
+    } catch {
+      // a locked file must not fail provisioning
+    }
+  }
+
+  if (skillsDir === undefined || !existsSync(skillsDir)) {
+    return changed;
+  }
+
   const skills = readdirSync(skillsDir);
   for (const skill of skills) {
     const workflowsDir = path.join(skillsDir, skill, 'workflows');
     if (!existsSync(workflowsDir)) {
       continue;
     }
-    const entries = readdirSync(workflowsDir).filter((file) => file.endsWith('.workflow.json'));
+    const entries = readdirSync(workflowsDir).filter(
+      (file) => file.endsWith('.workflow.json') && !retiredWorkflowCapsules.has(file),
+    );
     if (entries.length === 0) {
       continue;
     }

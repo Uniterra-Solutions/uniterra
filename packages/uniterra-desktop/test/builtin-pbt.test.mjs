@@ -986,10 +986,11 @@ test('WORKFLOW CAPSULES: ensureWorkflowCapsules copies bundled capsules, is idem
   const capsuleSrc = JSON.stringify({ format: 'dsh.workflow', version: 1, source: 'a' });
   const dest = join(dshHome, 'workflows');
   try {
-    // Two skills ship capsules; one already exists in target with a user edit.
+    // Two skills ship capsules — names that are NOT retired capsule names, so
+    // the retirement heal never touches them.
     for (const [skill, file] of [
-      ['uniterra-plan', 'plan-review.workflow.json'],
-      ['uniterra-implement', 'implement.workflow.json'],
+      ['uniterra-review', 'review.workflow.json'],
+      ['demo-skill', 'demo.workflow.json'],
     ]) {
       const dir = join(skills, skill, 'workflows');
       await mkdir(dir, { recursive: true });
@@ -1000,8 +1001,8 @@ test('WORKFLOW CAPSULES: ensureWorkflowCapsules copies bundled capsules, is idem
       true,
       'first provision writes the capsules',
     );
-    assert.equal(await readFile(join(dest, 'plan-review.workflow.json'), 'utf8'), capsuleSrc);
-    assert.equal(await readFile(join(dest, 'implement.workflow.json'), 'utf8'), capsuleSrc);
+    assert.equal(await readFile(join(dest, 'review.workflow.json'), 'utf8'), capsuleSrc);
+    assert.equal(await readFile(join(dest, 'demo.workflow.json'), 'utf8'), capsuleSrc);
 
     // Idempotent: a second provision with identical sources writes nothing.
     assert.equal(ensureWorkflowCapsules(dshHome, skills), false, 'idempotent when nothing differs');
@@ -1010,7 +1011,7 @@ test('WORKFLOW CAPSULES: ensureWorkflowCapsules copies bundled capsules, is idem
     // bundled capsule is the built-in, so a bundle refresh propagates.
     const updated = JSON.stringify({ format: 'dsh.workflow', version: 1, source: 'b' });
     await writeFile(
-      join(skills, 'uniterra-plan', 'workflows', 'plan-review.workflow.json'),
+      join(skills, 'uniterra-review', 'workflows', 'review.workflow.json'),
       updated,
       'utf8',
     );
@@ -1019,9 +1020,10 @@ test('WORKFLOW CAPSULES: ensureWorkflowCapsules copies bundled capsules, is idem
       true,
       'a changed source rewrites the stale target',
     );
-    assert.equal(await readFile(join(dest, 'plan-review.workflow.json'), 'utf8'), updated);
+    assert.equal(await readFile(join(dest, 'review.workflow.json'), 'utf8'), updated);
 
-    // A missing skills dir is a no-op.
+    // A missing skills dir writes nothing (and removes no retired capsule here,
+    // so the run is a no-op).
     assert.equal(ensureWorkflowCapsules(dshHome, undefined), false);
     assert.equal(ensureWorkflowCapsules(dshHome, join(dshHome, 'no-such-skills')), false);
   } finally {

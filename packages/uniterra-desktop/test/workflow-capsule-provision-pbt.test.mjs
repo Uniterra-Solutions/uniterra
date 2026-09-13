@@ -10,9 +10,12 @@
  *    (nested dirs, non-`.workflow.json` files, empty dirs, weird names), the
  *    provisioner never throws.
  *  - DATA-RIGHTS: after a provision, every bundled `.workflow.json` capsule in
- *    the source tree is present in the profile's `workflows/` dir with
- *    byte-identical content — and files that are NOT bundled capsules are
- *    never written, deleted, or modified (a user's own workflows survive).
+ *    the source tree that is NOT a retired capsule name is present in the
+ *    profile's `workflows/` dir with byte-identical content, every RETIRED
+ *    capsule name is ABSENT, and files that are neither are never written,
+ *    deleted, or modified (a user's own workflows survive). The generator can
+ *    produce `implement.workflow.json` — its name is 9 chars, inside
+ *    `safeName(5, 16)` — so the retired half of the expectation is load-bearing.
  *  - IDEMPOTENT: a second provision with identical sources writes nothing
  *    (returns false), for any reachable target state.
  */
@@ -23,7 +26,7 @@ import { mkdtemp, mkdir, writeFile, rm, readFile, readdir } from 'node:fs/promis
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ensureWorkflowCapsules } from '../dist/builtin.js';
+import { ensureWorkflowCapsules, RETIRED_WORKFLOW_CAPSULES } from '../dist/builtin.js';
 
 /** A safe filename alphabet (no path separators, so an entry is a single dir entry). */
 const nameChar = fc.constantFrom('a', 'b', 'c', '1', '2', '3', '_', '-', '.', 'w', 'm', 'j');
@@ -73,7 +76,7 @@ async function materializeSource(root, spec) {
   return capsuleFiles;
 }
 
-test('PROVISION: never throws and ships every bundled capsule byte-identically', async () => {
+test('PROVISION: never throws and ships every bundled non-retired capsule byte-identically', async () => {
   await fc.assert(
     fc.asyncProperty(treeSpec, async (spec) => {
       const skills = await mkdtemp(join(tmpdir(), 'uwf-sk-'));
@@ -86,17 +89,28 @@ test('PROVISION: never throws and ships every bundled capsule byte-identically',
         });
         assert.equal(typeof changed, 'boolean');
         const targetDir = join(home, 'workflows');
-        if (capsuleFiles.length > 0) {
-          assert.equal(changed, true, 'a fresh provision writes every bundled capsule');
-        }
+        const retired = new Set(RETIRED_WORKFLOW_CAPSULES);
+        let activeCount = 0;
         for (const file of capsuleFiles) {
-          const source = await readFile(join(skills, file), 'utf8');
           // `file` is relative to a skill/workflows dir; the dest is flat under targetDir.
           const base = file.split('/').pop();
           const targetPath = join(targetDir, base);
+          if (retired.has(base)) {
+            assert.equal(existsSync(targetPath), false, `${file} must never be provisioned`);
+            continue;
+          }
+          activeCount += 1;
+          const source = await readFile(join(skills, file), 'utf8');
           assert.equal(existsSync(targetPath), true, `${file} must be provisioned`);
           assert.equal(await readFile(targetPath, 'utf8'), source, `${file} byte-identical`);
         }
+        assert.equal(
+          changed,
+          activeCount > 0,
+          activeCount > 0
+            ? 'a fresh provision writes every bundled non-retired capsule'
+            : 'a retired-only source writes nothing',
+        );
       } finally {
         await rm(skills, { recursive: true, force: true });
         await rm(home, { recursive: true, force: true });
@@ -140,7 +154,10 @@ test('PROVISION: files in the target that are not bundled capsules are never tou
         const capsuleFiles = await materializeSource(skills, spec);
         const targetDir = join(home, 'workflows');
         await mkdir(targetDir, { recursive: true });
-        const bundledNames = new Set(capsuleFiles.map((f) => f.split('/').pop()));
+        const retired = new Set(RETIRED_WORKFLOW_CAPSULES);
+        const bundledNames = new Set(
+          capsuleFiles.map((f) => f.split('/').pop()).filter((name) => !retired.has(name)),
+        );
         // Pre-seed target with a user file that is NOT a bundled capsule name.
         const userFile = `${stale}-user.workflow.json`;
         await writeFile(join(targetDir, userFile), 'user custom workflow', 'utf8');
@@ -159,6 +176,63 @@ test('PROVISION: files in the target that are not bundled capsules are never tou
     }),
     { numRuns: 4000 },
   );
+});
+
+test('PROVISION: retired capsules are removed even without a skills dir, and user files survive', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'uwf-hm-'));
+  const skills = await mkdtemp(join(tmpdir(), 'uwf-sk-'));
+  try {
+    const targetDir = join(home, 'workflows');
+    const userFile = join(targetDir, 'my-own.workflow.json');
+    const seedRetired = async () => {
+      await mkdir(targetDir, { recursive: true });
+      for (const file of RETIRED_WORKFLOW_CAPSULES) {
+        await writeFile(join(targetDir, file), 'retired capsule', 'utf8');
+      }
+      await writeFile(userFile, 'user custom workflow', 'utf8');
+    };
+    const assertHealed = async (label) => {
+      for (const file of RETIRED_WORKFLOW_CAPSULES) {
+        assert.equal(existsSync(join(targetDir, file)), false, `${label}: ${file} removed`);
+      }
+      assert.equal(
+        await readFile(userFile, 'utf8'),
+        'user custom workflow',
+        `${label}: the user's own workflow is untouched`,
+      );
+    };
+
+    // A real bundled source: the retired names are gone, the live capsule lands.
+    await mkdir(join(skills, 'uniterra-review', 'workflows'), { recursive: true });
+    await writeFile(
+      join(skills, 'uniterra-review', 'workflows', 'review.workflow.json'),
+      'live capsule',
+      'utf8',
+    );
+
+    await seedRetired();
+    assert.equal(ensureWorkflowCapsules(home, skills), true, 'the heal and the copy both report');
+    await assertHealed('with a bundle');
+    assert.equal(await readFile(join(targetDir, 'review.workflow.json'), 'utf8'), 'live capsule');
+
+    // Re-running is a no-op.
+    assert.equal(ensureWorkflowCapsules(home, skills), false, 'second run changes nothing');
+
+    // skillsDir undefined → the retired files still go and the return value says so.
+    await seedRetired();
+    assert.equal(ensureWorkflowCapsules(home, undefined), true, 'removal alone reports a change');
+    await assertHealed('without a skills dir');
+    assert.equal(ensureWorkflowCapsules(home, undefined), false, 'nothing left to remove');
+
+    // A skills dir that does not exist behaves the same way — and never throws.
+    await seedRetired();
+    assert.equal(ensureWorkflowCapsules(home, join(home, 'no-such-skills')), true);
+    await assertHealed('without an existing bundle dir');
+    assert.equal(ensureWorkflowCapsules(home, join(home, 'no-such-skills')), false);
+  } finally {
+    await rm(skills, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true });
+  }
 });
 
 /** Read a directory into a name→content map (byte snapshot). */

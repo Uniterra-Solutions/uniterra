@@ -2,9 +2,11 @@
  * Regression test for the vendored `@dsh-external/workflow` engine's
  * `wf.readFile` capability (LOCAL PATCH 2026-08).
  *
- * The `implement` capsule inlines each task's `promptFile` brief into the
- * subagent prompt via `wf.readFile`, so the subagent does NOT read the file
- * itself. This pins the engine host method it depends on:
+ * The live user of `wf.readFile` is the `uniterra-review` capsule: when a
+ * `standard` is supplied it reads the requirements / acceptance documents
+ * itself (repo-relative paths) and inlines their ORIGINAL TEXT into the review
+ * and fixer prompts — documents in, main-agent narrative out. This pins the
+ * engine host method it depends on:
  *   - resolves a repo-relative path against the parent session's cwd and reads
  *     it as UTF-8;
  *   - rejects a path that escapes the workspace (absolute or `..`);

@@ -494,8 +494,9 @@ async function boot(): Promise<void> {
   // Bundled skills ride the DSH_BUNDLED_SKILL_DIR provider.
   const skills = skillsDir();
 
-  // Provision the persisted pipeline workflow capsules into the profile's
-  // dsh_workflow personal dir so the skills can run_workflow('<name>', args) them.
+  // Provision the persisted review workflow capsule into the profile's
+  // dsh_workflow personal dir so the skill can run_workflow('review', args) it
+  // (retired capsules are removed here too).
   ensureWorkflowCapsules(effectiveHome, skills);
 
   // Provision the legacy agent-preset compat row: dsh 0.1.2-rc.1 renamed the
